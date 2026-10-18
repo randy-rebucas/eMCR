@@ -17,7 +17,9 @@ export function useApiData<T>(path: string | null, options: Options = {}) {
   const [loading, setLoading] = useState(path !== null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const inFlight = useRef(false);
+  const inFlight = useRef(0);
+  // Only the latest request may write state (path changed, refresh over a slow load).
+  const sequence = useRef(0);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -31,24 +33,27 @@ export function useApiData<T>(path: string | null, options: Options = {}) {
     async (mode: LoadMode = 'initial') => {
       if (!path) return;
       // Background polls never stack on top of a request that is still running.
-      if (mode === 'silent' && inFlight.current) return;
-      inFlight.current = true;
+      if (mode === 'silent' && inFlight.current > 0) return;
+      inFlight.current++;
+      const seq = ++sequence.current;
+      const isLatest = () => mounted.current && seq === sequence.current;
       if (mode === 'initial') setLoading(true);
       if (mode === 'refresh') setRefreshing(true);
       if (mode !== 'silent') setError(null);
       try {
         const result = envelope ? await apiFetch<T>(path) : await apiRequest<T>(path);
-        if (!mounted.current) return;
+        if (!isLatest()) return;
         setData(result);
         setError(null);
       } catch (err) {
-        if (!mounted.current) return;
+        if (!isLatest()) return;
         setError(errorMessage(err, 'Failed to load. Pull to retry.'));
       } finally {
-        inFlight.current = false;
-        if (mounted.current) {
-          if (mode === 'initial') setLoading(false);
-          if (mode === 'refresh') setRefreshing(false);
+        inFlight.current--;
+        // The latest request clears every spinner, including one a superseded request started.
+        if (isLatest()) {
+          setLoading(false);
+          setRefreshing(false);
         }
       }
     },

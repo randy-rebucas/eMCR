@@ -1,23 +1,29 @@
 /**
- * Minimal shared design tokens. The web app's brand identity (BrandLogo,
- * colors) is documented as fixed/binding in the main repo's PRODUCT.md —
- * these values should be reconciled with that brand rather than treated as
- * final once real brand colors are supplied.
+ * Shared design tokens, aligned with the web app's brand teal (globals.css
+ * --brand-teal*). `primary` is the darker teal so white text on buttons
+ * passes contrast; `accent` is the brighter brand teal for marks and fills.
  */
 export const colors = {
-  background: '#F7F8FA',
+  background: '#F5F8F9',
   surface: '#FFFFFF',
-  border: '#E2E5EA',
-  text: '#1A1D23',
-  textMuted: '#6B7280',
-  primary: '#1E6F5C',
+  surfaceMuted: '#F7FAFA',
+  border: '#DCE3E8',
+  text: '#0B2136',
+  textMuted: '#5B6B7A',
+  primary: '#0A7F7E',
+  primaryPressed: '#086362',
   primaryText: '#FFFFFF',
-  primarySoft: '#E3F1ED',
+  primarySoft: '#E3F6F5',
+  /** Teal for text/icons sitting on primarySoft: 6.3:1 there (primary is only 4.3:1). */
+  primaryOnSoft: '#086362',
+  accent: '#0EA5A4',
   danger: '#B3261E',
   dangerSoft: '#FBE9E7',
-  success: '#1E6F5C',
+  success: '#0A7F7E',
   warning: '#8A5A00',
   warningSoft: '#FFF4DC',
+  slateSoft: '#EAF0F5',
+  slate: '#4A6684',
 };
 
 export const spacing = {

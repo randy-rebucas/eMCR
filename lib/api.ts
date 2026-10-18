@@ -4,7 +4,7 @@ import { clearSession, getSession, setSession, StoredSession } from './storage';
 export class ApiError extends Error {
   status: number;
   code?: string;
-  /** The parsed JSON body, when there was one (e.g. `requires2fa` / `pendingToken`). */
+  /** The parsed JSON body, when there was one (e.g. validation `details`). */
   body: unknown;
 
   constructor(message: string, status: number, code?: string, body?: unknown) {
@@ -69,17 +69,23 @@ const EXPIRY_SKEW_MS = 60_000;
 
 // ── Session expiry notification ──────────────────────────────────────────────
 
-let sessionExpiredHandler: (() => void) | null = null;
+/**
+ * Called when the session is gone. `message` is a server-supplied reason (e.g. a
+ * deactivated account) to show on the sign-in screen instead of the generic notice.
+ */
+export type SessionExpiredHandler = (message?: string) => void;
+
+let sessionExpiredHandler: SessionExpiredHandler | null = null;
 
 /** The AuthProvider registers here so a dead refresh token sends the user to sign-in. */
-export function setSessionExpiredHandler(handler: (() => void) | null): void {
+export function setSessionExpiredHandler(handler: SessionExpiredHandler | null): void {
   sessionExpiredHandler = handler;
 }
 
-async function expireSession(): Promise<never> {
+async function expireSession(message?: string): Promise<never> {
   await clearSession();
-  sessionExpiredHandler?.();
-  throw new ApiError(SESSION_EXPIRED_MESSAGE, 401, 'SESSION_EXPIRED');
+  sessionExpiredHandler?.(message);
+  throw new ApiError(message ?? SESSION_EXPIRED_MESSAGE, 401, 'SESSION_EXPIRED');
 }
 
 // ── Token storage ────────────────────────────────────────────────────────────
@@ -93,13 +99,55 @@ export async function storeTokens(pair: TokenPair): Promise<void> {
   await setSession({
     accessToken: pair.token,
     refreshToken: pair.refreshToken ?? null,
-    accessExpiresAt: pair.expiresIn ? Date.now() + pair.expiresIn * 1000 : null,
+    accessExpiresAt: pair.expiresIn ? Date.now() + pair.expiresIn * 1000 : jwtExpiresAt(pair.token),
   });
+}
+
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/** Decode base64url to a UTF-8 string without relying on `atob`/`Buffer`. Null when malformed. */
+function decodeBase64Url(input: string): string | null {
+  const b64 = input.replace(/-/g, '+').replace(/_/g, '/');
+  if (!/^[A-Za-z0-9+/]*$/.test(b64) || b64.length % 4 === 1) return null;
+  const bytes: number[] = [];
+  let buffer = 0;
+  let bits = 0;
+  for (const ch of b64) {
+    buffer = (buffer << 6) | BASE64_ALPHABET.indexOf(ch);
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes.push((buffer >> bits) & 0xff);
+    }
+  }
+  try {
+    return decodeURIComponent(bytes.map((b) => `%${b.toString(16).padStart(2, '0')}`).join(''));
+  } catch {
+    return null;
+  }
+}
+
+/** The access token's `exp` claim as epoch ms, or null when the token isn't a readable JWT. */
+function jwtExpiresAt(token: string): number | null {
+  const parts = token.split('.');
+  if (parts.length !== 3 || !parts[1]) return null;
+  const json = decodeBase64Url(parts[1]);
+  if (!json) return null;
+  try {
+    const exp = (JSON.parse(json) as { exp?: unknown } | null)?.exp;
+    return typeof exp === 'number' && isFinite(exp) && exp > 0 ? exp * 1000 : null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Refresh (single-flight) ──────────────────────────────────────────────────
 
-type RefreshOutcome = 'refreshed' | 'expired' | 'unavailable';
+interface RefreshOutcome {
+  outcome: 'refreshed' | 'expired' | 'unavailable';
+  /** Server reason for an 'expired' outcome (e.g. account deactivated). */
+  message?: string;
+}
 
 let refreshInFlight: Promise<RefreshOutcome> | null = null;
 
@@ -119,7 +167,7 @@ function refreshSession(): Promise<RefreshOutcome> {
 
 async function performRefresh(): Promise<RefreshOutcome> {
   const session = await getSession();
-  if (!session?.refreshToken) return 'expired';
+  if (!session?.refreshToken) return { outcome: 'expired' };
 
   let response: Response;
   try {
@@ -129,10 +177,12 @@ async function performRefresh(): Promise<RefreshOutcome> {
       body: JSON.stringify({ refreshToken: session.refreshToken }),
     });
   } catch {
-    return 'unavailable';
+    return { outcome: 'unavailable' };
   }
 
-  const json = (await readJson(response)) as (Partial<TokenPair> & { success?: boolean }) | null;
+  const json = (await readJson(response)) as
+    | (Partial<TokenPair> & { success?: boolean; code?: string; error?: string })
+    | null;
 
   if (response.ok && json?.token) {
     await storeTokens({
@@ -140,13 +190,20 @@ async function performRefresh(): Promise<RefreshOutcome> {
       expiresIn: json.expiresIn,
       refreshToken: json.refreshToken,
     });
-    return 'refreshed';
+    return { outcome: 'refreshed' };
   }
 
   // 401 REFRESH_INVALID / REFRESH_REUSED: the chain is dead, sign in again.
-  if (response.status === 401) return 'expired';
+  if (response.status === 401) return { outcome: 'expired' };
+  // 403 ACCOUNT_INACTIVE: the account was deactivated; show the server's reason.
+  if (response.status === 403 && json?.code === 'ACCOUNT_INACTIVE') {
+    return {
+      outcome: 'expired',
+      message: typeof json.error === 'string' && json.error ? json.error : 'Your account is no longer active.',
+    };
+  }
   // 429 / 5xx: keep the session and let the caller retry later.
-  return 'unavailable';
+  return { outcome: 'unavailable' };
 }
 
 function isExpiringSoon(session: StoredSession): boolean {
@@ -161,8 +218,8 @@ export async function getAccessToken(): Promise<string> {
   const session = await getSession();
   if (!session) return expireSession();
   if (session.refreshToken && isExpiringSoon(session)) {
-    const outcome = await refreshSession();
-    if (outcome === 'expired') return expireSession();
+    const { outcome, message } = await refreshSession();
+    if (outcome === 'expired') return expireSession(message);
     // 'unavailable': try the current token anyway; the server has the final word.
   }
   return (await getSession())?.accessToken ?? expireSession();
@@ -178,8 +235,8 @@ export async function recoverFromUnauthorized(usedToken: string): Promise<string
   // Another request already refreshed while this one was in flight.
   if (current.accessToken !== usedToken) return current.accessToken;
 
-  const outcome = await refreshSession();
-  if (outcome === 'expired') return expireSession();
+  const { outcome, message } = await refreshSession();
+  if (outcome === 'expired') return expireSession(message);
   if (outcome === 'unavailable') throw new ApiError(NETWORK_MESSAGE, 0, 'NETWORK');
   const refreshed = await getSession();
   return refreshed?.accessToken ?? expireSession();

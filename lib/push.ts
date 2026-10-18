@@ -15,14 +15,29 @@ Notifications?.setNotificationHandler({
   }),
 });
 
+function pushSupported(): boolean {
+  return !!Notifications && Device.isDevice && (Platform.OS === 'ios' || Platform.OS === 'android');
+}
+
 /**
- * Requests notification permission (no-op if already granted/denied), obtains
- * an Expo push token, and registers this device with the devices endpoint. Call after sign-in and whenever the push token changes. Silently
+ * True when the OS hasn't been asked for notification permission yet, so the
+ * app should show its own "Stay updated" screen before triggering the prompt.
+ */
+export async function shouldAskForNotifications(): Promise<boolean> {
+  if (!pushSupported() || !Notifications) return false;
+  const { status, canAskAgain } = await Notifications.getPermissionsAsync();
+  return status === 'undetermined' && canAskAgain;
+}
+
+/**
+ * Obtains an Expo push token when permission allows and registers this device
+ * with the devices endpoint. With `prompt` (the default) it asks for permission
+ * first if the OS hasn't been asked yet; `prompt: false` never shows the OS
+ * dialog. Call after sign-in and whenever the push token changes. Silently
  * no-ops on simulators/emulators and on web, where push tokens aren't available.
  */
-export async function registerForPushNotifications(): Promise<void> {
-  if (!Notifications || !Device.isDevice) return;
-  if (Platform.OS !== 'ios' && Platform.OS !== 'android') return;
+export async function registerForPushNotifications({ prompt = true }: { prompt?: boolean } = {}): Promise<void> {
+  if (!pushSupported() || !Notifications) return;
 
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
@@ -33,7 +48,7 @@ export async function registerForPushNotifications(): Promise<void> {
 
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
-  if (existingStatus !== 'granted') {
+  if (existingStatus !== 'granted' && prompt) {
     const { status } = await Notifications.requestPermissionsAsync();
     finalStatus = status;
   }
@@ -42,7 +57,12 @@ export async function registerForPushNotifications(): Promise<void> {
   let pushToken: string | undefined;
   if (finalStatus === 'granted') {
     const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
-    pushToken = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
+    try {
+      // Throws without an EAS projectId (run `eas init`) or when the push service is unreachable.
+      pushToken = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
+    } catch (error) {
+      if (__DEV__) console.warn('[push] Could not get an Expo push token; registering device without one.', error);
+    }
   }
 
   // Registered even without a push token so the backend knows the device for sign-out.
@@ -61,7 +81,7 @@ export async function registerForPushNotifications(): Promise<void> {
 export function watchPushToken(): () => void {
   if (!Notifications) return () => {};
   const subscription = Notifications.addPushTokenListener(() => {
-    registerForPushNotifications().catch(() => {});
+    registerForPushNotifications({ prompt: false }).catch(() => {});
   });
   return () => subscription.remove();
 }

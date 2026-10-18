@@ -11,6 +11,30 @@ interface Options {
 
 type Envelope<T> = { data?: T[]; pagination?: Pagination } & Record<string, unknown>;
 
+const keyOf = (item: { _id?: string; id?: string }) => item._id ?? item.id;
+
+/**
+ * Fold a fresh first page into the loaded list: matching ids are replaced in
+ * place, new ones are prepended (in server order), later pages are kept.
+ */
+function mergeFirstPage<T extends { _id?: string; id?: string }>(prev: T[], fresh: T[]): T[] {
+  const freshById = new Map<string, T>();
+  for (const item of fresh) {
+    const k = keyOf(item);
+    if (k !== undefined) freshById.set(k, item);
+  }
+  const prevKeys = new Set(prev.map(keyOf));
+  const added = fresh.filter((item) => {
+    const k = keyOf(item);
+    return k === undefined || !prevKeys.has(k);
+  });
+  const updated = prev.map((item) => {
+    const k = keyOf(item);
+    return (k !== undefined && freshById.get(k)) || item;
+  });
+  return [...added, ...updated];
+}
+
 /**
  * Paginated list endpoint (`?page=&limit=` → `{ data, pagination }`).
  * `extra` is the first page's envelope, for side fields like `summary` or `unreadCount`.
@@ -32,7 +56,12 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const mounted = useRef(true);
   // Ignore responses from a superseded request (filter changed, pulled to refresh).
+  // Silent polls don't bump it, so they never discard an in-flight loadMore.
   const generation = useRef(0);
+  // First-page requests still running; a silent poll never stacks on (or races) one.
+  const firstPageInFlight = useRef(0);
+  // Synchronous guard: two onEndReached calls in one frame must not fetch the same page twice.
+  const loadingMoreRef = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -54,24 +83,35 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
     async (mode: 'initial' | 'refresh' | 'silent') => {
       const url = urlFor(1);
       if (!url) return;
-      const gen = ++generation.current;
+      if (mode === 'silent' && firstPageInFlight.current > 0) return;
+      const gen = mode === 'silent' ? generation.current : ++generation.current;
+      const current = () => mounted.current && gen === generation.current;
+      firstPageInFlight.current++;
       if (mode === 'initial') setLoading(true);
       if (mode === 'refresh') setRefreshing(true);
       if (mode !== 'silent') setError(null);
       try {
         const json = await apiFetch<Envelope<T>>(url);
-        if (!mounted.current || gen !== generation.current) return;
-        setItems(json.data ?? []);
+        if (!current()) return;
+        const total = json.pagination?.totalPages ?? json.pagination?.pages ?? 1;
+        if (mode === 'silent') {
+          // Keep what the user has scrolled through; just refresh the top.
+          setItems((prev) => mergeFirstPage(prev, json.data ?? []));
+          setTotalPages((prev) => Math.max(prev, total));
+        } else {
+          setItems(json.data ?? []);
+          setPage(1);
+          setTotalPages(total);
+          setLoadMoreError(null);
+        }
         setExtra(json as unknown as X);
-        setPage(1);
-        setTotalPages(json.pagination?.totalPages ?? json.pagination?.pages ?? 1);
         setError(null);
-        setLoadMoreError(null);
       } catch (err) {
-        if (!mounted.current || gen !== generation.current) return;
+        if (!current()) return;
         setError(errorMessage(err, 'Failed to load. Pull to retry.'));
       } finally {
-        if (mounted.current && gen === generation.current) {
+        firstPageInFlight.current--;
+        if (current()) {
           setLoading(false);
           setRefreshing(false);
         }
@@ -92,10 +132,11 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
   const hasMore = page < totalPages;
 
   const loadMore = useCallback(async () => {
-    if (!hasMore || loadingMore || loading || refreshing) return;
+    if (!hasMore || loadingMoreRef.current || loading || refreshing) return;
     const url = urlFor(page + 1);
     if (!url) return;
     const gen = generation.current;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
@@ -103,18 +144,18 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
       if (!mounted.current || gen !== generation.current) return;
       setItems((prev) => {
         // Records created since page 1 shift later pages; drop duplicates.
-        const key = (item: T) => item._id ?? item.id;
-        const seen = new Set(prev.map(key));
-        return [...prev, ...(json.data ?? []).filter((item) => !seen.has(key(item)))];
+        const seen = new Set(prev.map(keyOf));
+        return [...prev, ...(json.data ?? []).filter((item) => !seen.has(keyOf(item)))];
       });
       setPage(page + 1);
       setTotalPages(json.pagination?.totalPages ?? json.pagination?.pages ?? page + 1);
     } catch (err) {
-      if (mounted.current) setLoadMoreError(errorMessage(err, "Couldn't load more."));
+      if (mounted.current && gen === generation.current) setLoadMoreError(errorMessage(err, "Couldn't load more."));
     } finally {
+      loadingMoreRef.current = false;
       if (mounted.current) setLoadingMore(false);
     }
-  }, [hasMore, loadingMore, loading, refreshing, urlFor, page]);
+  }, [hasMore, loading, refreshing, urlFor, page]);
 
   const refresh = useCallback(() => loadFirst('refresh'), [loadFirst]);
   const reload = useCallback(() => loadFirst('initial'), [loadFirst]);

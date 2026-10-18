@@ -96,6 +96,24 @@ export async function clearSession(): Promise<void> {
   ]);
 }
 
+/** Whether this install has already shown the first-launch welcome screen. */
+export async function getWelcomeSeen(): Promise<boolean> {
+  return (await SecureStore.getItemAsync('welcome_seen')) === '1';
+}
+
+export async function setWelcomeSeen(): Promise<void> {
+  await SecureStore.setItemAsync('welcome_seen', '1');
+}
+
+/** Whether this install has finished (or skipped) the in-app quick tour. */
+export async function getTourSeen(): Promise<boolean> {
+  return (await SecureStore.getItemAsync('tour_seen')) === '1';
+}
+
+export async function setTourSeen(): Promise<void> {
+  await SecureStore.setItemAsync('tour_seen', '1');
+}
+
 /**
  * Stable per-install identifier sent as `deviceId` to the devices and session
  * endpoints. Expo has no persistent hardware id, so one is generated once.

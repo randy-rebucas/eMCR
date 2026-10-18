@@ -39,7 +39,11 @@ interface AuthContextValue {
   /** Store the new token pair a password change returns (other devices are signed out). */
   applyRotatedTokens: (pair: Partial<TokenPair>) => Promise<void>;
   setPatientSummary: (patient: PatientSummary) => void;
-  /** Sign out on this device, or everywhere. Throws only when "everywhere" couldn't reach the server. */
+  /**
+   * Sign out on this device, or everywhere. The local session is always cleared.
+   * With `everywhere`, throws (after clearing) when the server didn't confirm the
+   * other sessions were revoked; the same warning is also set as the sign-in `notice`.
+   */
   signOut: (options?: { everywhere?: boolean }) => Promise<void>;
 }
 
@@ -62,10 +66,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // A rejected refresh token anywhere in the app lands here.
   useEffect(() => {
-    setSessionExpiredHandler(() => {
+    setSessionExpiredHandler((message) => {
       clearDocumentCache();
       setState({ status: 'signedOut' });
-      if (!signingOut.current) setNotice('Your session has expired. Please sign in again.');
+      if (!signingOut.current) setNotice(message ?? 'Your session has expired. Please sign in again.');
     });
     return () => setSessionExpiredHandler(null);
   }, []);
@@ -81,7 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const profile = await apiRequest<PatientProfile>('/api/patients/me');
         setState({ status: 'signedIn', patient: patientSummaryFromProfile(profile) });
-        registerForPushNotifications().catch(() => {});
+        registerForPushNotifications({ prompt: false }).catch(() => {});
       } catch (error) {
         if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
           // 401 here means even the refresh failed; 403 means the account was deactivated.
@@ -107,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await storeTokens(result);
     setNotice(null);
     setState({ status: 'signedIn', patient: result.patient });
-    registerForPushNotifications().catch(() => {});
+    registerForPushNotifications({ prompt: false }).catch(() => {});
   }, []);
 
   const loginWithPassword = useCallback(
@@ -163,6 +167,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       expiresIn: pair.expiresIn,
       refreshToken: pair.refreshToken,
     });
+    // A password change drops the backend's device registrations; register this one again.
+    registerForPushNotifications({ prompt: false }).catch(() => {});
   }, []);
 
   const setPatientSummary = useCallback((patient: PatientSummary) => {
@@ -172,12 +178,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async (options: { everywhere?: boolean } = {}) => {
     const everywhere = options.everywhere ?? false;
     signingOut.current = true;
+    let failure: unknown = null;
     try {
       const session = await getSession();
       if (session) {
         const deviceId = await getOrCreateDeviceId();
         const path = AUTH_ENDPOINTS.session + query({ deviceId, all: everywhere ? 'true' : undefined });
         try {
+          // apiFetch refreshes a stale access token first. The refresh token always
+          // rides along in the body, so the server can still honour the sign-out
+          // when the access token has expired.
           await apiFetch(path, {
             method: 'DELETE',
             // Read at send time: if the access token had to be refreshed first, the
@@ -188,15 +198,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             },
           });
         } catch (error) {
-          const alreadyExpired = error instanceof ApiError && error.code === 'SESSION_EXPIRED';
-          // "Everywhere" is a security action: tell the user if it didn't happen.
-          if (everywhere && !alreadyExpired) throw error;
+          failure = error;
         }
       }
+      // Whatever the server said, this device is signed out.
       await clearSession();
       clearDocumentCache();
-      setNotice(null);
       setState({ status: 'signedOut' });
+      if (everywhere && failure) {
+        // "Everywhere" is a security action: tell the user it may not have happened.
+        const message =
+          "You're signed out on this device, but we couldn't confirm your other devices were signed out. " +
+          'Sign in and try again, or change your password.';
+        setNotice(message);
+        throw new ApiError(
+          message,
+          failure instanceof ApiError ? failure.status : 0,
+          'SIGN_OUT_EVERYWHERE_FAILED',
+          failure instanceof ApiError ? failure.body : undefined
+        );
+      }
+      setNotice(null);
     } finally {
       signingOut.current = false;
     }

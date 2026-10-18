@@ -13,6 +13,19 @@ export interface PatientSummary {
   email: string | null;
 }
 
+/** One entry of `GET /api/patients/me/clinics`: a clinic the patient is registered at. */
+export interface PatientClinic {
+  tenantId: string;
+  name: string;
+  subdomain: string | null;
+  logo: string | null;
+  address: { street?: string; city?: string; state?: string; zipCode?: string; country?: string } | null;
+  phone: string | null;
+  /** The patient's code at this clinic. */
+  patientCode: string | null;
+  lastVisitAt: string | null;
+}
+
 /** `GET /api/patients/me` */
 export interface PatientProfile {
   _id: string;
@@ -29,6 +42,9 @@ export interface PatientProfile {
   address?: { street?: string; city?: string; state?: string; zipCode?: string };
   emergencyContact?: { name?: string; phone?: string; relationship?: string };
   hasPassword?: boolean;
+  /** Recorded by the clinic; read-only for the patient. */
+  allergies?: Array<string | { substance: string; reaction?: string; severity?: string }>;
+  preExistingConditions?: Array<{ condition: string; status?: 'active' | 'resolved' | 'chronic'; notes?: string }>;
 }
 
 /** The only fields `PATCH /api/patients/me` accepts. */
@@ -66,21 +82,35 @@ export interface Appointment {
   status: AppointmentStatus;
   reason?: string;
   room?: string;
-  notes?: string;
   doctor?: DoctorRef | null;
   createdAt?: string;
 }
 
 /** `GET /api/patients/appointments` (+ `?date&doctorId`) */
+export interface BookingDoctor extends DoctorRef {
+  /** "Mon–Fri 9 AM–5 PM · Sat 9 AM–12 PM"; null when the clinic hasn't set weekly hours. */
+  hoursSummary?: string | null;
+  /** "yyyy-MM-dd" days the doctor sees patients (next 60 days). Missing on older servers. */
+  bookableDates?: string[];
+}
+
 export interface BookingOptions {
-  doctors: DoctorRef[];
+  doctors: BookingDoctor[];
   availableSlots?: string[];
+  /** The doctor isn't seeing patients on the requested date. */
+  dayOff?: boolean;
 }
 
 export interface QueueEntry {
   _id: string;
   queueNumber: string;
+  queueType?: 'appointment' | 'walk-in' | 'follow-up';
   status: 'waiting' | 'in-progress' | 'completed' | 'cancelled' | 'no-show';
+  /** Only checked-in patients appear on the clinic's queue display. */
+  checkedIn?: boolean;
+  /** JSON the clinic kiosk/front desk scans to check the patient in. */
+  qrCode?: string;
+  queuedAt?: string;
   position: number | null;
   estimatedWaitTime?: number;
   doctor?: { firstName: string; lastName: string } | null;
@@ -129,8 +159,30 @@ export interface Prescription {
   issuedAt?: string;
   medications: Medication[];
   notes?: string;
-  prescribedBy?: { firstName?: string; lastName?: string; email?: string } | null;
+  /** `{ _id, name }` from current servers; older servers sent firstName/lastName/email. */
+  prescribedBy?: {
+    _id?: string;
+    name?: string;
+    /** @deprecated older servers only */
+    firstName?: string;
+    /** @deprecated older servers only */
+    lastName?: string;
+    /** @deprecated older servers only */
+    email?: string;
+  } | null;
+  /** The encounter it was written in (header fields only); a bare id from older servers. */
+  visit?: PrescriptionVisit | string | null;
+  pharmacyDispenses?: { pharmacyName?: string; dispensedAt?: string }[];
   createdAt: string;
+}
+
+export interface PrescriptionVisit {
+  _id: string;
+  date?: string;
+  visitType?: 'consultation' | 'follow-up' | 'checkup' | 'emergency' | 'teleconsult' | 'vaccination';
+  visitCode?: string;
+  /** Treating provider, when the server includes it: `{ _id, name }` only. */
+  provider?: { _id?: string; name?: string } | null;
 }
 
 export type InvoiceStatus = 'unpaid' | 'partial' | 'paid' | 'refunded';
@@ -138,7 +190,7 @@ export type InvoiceStatus = 'unpaid' | 'partial' | 'paid' | 'refunded';
 export interface Invoice {
   _id: string;
   invoiceNumber?: string;
-  items?: { code?: string; description?: string; quantity: number; unitPrice: number; total: number }[];
+  items?: { code?: string; description?: string; category?: string; quantity: number; unitPrice: number; total: number }[];
   subtotal?: number;
   discounts?: { type: string; reason?: string; amount: number }[];
   tax?: number;
@@ -176,6 +228,7 @@ export interface PatientDocument {
 export type NotificationScreen = 'appointments' | 'lab-results' | 'invoices' | 'prescriptions';
 
 export interface PatientNotification {
+  /** Opaque; may carry a status suffix (e.g. `<invoiceId>:paid`). Never parse it. */
   id: string;
   type: 'appointment' | 'lab_result' | 'invoice' | 'prescription';
   title: string;
@@ -183,6 +236,8 @@ export interface PatientNotification {
   date: string;
   read: boolean;
   target: { screen: NotificationScreen; id: string };
+  /** Extra fields by type; invoice notifications may carry `balance` (PHP). */
+  metadata?: { balance?: number } & Record<string, unknown>;
 }
 
 /** `GET /api/patients/me/notifications` */

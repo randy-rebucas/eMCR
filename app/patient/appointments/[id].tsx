@@ -1,30 +1,18 @@
 import { useState } from 'react';
 import { Alert, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { apiRequest, errorMessage } from '@/lib/api';
-import { emitRefresh } from '@/lib/events';
+import { errorMessage } from '@/lib/api';
+import { cancelAppointment, canCancel } from '@/lib/appointments';
 import { useApiData } from '@/lib/useApiData';
 import { Appointment } from '@/lib/types';
 import { doctorName, formatDate, formatTime } from '@/lib/format';
 import { colors } from '@/lib/theme';
-import { Banner, Button, Card, DetailRow, LoadingView, screenStyles } from '@/components/ui';
+import { Banner, Button, Card, DetailRow, LoadingView, screenStyles, useBottomPadding } from '@/components/ui';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorState } from '@/components/ErrorState';
 
-const NOT_CANCELLABLE = new Set(['completed', 'cancelled', 'no-show']);
-
-function isInFuture(a: Appointment): boolean {
-  const date = a.appointmentDate ?? a.scheduledAt;
-  if (!date) return false;
-  const start = new Date(date);
-  if (a.appointmentTime && /^\d{2}:\d{2}$/.test(a.appointmentTime)) {
-    const [h, m] = a.appointmentTime.split(':').map(Number);
-    start.setHours(h, m, 0, 0);
-  }
-  return start.getTime() > Date.now();
-}
-
 export default function AppointmentDetailScreen() {
+  const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, loading, refreshing, error, refresh, poll } = useApiData<Appointment>(
     id ? `/api/patients/me/appointments/${encodeURIComponent(id)}` : null,
@@ -38,8 +26,7 @@ export default function AppointmentDetailScreen() {
   if (!data) return <ErrorState message="Appointment not found." onRetry={refresh} />;
 
   const appointment = data;
-  // The server has the final say (clinic timezone); this only hides the button when it obviously can't work.
-  const canCancel = !NOT_CANCELLABLE.has(appointment.status) && isInFuture(appointment);
+  const cancellable = canCancel(appointment);
 
   function confirmCancel() {
     Alert.alert('Cancel appointment?', 'The clinic will be notified. This cannot be undone.', [
@@ -52,8 +39,7 @@ export default function AppointmentDetailScreen() {
     setCancelling(true);
     setActionError(null);
     try {
-      await apiRequest(`/api/patients/appointments/${encodeURIComponent(appointment._id)}`, { method: 'DELETE' });
-      emitRefresh('appointments', 'notifications');
+      await cancelAppointment(appointment._id);
       poll();
     } catch (err) {
       setActionError(errorMessage(err, "Couldn't cancel the appointment. Please try again."));
@@ -65,7 +51,7 @@ export default function AppointmentDetailScreen() {
   return (
     <ScrollView
       style={screenStyles.container}
-      contentContainerStyle={screenStyles.content}
+      contentContainerStyle={[screenStyles.content, { paddingBottom: bottomPad }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
     >
       {actionError ? <Banner message={actionError} /> : null}
@@ -90,7 +76,7 @@ export default function AppointmentDetailScreen() {
         <Text style={screenStyles.muted}>The clinic will confirm this request. You'll get a notification once it does.</Text>
       ) : null}
 
-      {canCancel ? (
+      {cancellable ? (
         <Button title="Cancel appointment" variant="dangerOutline" onPress={confirmCancel} loading={cancelling} />
       ) : null}
     </ScrollView>

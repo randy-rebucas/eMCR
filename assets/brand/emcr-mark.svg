@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#16B9B7"/>
+    <stop offset="0.55" stop-color="#0A7F7E"/>
+    <stop offset="1" stop-color="#075E5D"/>
+  </linearGradient>
+  <radialGradient id="glow" cx="0.25" cy="0.15" r="0.75">
+    <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+    <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#0EA5A4"/>
+    <stop offset="1" stop-color="#0A7F7E"/>
+  </linearGradient>
+    <filter id="blur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="0.9"/></filter>
+    
+  </defs>
+  
+  <g transform="translate(-40 -48.05000000000007) scale(46)">
+    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="url(#mark)"/>
+    <polyline points="3.5,11.5 8,11.5 9.5,8.5 11.5,15 13.5,7 15,11.5 20.5,11.5" fill="none" stroke="#FFFFFF" stroke-width="1.5"
+      stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

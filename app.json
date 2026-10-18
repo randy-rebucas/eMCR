@@ -9,16 +9,21 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "solutions.myclinicsoft.emcr"
     },
     "android": {
+      "package": "solutions.myclinicsoft.emcr",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0A7F7E",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -26,16 +31,14 @@
     "plugins": [
       "expo-secure-store",
       "expo-router",
-      "expo-notifications",
-      "expo-sharing",
       [
-        "expo-image-picker",
+        "expo-notifications",
         {
-          "photosPermission": "Allow $(PRODUCT_NAME) to use a photo from your library as your profile picture.",
-          "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera to scan your clinic login QR code.",
-          "microphonePermission": false
+          "icon": "./assets/notification-icon.png",
+          "color": "#0A7F7E"
         }
       ],
+      "expo-sharing",
       [
         "expo-camera",
         {
@@ -44,10 +47,25 @@
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true
         }
+      ],
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "backgroundColor": "#E3F6F5"
+        }
       ]
     ],
     "extra": {
-      "apiUrl": "http://localhost:3000"
-    }
+      "apiUrl": "http://localhost:3000",
+      "router": {},
+      "eas": {
+        "projectId": "bc6fa724-5583-4a27-ab35-711dcf50e41f"
+      }
+    },
+    "owner": "randyreb"
   }
 }
