@@ -1,7 +1,9 @@
 {
   "expo": {
-    "name": "clinic-management-mobile",
-    "slug": "clinic-management-mobile",
+    "name": "eMCR",
+    "slug": "emcr",
+    "description": "eMCR (Electronic MyClinic Record) — your appointments, results, prescriptions and bills from your MyClinicSoft clinic.",
+    "scheme": "myclinicsoft",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -20,6 +22,32 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-router",
+      "expo-notifications",
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to use a photo from your library as your profile picture.",
+          "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera to scan your clinic login QR code.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera to scan your clinic login QR code.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "http://localhost:3000"
     }
   }
 }
