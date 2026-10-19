@@ -91,6 +91,8 @@ export interface BookedSummary {
   /** "yyyy-MM-dd" as chosen (the stored date is clinic-midnight UTC, so it isn't re-read). */
   date: string;
   time: string;
+  /** Booked as a video visit. */
+  video?: boolean;
 }
 
 export function BookingForm({
@@ -118,6 +120,7 @@ export function BookingForm({
   const [slotsVersion, setSlotsVersion] = useState(0);
   const [time, setTime] = useState<string | null>(null);
   const [reason, setReason] = useState('');
+  const [video, setVideo] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Guards a second tap before `submitting` re-renders.
@@ -160,6 +163,8 @@ export function BookingForm({
   }, [doctorId, date, slotsVersion, clinicParam]);
 
   const doctors: BookingDoctor[] = doctorsQuery.data?.doctors ?? [];
+  const videoOffered = doctorsQuery.data?.teleconsultAvailable === true;
+  const wantsVideo = videoOffered && video;
   const specialties = useMemo(
     () => [...new Set(doctors.map((d) => d.specialization).filter((s): s is string => !!s))].sort(),
     [doctors]
@@ -254,10 +259,11 @@ export function BookingForm({
           appointmentDate: date,
           appointmentTime: time,
           ...(reason.trim() ? { reason: reason.trim() } : {}),
+          ...(wantsVideo ? { modality: 'teleconsult' } : {}),
         },
       });
       emitRefresh('appointments', 'notifications');
-      onBooked({ appointment: created ?? null, doctor: doctorName(doctor), date, time });
+      onBooked({ appointment: created ?? null, doctor: doctorName(doctor), date, time, video: wantsVideo });
     } catch (err) {
       setError(errorMessage(err, "Couldn't book the appointment. Please try again."));
       if (err instanceof ApiError && (err.status === 409 || err.status === 400)) setSlotsVersion((v) => v + 1);
@@ -466,6 +472,33 @@ export function BookingForm({
         ) : null}
       </Step>
 
+      {videoOffered ? (
+        <Step n={nextStep()} title="Visit Type" done>
+          <View style={styles.modes}>
+            {[
+              { value: false, icon: 'business-outline' as IconName, title: 'At the clinic', hint: 'See the doctor in person' },
+              { value: true, icon: 'videocam-outline' as IconName, title: 'Video call', hint: 'From your phone, with camera and mic' },
+            ].map((m) => {
+              const selected = video === m.value;
+              return (
+                <TouchableOpacity
+                  key={m.title}
+                  style={[styles.mode, selected && styles.selected]}
+                  onPress={() => setVideo(m.value)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${m.title}. ${m.hint}`}
+                >
+                  <Ionicons name={m.icon} size={24} color={colors.primary} />
+                  <Text style={styles.modeTitle}>{m.title}</Text>
+                  <Text style={styles.modeHint}>{m.hint}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </Step>
+      ) : null}
+
       <Step n={nextStep()} title="Reason for Visit" optional>
         <TextInput
           style={styles.reason}
@@ -486,6 +519,7 @@ export function BookingForm({
           <ReviewRow icon="person-outline" text={`${doctorName(doctor)}${doctor.specialization ? ` · ${doctor.specialization}` : ''}`} />
           <ReviewRow icon="calendar-outline" text={longDate(date)} />
           <ReviewRow icon="time-outline" text={formatTime(time)} />
+          {wantsVideo ? <ReviewRow icon="videocam-outline" text="Video call — join from this app" /> : null}
           {reason.trim() ? <ReviewRow icon="chatbox-ellipses-outline" text={reason.trim()} /> : null}
         </View>
       ) : null}
@@ -528,6 +562,7 @@ export function BookingSuccess({
         {booked.doctor ? <ReviewRow icon="person-outline" text={booked.doctor} /> : null}
         <ReviewRow icon="calendar-outline" text={longDate(booked.date)} />
         <ReviewRow icon="time-outline" text={formatTime(booked.time)} />
+        {booked.video ? <ReviewRow icon="videocam-outline" text="Video call — the Join button appears 15 minutes before" /> : null}
         {appointment?.appointmentCode ? <ReviewRow icon="pricetag-outline" text={`Ref ${appointment.appointmentCode}`} /> : null}
       </View>
       {appointment?._id ? <Button title="View Appointment" onPress={onView} style={styles.stretch} /> : null}
@@ -723,6 +758,19 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   counter: { fontSize: 11, color: colors.textMuted, textAlign: 'right', marginTop: 4 },
+  modes: { flexDirection: 'row', gap: spacing.sm + 2 },
+  mode: {
+    flex: 1,
+    minHeight: 96,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#E3ECEE',
+    backgroundColor: colors.surfaceMuted,
+    padding: spacing.sm + 4,
+    gap: 4,
+  },
+  modeTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  modeHint: { fontSize: 12, color: colors.textMuted },
   review: {
     backgroundColor: colors.primarySoft,
     borderRadius: radius.md,

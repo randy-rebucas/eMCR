@@ -1,4 +1,6 @@
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { apiRequest, errorMessage } from '@/lib/api';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApiData } from '@/lib/useApiData';
@@ -6,7 +8,7 @@ import { Prescription } from '@/lib/types';
 import { formatDate, formatDateTime, humanize } from '@/lib/format';
 import { prescriberName, visitOf } from '@/lib/prescriptions';
 import { colors, radius, spacing } from '@/lib/theme';
-import { DetailRow, LoadingView, useBottomPadding } from '@/components/ui';
+import { Banner, Button, DetailRow, LoadingView, useBottomPadding } from '@/components/ui';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorState } from '@/components/ErrorState';
 import { MedicationCard } from '@/components/MedicationCard';
@@ -19,6 +21,23 @@ export default function PrescriptionDetailScreen() {
     id ? `/api/patients/me/prescriptions/${encodeURIComponent(id)}` : null,
     { refreshOn: ['prescriptions'] }
   );
+  const [opening, setOpening] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
+  // The browser can't send the app's sign-in, so ask for a short-lived link and open that.
+  async function openPdf() {
+    if (!data) return;
+    setOpening(true);
+    setPdfError(null);
+    try {
+      const link = await apiRequest<{ url: string }>(`/api/patients/me/prescriptions/${encodeURIComponent(data._id)}/pdf-link`, { method: 'POST' });
+      await Linking.openURL(link.url);
+    } catch (err) {
+      setPdfError(errorMessage(err, "Couldn't open the prescription. Please try again."));
+    } finally {
+      setOpening(false);
+    }
+  }
 
   if (loading) return <LoadingView />;
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
@@ -55,6 +74,14 @@ export default function PrescriptionDetailScreen() {
         />
         <DetailRow label="Visit reference" value={visit?.visitCode} />
       </View>
+
+      {data.status !== 'cancelled' ? (
+        <View style={styles.pdf}>
+          <Button title="Open e-prescription (PDF)" icon="download-outline" variant="secondary" onPress={openPdf} loading={opening} />
+          <Text style={styles.footnote}>The sealed copy pharmacies can verify by scanning its QR code.</Text>
+          {pdfError ? <Banner message={pdfError} /> : null}
+        </View>
+      ) : null}
 
       <Text style={styles.section} accessibilityRole="header">
         Medications
@@ -131,4 +158,5 @@ const styles = StyleSheet.create({
   dispense: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4, paddingVertical: spacing.sm },
   divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   footnote: { fontSize: 13, color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg },
+  pdf: { marginTop: spacing.md, gap: spacing.sm },
 });
