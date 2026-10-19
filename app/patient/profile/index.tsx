@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApiData } from '@/lib/useApiData';
 import { useAuth } from '@/lib/auth';
+import { useProfile } from '@/lib/profile';
 import { ApiError, errorMessage } from '@/lib/api';
 import { PatientProfile } from '@/lib/types';
 import { formatDate, humanize } from '@/lib/format';
@@ -37,6 +38,8 @@ function allergyText(a: NonNullable<PatientProfile['allergies']>[number]): strin
 export default function ProfileScreen() {
   const bottomPad = useBottomPadding();
   const { signOut } = useAuth();
+  const { viewing } = useProfile();
+  const self = viewing?.self !== false;
   const { data, loading, refreshing, error, refresh } = useApiData<PatientProfile>('/api/patients/me', {
     refreshOn: ['profile'],
   });
@@ -74,9 +77,11 @@ export default function ProfileScreen() {
     <SafeAreaView edges={['top']}>
       <AppHeader back />
       <Text style={styles.title} accessibilityRole="header">
-        My Profile
+        {self ? 'My Profile' : `${viewing?.firstName}'s Profile`}
       </Text>
-      <Text style={styles.subtitle}>View and manage your personal information.</Text>
+      <Text style={styles.subtitle}>
+        {self ? 'View and manage your personal information.' : 'A family member whose records you manage.'}
+      </Text>
     </SafeAreaView>
   );
 
@@ -182,6 +187,7 @@ export default function ProfileScreen() {
             />
           </Section>
 
+          {self ? (
           <Section title="Account & Security">
             <ActionRow
               icon="lock-closed-outline"
@@ -199,6 +205,11 @@ export default function ProfileScreen() {
               last
             />
           </Section>
+          ) : (
+            <Text style={styles.hint}>
+              {viewing?.firstName} signs in with their own account, if they have one. Manage family access from Family.
+            </Text>
+          )}
         </>
       ) : null}
     </ScrollView>

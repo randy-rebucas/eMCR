@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useAuth } from '@/lib/auth';
+import { useProfile } from '@/lib/profile';
 import { useUnread } from '@/lib/unread';
 import { ApiError, errorMessage } from '@/lib/api';
 import { API_BASE_URL } from '@/lib/config';
@@ -30,7 +31,12 @@ function openWebPage(path: string) {
 }
 
 export default function MoreScreen() {
-  const { patient, signOut } = useAuth();
+  const { patient: me, signOut } = useAuth();
+  const { viewing, family } = useProfile();
+  const self = viewing?.self !== false;
+  // The profile card shows whoever's records are on screen.
+  const patient = self ? me : viewing ? { ...viewing, patientCode: null, email: null } : null;
+  const familyCount = family?.members.length ?? 0;
   const { unreadCount } = useUnread();
   const { replay: replayTour } = useTour();
   const [signingOut, setSigningOut] = useState(false);
@@ -77,7 +83,7 @@ export default function MoreScreen() {
         style={styles.profile}
         onPress={() => router.push('/patient/profile')}
         accessibilityRole="button"
-        accessibilityLabel={`${fullName}, view profile`}
+        accessibilityLabel={self ? `${fullName}, view profile` : `${fullName}, family member, view profile`}
       >
         <View style={styles.avatar}>
           {initials ? (
@@ -90,6 +96,7 @@ export default function MoreScreen() {
           <Text style={styles.profileName} numberOfLines={1}>
             {fullName}
           </Text>
+          {!self ? <Text style={styles.profileMeta}>Family member · you manage these records</Text> : null}
           {patient?.patientCode ? <Text style={styles.profileMeta}>Patient ID: {patient.patientCode}</Text> : null}
           {patient?.email ? (
             <Text style={styles.profileMeta} numberOfLines={1}>
@@ -100,7 +107,32 @@ export default function MoreScreen() {
         <Ionicons name="chevron-forward" size={20} color={colors.primary} />
       </TouchableOpacity>
 
+      <Group title="Family">
+        <Row
+          icon="people-outline"
+          tint="rose"
+          label={self ? 'Family' : 'Switch Profile'}
+          detail={
+            !self
+              ? `Viewing ${viewing?.firstName}. Switch back to you or another family member`
+              : familyCount
+                ? `You manage ${familyCount} family member${familyCount === 1 ? '' : 's'}`
+                : "Manage your children's or parents' records"
+          }
+          badge={self ? family?.suggestions.length || undefined : undefined}
+          onPress={() => router.push('/patient/family')}
+          last
+        />
+      </Group>
+
       <Group title="Health Records">
+        <Row
+          icon="heart-outline"
+          tint="rose"
+          label="Health Summary"
+          detail="Allergies, medicines and vaccines from every clinic"
+          onPress={() => router.push('/patient/health-summary')}
+        />
         <Row
           icon="business-outline"
           tint="amber"
@@ -144,13 +176,15 @@ export default function MoreScreen() {
           detail="Your personal and contact information"
           onPress={() => router.push('/patient/profile')}
         />
-        <Row
-          icon="lock-closed-outline"
-          tint="purple"
-          label="Password"
-          detail="Set or change your sign-in password"
-          onPress={() => router.push('/patient/profile/password')}
-        />
+        {self ? (
+          <Row
+            icon="lock-closed-outline"
+            tint="purple"
+            label="Password"
+            detail="Set or change your sign-in password"
+            onPress={() => router.push('/patient/profile/password')}
+          />
+        ) : null}
         <Row
           icon="mail-unread-outline"
           tint="teal"

@@ -9,7 +9,19 @@ import { Button, LoadingView } from './ui';
  * Full-screen QR scanner. Calls `onScanned` once with the raw string; the
  * parent decides whether to re-arm it (by remounting) after a failed sign-in.
  */
-export function QrScanner({ onScanned, onCancel }: { onScanned: (data: string) => void; onCancel: () => void }) {
+export function QrScanner({
+  onScanned,
+  onCancel,
+  prompt = 'Point the camera at the login QR code from your clinic.',
+  purpose = 'To sign in with your clinic QR code',
+}: {
+  onScanned: (data: string) => void;
+  onCancel: () => void;
+  /** Shown over the camera. */
+  prompt?: string;
+  /** Why the camera is needed, for the permission screen ("To … , allow the app to use the camera"). */
+  purpose?: string;
+}) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const handledRef = useRef(false);
@@ -29,8 +41,7 @@ export function QrScanner({ onScanned, onCancel }: { onScanned: (data: string) =
       <SafeAreaView style={styles.permission}>
         <Text style={styles.permissionTitle}>Camera access needed</Text>
         <Text style={styles.permissionText}>
-          To sign in with your clinic QR code, allow the app to use the camera. It's only used while this screen is
-          open.
+          {purpose}, allow the app to use the camera. It's only used while this screen is open.
         </Text>
         {permission.canAskAgain ? (
           <Button title="Allow camera" onPress={requestPermission} />
@@ -51,7 +62,7 @@ export function QrScanner({ onScanned, onCancel }: { onScanned: (data: string) =
         onBarcodeScanned={scanned ? undefined : handleScan}
       />
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
-        <Text style={styles.overlayText}>Point the camera at the login QR code from your clinic.</Text>
+        <Text style={styles.overlayText}>{prompt}</Text>
         <View style={styles.frame} />
         <TouchableOpacity style={styles.cancel} onPress={onCancel} accessibilityRole="button">
           <Text style={styles.cancelText}>Cancel</Text>

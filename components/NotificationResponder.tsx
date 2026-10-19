@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { emitRefresh } from '@/lib/events';
 import { Notifications as MaybeNotifications } from '@/lib/notifications';
 import { routeForNotification } from '@/lib/push';
+import { useProfile } from '@/lib/profile';
 
 // Survives remounts (sign out → sign in) so one tap is never handled twice.
 const handled = new Set<string>();
@@ -18,6 +19,7 @@ export function NotificationResponder() {
 
 function Responder({ Notifications }: { Notifications: NonNullable<typeof MaybeNotifications> }) {
   const lastResponse = Notifications.useLastNotificationResponse();
+  const { viewing, switchToId } = useProfile();
 
   useEffect(() => {
     if (!lastResponse || lastResponse.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
@@ -26,10 +28,20 @@ function Responder({ Notifications }: { Notifications: NonNullable<typeof MaybeN
     handled.add(id);
     Notifications.clearLastNotificationResponse();
 
-    const route = routeForNotification(lastResponse.notification.request.content.data ?? undefined);
+    const data = lastResponse.notification.request.content.data ?? undefined;
+    const route = routeForNotification(data);
+    // A push about a family member (`data.profileId`) opens their profile first. The screens
+    // remount for that person, so there's nothing to refresh here.
+    const profileId = typeof data?.profileId === 'string' ? data.profileId : null;
+    if (profileId && profileId !== viewing?.id) {
+      switchToId(profileId, route.href ?? undefined).then((switched) => {
+        if (!switched && route.href) router.push(route.href);
+      });
+      return;
+    }
     emitRefresh(...route.topics);
     if (route.href) router.push(route.href);
-  }, [lastResponse]);
+  }, [lastResponse, viewing?.id, switchToId]);
 
   useEffect(() => {
     const subscription = Notifications.addNotificationReceivedListener((notification) => {

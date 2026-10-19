@@ -1,62 +1,81 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@/lib/auth';
+import { possessive, useProfile } from '@/lib/profile';
 import { useUnread } from '@/lib/unread';
-import { colors, spacing } from '@/lib/theme';
+import { colors, radius, spacing } from '@/lib/theme';
 import { BrandLogo } from './BrandLogo';
 import { TourTarget } from './QuickTour';
 
-/** Logo + notifications bell + profile avatar, for the top of tab screens. */
+/**
+ * Logo + notifications bell + profile avatar, for the top of tab screens. While a family member's
+ * records are on screen, a strip under it says whose they are.
+ */
 export function AppHeader({ back = false }: { back?: boolean }) {
-  const { patient } = useAuth();
+  const { viewing } = useProfile();
   const { unreadCount } = useUnread();
   const pathname = usePathname();
-  const initials = patient ? `${patient.firstName?.[0] ?? ''}${patient.lastName?.[0] ?? ''}`.toUpperCase() : '';
+  const initials = viewing ? `${viewing.firstName?.[0] ?? ''}${viewing.lastName?.[0] ?? ''}`.toUpperCase() : '';
 
   return (
-    <View style={styles.bar}>
-      <View style={styles.brand}>
-        {back ? (
-          <TouchableOpacity onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Go back">
-            <Ionicons name="chevron-back" size={26} color={colors.text} />
-          </TouchableOpacity>
-        ) : null}
-        <BrandLogo size="sm" align="left" />
-      </View>
-      <View style={styles.actions}>
-        <TourTarget id="bell">
+    <View style={styles.wrap}>
+      <View style={styles.bar}>
+        <View style={styles.brand}>
+          {back ? (
+            <TouchableOpacity onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Go back">
+              <Ionicons name="chevron-back" size={26} color={colors.text} />
+            </TouchableOpacity>
+          ) : null}
+          <BrandLogo size="sm" align="left" />
+        </View>
+        <View style={styles.actions}>
+          <TourTarget id="bell">
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={() => router.push('/patient/notifications')}
+              accessibilityRole="button"
+              accessibilityLabel={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+            >
+              <Ionicons name="notifications-outline" size={22} color={colors.text} />
+              {unreadCount > 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText} maxFontSizeMultiplier={1.3}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Text>
+                </View>
+              ) : null}
+            </TouchableOpacity>
+          </TourTarget>
           <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => router.push('/patient/notifications')}
+            style={[styles.iconButton, styles.avatar]}
+            onPress={() => {
+              if (pathname !== '/patient/profile') router.push('/patient/profile');
+            }}
             accessibilityRole="button"
-            accessibilityLabel={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+            accessibilityLabel={viewing && !viewing.self ? `${viewing.firstName}'s profile` : 'Your profile'}
           >
-            <Ionicons name="notifications-outline" size={22} color={colors.text} />
-            {unreadCount > 0 ? (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText} maxFontSizeMultiplier={1.3}>
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </Text>
-              </View>
-            ) : null}
+            {initials ? (
+              <Text style={styles.avatarText}>{initials}</Text>
+            ) : (
+              <Ionicons name="person" size={20} color={colors.primary} />
+            )}
           </TouchableOpacity>
-        </TourTarget>
-        <TouchableOpacity
-          style={[styles.iconButton, styles.avatar]}
-          onPress={() => {
-            if (pathname !== '/patient/profile') router.push('/patient/profile');
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Your profile"
-        >
-          {initials ? (
-            <Text style={styles.avatarText}>{initials}</Text>
-          ) : (
-            <Ionicons name="person" size={20} color={colors.primary} />
-          )}
-        </TouchableOpacity>
+        </View>
       </View>
+      {viewing && !viewing.self ? (
+        <TouchableOpacity
+          style={styles.viewing}
+          onPress={() => router.push('/patient/family')}
+          accessibilityRole="button"
+          accessibilityLabel={`Viewing ${possessive(viewing)} records. Switch profile`}
+        >
+          <Ionicons name="people" size={16} color={colors.primaryOnSoft} />
+          <Text style={styles.viewingText} numberOfLines={1}>
+            Viewing <Text style={styles.viewingName}>{possessive(viewing)}</Text> records
+          </Text>
+          <Text style={styles.viewingAction}>Switch</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -70,13 +89,24 @@ export const softShadow = {
 };
 
 const styles = StyleSheet.create({
+  wrap: { marginTop: spacing.sm, marginBottom: spacing.lg, gap: spacing.sm + 4 },
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: spacing.sm,
-    marginBottom: spacing.lg,
   },
+  viewing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm + 4,
+    minHeight: 44,
+  },
+  viewingText: { flex: 1, fontSize: 14, color: colors.primaryOnSoft },
+  viewingName: { fontWeight: '700' },
+  viewingAction: { fontSize: 14, fontWeight: '700', color: colors.primaryOnSoft },
   brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4 },
   iconButton: {

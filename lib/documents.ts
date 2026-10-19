@@ -1,6 +1,6 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { ApiError, getAccessToken, recoverFromUnauthorized } from './api';
+import { ApiError, authHeaders, getAccessToken, recoverFromUnauthorized } from './api';
 import { API_BASE_URL } from './config';
 import { PatientDocument } from './types';
 
@@ -41,7 +41,7 @@ function statusOf(error: unknown): number | null {
 
 async function download(url: string, target: File, token: string): Promise<File> {
   return File.downloadFileAsync(url, target, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: authHeaders(token),
     idempotent: true,
   });
 }

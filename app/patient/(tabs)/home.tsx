@@ -4,11 +4,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
-import { useAuth } from '@/lib/auth';
+import { useProfile } from '@/lib/profile';
 import { useApiData } from '@/lib/useApiData';
 import { useUnread } from '@/lib/unread';
 import { Appointment, InvoiceListEnvelope, LabResult, QueueEntry } from '@/lib/types';
-import { formatDate, formatMoney } from '@/lib/format';
+import { clinicTodayYmd, clinicYmd, formatDate, formatMoney } from '@/lib/format';
 import { appointmentStart, isUpcoming } from '@/lib/appointments';
 import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from '@/components/ui';
@@ -32,7 +32,7 @@ const SHORTCUTS: { label: string; icon: IconName; href: string; bg: string; fg: 
 ];
 
 export default function HomeScreen() {
-  const { patient } = useAuth();
+  const { viewing: patient } = useProfile();
   const { refreshUnread } = useUnread();
   const appointments = useApiData<Appointment[]>('/api/patients/me/appointments?limit=20', {
     refreshOn: ['appointments'],
@@ -51,6 +51,9 @@ export default function HomeScreen() {
   }, [appointments.data]);
 
   const queueEntry = queue.data && ACTIVE_QUEUE.has(queue.data.status) ? queue.data : null;
+  // An in-person visit today with no check-in yet: offer the clinic's self check-in.
+  const nextIsToday = !!next && next.modality !== 'teleconsult' && clinicYmd(new Date(appointmentStart(next))) === clinicTodayYmd();
+  const offerCheckIn = !queue.loading && !queue.error && ((nextIsToday && !queueEntry) || (queueEntry?.status === 'waiting' && !queueEntry.checkedIn));
   const latestResult = results.data?.[0];
   const balance = invoices.data?.summary?.outstandingBalance ?? 0;
   const refreshing = appointments.refreshing || queue.refreshing || results.refreshing || invoices.refreshing;
@@ -154,6 +157,24 @@ export default function HomeScreen() {
             )}
           </Section>
 
+          {offerCheckIn ? (
+            <TouchableOpacity
+              style={[styles.card, styles.rowCard, styles.checkInCard]}
+              onPress={() => router.push({ pathname: '/patient/queue', params: { scan: '1' } })}
+              accessibilityRole="button"
+              accessibilityLabel="At the clinic? Scan the check-in QR code"
+            >
+              <View style={styles.tile}>
+                <Ionicons name="scan-outline" size={24} color={colors.primary} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.cardTitle}>At the clinic?</Text>
+                <Text style={styles.meta}>Scan the check-in QR at the front desk to join the queue.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          ) : null}
+
           {/* Queue — only while the patient is actually in line */}
           {queueEntry ? (
             <Section title="Queue Status" action="View Queue" onAction={() => router.push('/patient/queue')}>
@@ -219,6 +240,24 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </Section>
           ) : null}
+
+          {/* Health summary */}
+          <Section title="Health Summary" action="Open" onAction={() => router.push('/patient/health-summary')}>
+            <TouchableOpacity
+              style={[styles.card, styles.rowCard]}
+              onPress={() => router.push('/patient/health-summary')}
+              accessibilityRole="button"
+            >
+              <View style={styles.tile}>
+                <Ionicons name="heart-outline" size={24} color={colors.primary} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.cardTitle}>Allergies, medicines and vaccines</Text>
+                <Text style={styles.meta}>From every clinic, in one place. Download it as a PDF for a new doctor.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          </Section>
 
           {/* Balance */}
           {balance > 0 ? (
@@ -364,6 +403,7 @@ const styles = StyleSheet.create({
   centerCard: { alignItems: 'center', paddingVertical: spacing.lg },
   messageAction: { marginTop: spacing.xs, minHeight: 44, minWidth: 44, justifyContent: 'center', paddingHorizontal: spacing.sm },
   rowCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4 },
+  checkInCard: { marginTop: spacing.lg, borderColor: '#BFE3E0' },
   cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   meta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   queueCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: '#F1F8FD' },

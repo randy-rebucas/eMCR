@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } fr
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { apiFetch, ApiError, errorMessage, TokenPair } from '@/lib/api';
+import { apiFetch, ApiError, apiRequest, errorMessage, TokenPair } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { emitRefresh } from '@/lib/events';
 import { useApiData } from '@/lib/useApiData';
@@ -20,7 +20,7 @@ import { ChecklistItem, IconField, OtpConfirm, PASSWORD_RULES } from '@/componen
  */
 export default function PasswordScreen() {
   const bottomPad = useBottomPadding();
-  const { applyRotatedTokens, requestOtp } = useAuth();
+  const { applyRotatedTokens } = useAuth();
   const { data, loading } = useApiData<PatientProfile>('/api/patients/me');
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -43,7 +43,8 @@ export default function PasswordScreen() {
   const matches = confirm.length > 0 && confirm === next;
   const differs = !hasPassword || !current || next !== current;
   const phone = (data?.phone ?? data?.contacts?.phone ?? '').trim();
-  const sendCode = () => requestOtp(phone);
+  // Sent to this patient's own record, never another record that shares the phone number.
+  const sendCode = () => apiRequest('/api/patients/me/phone-code', { method: 'POST' });
 
   function submit() {
     if (inFlight.current) return;

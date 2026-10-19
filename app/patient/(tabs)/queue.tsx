@@ -1,6 +1,7 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   Modal,
   RefreshControl,
@@ -10,13 +11,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import QRCode from 'react-native-qrcode-svg';
 import { useApiData } from '@/lib/useApiData';
-import { QueueEntry } from '@/lib/types';
+import { ApiError, apiRequest, errorMessage } from '@/lib/api';
+import { emitRefresh } from '@/lib/events';
+import { CheckInResult, QueueEntry } from '@/lib/types';
+import { QrScanner } from '@/components/QrScanner';
 import { doctorName } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Button, IconName } from '@/components/ui';
@@ -26,7 +30,10 @@ import { BrandMark } from '@/components/BrandLogo';
 /**
  * The backend has no realtime channel, so the queue position is polled while
  * this screen is focused and the app is in the foreground. A queue push
- * (`data.tag` = `queue-…`) also triggers an immediate refetch.
+ * (`data.tag` = `queue-…`, e.g. "You're 3rd in line") also triggers an immediate refetch.
+ *
+ * Self check-in: at clinics that allow it, the patient scans the clinic's check-in QR on arrival
+ * (`POST /api/patients/me/check-in`). Opened directly with `?scan=1` from Home.
  */
 const POLL_INTERVAL_MS = 15000;
 
@@ -45,6 +52,46 @@ export default function QueueScreen() {
   );
   const focusedBefore = useRef(false);
   const [showQr, setShowQr] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [checkingIn, setCheckingIn] = useState(false);
+  const { scan } = useLocalSearchParams<{ scan?: string }>();
+
+  // Home's "At the clinic?" card opens the scanner straight away.
+  useEffect(() => {
+    if (scan === '1') {
+      setScanning(true);
+      router.setParams({ scan: undefined });
+    }
+  }, [scan]);
+
+  async function checkIn(qrCode: string) {
+    setScanning(false);
+    setCheckingIn(true);
+    try {
+      const result = await apiRequest<CheckInResult>('/api/patients/me/check-in', { method: 'POST', body: { qrCode } });
+      emitRefresh('queue', 'appointments');
+      const q = result.queue;
+      const where = q.clinic?.name ? ` at ${q.clinic.name}` : '';
+      const line =
+        q.status === 'in-progress'
+          ? "It's your turn now."
+          : q.position && q.position > 1
+            ? `${q.position - 1} ${q.position - 1 === 1 ? 'patient is' : 'patients are'} ahead of you. We'll notify you as your turn gets close.`
+            : "You're next. Please stay close.";
+      Alert.alert(
+        result.status === 'already-checked-in' ? "You're already checked in" : "You're checked in",
+        `Queue number ${q.queueNumber}${where}. ${line}`
+      );
+    } catch (err) {
+      const retryable = err instanceof ApiError && (err.code === 'QR_EXPIRED' || err.code === 'INVALID_QR');
+      Alert.alert("Couldn't check you in", errorMessage(err, 'Please try again or check in at the front desk.'), [
+        ...(retryable ? [{ text: 'Scan again', onPress: () => setScanning(true) }] : []),
+        { text: 'OK', style: 'cancel' as const },
+      ]);
+    } finally {
+      setCheckingIn(false);
+    }
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -69,6 +116,7 @@ export default function QueueScreen() {
   const serving = active?.status === 'in-progress';
   const checkedIn = !!active && (active.checkedIn || serving);
   const canShowQr = !!active?.qrCode && !checkedIn;
+  const canSelfCheckIn = !checkedIn;
 
   return (
     <View style={styles.root}>
@@ -113,7 +161,7 @@ export default function QueueScreen() {
             <Button title="Try Again" variant="secondary" onPress={refresh} style={styles.stretch} />
           </View>
         ) : !active ? (
-          <NotInQueue />
+          <NotInQueue onScan={() => setScanning(true)} checkingIn={checkingIn} />
         ) : (
           <>
             {/* Hero */}
@@ -184,8 +232,20 @@ export default function QueueScreen() {
                     ? `Please proceed to ${active.room?.name ?? 'your assigned room'}.`
                     : checkedIn
                       ? "Wait for your number to be called on the clinic's display or through this app."
-                      : 'Show your check-in QR at the front desk or kiosk so your number appears on the clinic display.'}
+                      : 'Scan the check-in QR at the clinic, or show your own QR at the front desk, so your number appears on the clinic display.'}
                 </Text>
+                {canSelfCheckIn ? (
+                  <TouchableOpacity
+                    style={styles.inlineAction}
+                    onPress={() => setScanning(true)}
+                    disabled={checkingIn}
+                    accessibilityRole="button"
+                    accessibilityState={{ busy: checkingIn }}
+                  >
+                    <Ionicons name="scan-outline" size={16} color={colors.primaryOnSoft} />
+                    <Text style={styles.inlineActionText}>{checkingIn ? 'Checking in…' : "I'm here — scan to check in"}</Text>
+                  </TouchableOpacity>
+                ) : null}
                 {canShowQr ? (
                   <TouchableOpacity style={styles.inlineAction} onPress={() => setShowQr(true)} accessibilityRole="button">
                     <Ionicons name="qr-code-outline" size={16} color={colors.primaryOnSoft} />
@@ -217,6 +277,15 @@ export default function QueueScreen() {
         )}
       </ScrollView>
 
+      <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
+        <QrScanner
+          onScanned={checkIn}
+          onCancel={() => setScanning(false)}
+          prompt="Point the camera at the check-in QR code at the clinic's front desk or waiting-room screen."
+          purpose="To check in with the clinic's QR code"
+        />
+      </Modal>
+
       <Modal visible={showQr && canShowQr} transparent animationType="fade" onRequestClose={() => setShowQr(false)}>
         <View style={styles.backdrop}>
           <View style={styles.sheet}>
@@ -236,7 +305,7 @@ export default function QueueScreen() {
   );
 }
 
-function NotInQueue() {
+function NotInQueue({ onScan, checkingIn }: { onScan: () => void; checkingIn: boolean }) {
   return (
     <View style={[styles.card, styles.emptyCard]}>
       <View style={styles.emptyIcon}>
@@ -244,8 +313,10 @@ function NotInQueue() {
       </View>
       <Text style={styles.statusTitle}>You're not in the queue</Text>
       <Text style={[styles.statusText, styles.centerText]}>
-        When you arrive, the front desk adds you to the queue. Your number and live position will show up here.
+        Have an appointment today? When you arrive, scan the clinic's check-in QR, or let the front desk add you. Your
+        number and live position will show up here.
       </Text>
+      <Button title="Scan to Check In" icon="scan-outline" onPress={onScan} loading={checkingIn} style={styles.stretch} />
       <Button
         title="View Appointments"
         variant="secondary"

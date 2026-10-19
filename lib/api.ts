@@ -60,6 +60,36 @@ export interface RequestOptions {
    */
   bodyFactory?: () => Promise<unknown>;
   auth?: boolean; // default true
+  /**
+   * Send the active family profile (`X-Patient-Profile`) so the call answers for that person.
+   * Default true; false for calls that are always about the signed-in person (the family list).
+   */
+  profile?: boolean;
+}
+
+// ── Family profile ───────────────────────────────────────────────────────────
+
+/**
+ * The family member whose records the app is showing (their record id), or null for the
+ * signed-in person. Sent as `X-Patient-Profile` on authenticated calls; set by ProfileProvider.
+ */
+let activeProfileId: string | null = null;
+let profileLostHandler: ((message: string) => void) | null = null;
+
+export function setActiveProfileId(id: string | null): void {
+  activeProfileId = id;
+}
+
+/** Called when the server says the active profile can't be used any more (unlinked, turned 18). */
+export function setProfileLostHandler(handler: ((message: string) => void) | null): void {
+  profileLostHandler = handler;
+}
+
+/** Headers for an authenticated request made outside `apiFetch` (e.g. file downloads). */
+export function authHeaders(token: string): Record<string, string> {
+  return activeProfileId
+    ? { Authorization: `Bearer ${token}`, 'X-Patient-Profile': activeProfileId }
+    : { Authorization: `Bearer ${token}` };
 }
 
 const SESSION_EXPIRED_MESSAGE = 'Your session has expired. Please sign in again.';
@@ -259,7 +289,7 @@ async function send(path: string, options: RequestOptions, token: string | null)
 
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (payload !== undefined) headers['Content-Type'] = 'application/json';
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token) Object.assign(headers, options.profile === false ? { Authorization: `Bearer ${token}` } : authHeaders(token));
 
   let response: Response;
   try {
@@ -291,6 +321,12 @@ export async function apiFetch<E = unknown>(path: string, options: RequestOption
   if (auth && token && response.status === 401) {
     token = await recoverFromUnauthorized(token);
     ({ response, json } = await send(path, options, token));
+  }
+
+  // The family member's profile is gone (unlinked, or a child turned 18): back to the signed-in
+  // person. The session itself is fine, so this is never treated like a 401.
+  if (response.status === 403 && json?.code === 'PROFILE_FORBIDDEN') {
+    profileLostHandler?.(typeof json.error === 'string' ? json.error : 'You no longer manage this family member’s records.');
   }
 
   if (!response.ok || json?.success === false) {

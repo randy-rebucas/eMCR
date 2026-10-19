@@ -259,3 +259,86 @@ export interface NotificationsEnvelope {
   data: PatientNotification[];
   unreadCount: number;
 }
+
+// ── Family accounts ──────────────────────────────────────────────────────────
+
+/** A person the signed-in patient manages. `id` is sent as `X-Patient-Profile`. */
+export interface FamilyMember {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string | null;
+  sex: string | null;
+  relationship: string | null;
+  /** 'phone': added in the app (a minor on the patient's phone number); 'clinic': added by staff. */
+  source: 'phone' | 'clinic';
+  /** For 'phone' links: the 18th birthday, when access ends (YYYY-MM-DD). */
+  accessEndsAt: string | null;
+  clinics: string[];
+}
+
+/** A minor registered with the patient's phone number who can be added. */
+export interface FamilySuggestion {
+  key: string;
+  firstName: string;
+  lastInitial: string;
+  birthYear: number | null;
+  clinics: string[];
+}
+
+/** `GET /api/patients/me/family` */
+export interface FamilyOverview {
+  self: { id: string; firstName: string; lastName: string };
+  members: FamilyMember[];
+  suggestions: FamilySuggestion[];
+}
+
+// ── Health summary ───────────────────────────────────────────────────────────
+
+export interface SummaryMedication {
+  name: string;
+  genericName: string | null;
+  strength: string | null;
+  dose: string | null;
+  frequency: string | null;
+  route: string | null;
+  durationDays: number | null;
+  instructions: string | null;
+  issuedAt: string;
+  endsAt: string | null;
+  prescriptionId: string;
+  prescriber: string | null;
+  clinic: string | null;
+}
+
+/** `GET /api/patients/me/health-summary` */
+export interface HealthSummary {
+  generatedAt: string;
+  patient: {
+    firstName: string;
+    middleName: string | null;
+    lastName: string;
+    suffix: string | null;
+    dateOfBirth: string | null;
+    sex: string | null;
+  };
+  clinics: { tenantId: string; name: string; patientCode: string | null }[];
+  allergies: { substance: string; reaction: string | null; severity: string | null; clinics: string[] }[];
+  conditions: {
+    condition: string;
+    status: 'active' | 'resolved' | 'chronic';
+    diagnosisDate: string | null;
+    notes: string | null;
+    clinics: string[];
+  }[];
+  medications: { current: SummaryMedication[]; recent: SummaryMedication[] };
+  immunizations: { name: string; date: string; batch: string | null; notes: string | null; clinic: string | null }[];
+}
+
+// ── Self check-in ────────────────────────────────────────────────────────────
+
+/** `POST /api/patients/me/check-in` */
+export interface CheckInResult {
+  status: 'checked-in' | 'already-checked-in';
+  queue: QueueEntry & { clinic: { tenantId: string; name: string | null } };
+}

@@ -10,7 +10,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "solutions.myclinicsoft.emcr"
+      "bundleIdentifier": "solutions.myclinicsoft.emcr",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "solutions.myclinicsoft.emcr",
