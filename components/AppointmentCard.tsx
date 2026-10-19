@@ -6,6 +6,7 @@ import { Appointment } from '@/lib/types';
 import { cancelAppointment, canCancel } from '@/lib/appointments';
 import { errorMessage } from '@/lib/api';
 import { doctorName, formatDate, formatTime } from '@/lib/format';
+import { isVideoVisit, openVideoCall } from '@/lib/teleconsult';
 import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from './ui';
 import { StatusBadge } from './StatusBadge';
@@ -88,7 +89,12 @@ export function AppointmentCard({
                 <Text style={styles.metaStrong}>{formatTime(a.appointmentTime)}</Text>
               </View>
             ) : null}
-            {a.room ? (
+            {isVideoVisit(a) ? (
+              <View style={styles.metaItem}>
+                <Ionicons name="videocam-outline" size={16} color={colors.primary} />
+                <Text style={styles.metaStrong}>Video call</Text>
+              </View>
+            ) : a.room ? (
               <View style={styles.metaItem}>
                 <Ionicons name="location-outline" size={16} color={colors.primary} />
                 <Text style={styles.metaStrong} numberOfLines={1}>
@@ -112,6 +118,9 @@ export function AppointmentCard({
               loading={cancelling}
             />
           ) : null}
+          {a.teleconsult?.joinable && a.teleconsult.joinUrl ? (
+            <ActionButton icon="videocam-outline" label="Join call" tone="primary" onPress={() => openVideoCall(a.teleconsult!.joinUrl!)} />
+          ) : null}
           <ActionButton icon="document-text-outline" label="View Details" onPress={open} />
         </View>
       ) : null}
@@ -129,13 +138,13 @@ function ActionButton({
   icon: IconName;
   label: string;
   onPress: () => void;
-  tone?: 'default' | 'danger';
+  tone?: 'default' | 'danger' | 'primary';
   loading?: boolean;
 }) {
-  const color = tone === 'danger' ? colors.danger : colors.text;
+  const color = tone === 'danger' ? colors.danger : tone === 'primary' ? colors.primaryText : colors.text;
   return (
     <TouchableOpacity
-      style={styles.action}
+      style={[styles.action, tone === 'primary' && styles.actionPrimary]}
       onPress={onPress}
       disabled={loading}
       accessibilityRole="button"
@@ -146,7 +155,7 @@ function ActionButton({
         <ActivityIndicator color={color} size="small" />
       ) : (
         <>
-          <Ionicons name={icon} size={18} color={tone === 'danger' ? colors.danger : colors.textMuted} />
+          <Ionicons name={icon} size={18} color={tone === 'danger' ? colors.danger : tone === 'primary' ? colors.primaryText : colors.textMuted} />
           <Text style={[styles.actionText, { color }]}>{label}</Text>
         </>
       )}
@@ -200,5 +209,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  actionPrimary: { backgroundColor: colors.primary, borderColor: colors.primary },
   actionText: { fontSize: 14, fontWeight: '600' },
 });

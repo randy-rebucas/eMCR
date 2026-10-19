@@ -84,6 +84,18 @@ export interface Appointment {
   room?: string;
   doctor?: DoctorRef | null;
   createdAt?: string;
+  /** 'teleconsult' for a video visit. Missing on older servers (= in person). */
+  modality?: 'in-person' | 'teleconsult';
+  /** Video visit join details; null for in-person visits. */
+  teleconsult?: Teleconsult | null;
+}
+
+export interface Teleconsult {
+  /** Only present while the call can be joined (15 min before start until 2 h after the end). */
+  joinUrl: string | null;
+  opensAt: string | null;
+  closesAt: string | null;
+  joinable: boolean;
 }
 
 /** `GET /api/patients/appointments` (+ `?date&doctorId`) */
@@ -99,6 +111,8 @@ export interface BookingOptions {
   availableSlots?: string[];
   /** The doctor isn't seeing patients on the requested date. */
   dayOff?: boolean;
+  /** The clinic takes video-visit bookings. */
+  teleconsultAvailable?: boolean;
 }
 
 export interface QueueEntry {
