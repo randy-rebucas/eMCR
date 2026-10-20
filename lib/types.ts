@@ -239,19 +239,21 @@ export interface PatientDocument {
   uploadDate?: string;
 }
 
-export type NotificationScreen = 'appointments' | 'lab-results' | 'invoices' | 'prescriptions';
+/** 'messages' has no screen of its own: the full text is shown in the feed. */
+export type NotificationScreen = 'appointments' | 'lab-results' | 'invoices' | 'prescriptions' | 'messages';
 
 export interface PatientNotification {
   /** Opaque; may carry a status suffix (e.g. `<invoiceId>:paid`). Never parse it. */
   id: string;
-  type: 'appointment' | 'lab_result' | 'invoice' | 'prescription';
+  /** 'message': sent by the clinic (a doctor's note, an announcement); `metadata.from` names the sender. */
+  type: 'appointment' | 'lab_result' | 'invoice' | 'prescription' | 'message';
   title: string;
   message: string;
   date: string;
   read: boolean;
   target: { screen: NotificationScreen; id: string };
   /** Extra fields by type; invoice notifications may carry `balance` (PHP). */
-  metadata?: { balance?: number } & Record<string, unknown>;
+  metadata?: { balance?: number; from?: string } & Record<string, unknown>;
 }
 
 /** `GET /api/patients/me/notifications` */

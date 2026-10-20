@@ -115,6 +115,9 @@ export function routeForNotification(data: Record<string, unknown> | undefined):
     const id = idAfter('lab-result-');
     return { href: id ? `/patient/results/${id}` : '/patient/results', topics: ['lab-results', 'notifications'] };
   }
+  if (tag.startsWith('message-')) {
+    return { href: '/patient/notifications', topics: ['notifications'] };
+  }
   if (tag.startsWith('queue-')) {
     return { href: '/patient/queue', topics: ['queue'] };
   }

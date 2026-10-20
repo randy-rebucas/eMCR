@@ -22,7 +22,7 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName, ListFooter, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 
-const DETAIL_ROUTES: Record<NotificationScreen, string> = {
+const DETAIL_ROUTES: Partial<Record<NotificationScreen, string>> = {
   appointments: '/patient/appointments',
   'lab-results': '/patient/results',
   invoices: '/patient/invoices',
@@ -38,6 +38,7 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: 'lab_result', label: 'Results' },
   { value: 'invoice', label: 'Billing' },
   { value: 'prescription', label: 'Prescriptions' },
+  { value: 'message', label: 'Messages' },
 ];
 
 const TYPE_STYLE: Record<PatientNotification['type'], { icon: IconName; bg: string; fg: string }> = {
@@ -45,6 +46,7 @@ const TYPE_STYLE: Record<PatientNotification['type'], { icon: IconName; bg: stri
   lab_result: { icon: 'flask-outline', bg: '#E3F5EC', fg: '#1F7A4A' },
   invoice: { icon: 'receipt-outline', bg: '#E6EEFB', fg: '#2F5FB3' },
   prescription: { icon: 'bandage-outline', bg: '#EEEAFB', fg: '#5B47B0' },
+  message: { icon: 'chatbubble-ellipses-outline', bg: '#FDF1E3', fg: '#9A5B13' },
 };
 
 function startOfDay(d: Date): number {
@@ -122,7 +124,7 @@ export default function NotificationsScreen() {
           // Read state is cosmetic; the next refresh shows the server's view.
         });
     }
-    const base = DETAIL_ROUTES[item.target?.screen];
+    const base = item.target?.screen ? DETAIL_ROUTES[item.target.screen] : undefined;
     if (base && item.target.id) router.push(`${base}/${item.target.id}`);
   }
 
@@ -283,6 +285,9 @@ function NotificationRow({
   onPress: () => void;
 }) {
   const t = TYPE_STYLE[item.type] ?? TYPE_STYLE.appointment;
+  // A message is read in place: its whole text shows and there is nowhere to go.
+  const isMessage = item.type === 'message';
+  const from = isMessage && typeof item.metadata?.from === 'string' ? item.metadata.from : null;
   return (
     <TouchableOpacity
       style={[styles.row, first && styles.rowFirst, last && styles.rowLast, !last && styles.rowDivider]}
@@ -301,11 +306,12 @@ function NotificationRow({
           </Text>
           <Text style={styles.time}>{timeLabel(item.date)}</Text>
         </View>
-        <Text style={styles.rowMessage} numberOfLines={3}>
+        {from ? <Text style={styles.time}>From {from}</Text> : null}
+        <Text style={styles.rowMessage} numberOfLines={isMessage ? undefined : 3}>
           {item.message}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      {isMessage ? null : <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
     </TouchableOpacity>
   );
 }
