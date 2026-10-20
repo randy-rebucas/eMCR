@@ -25,6 +25,13 @@
     }
   },
   "submit": {
-    "production": {}
+    "submit": {
+      "production": {
+        "android": {
+          "serviceAccountKeyPath": "./ServiceAccountEMCR.json",
+          "track": "internal"
+        }
+      }
+    }
   }
 }

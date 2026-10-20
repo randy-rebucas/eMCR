@@ -42,3 +42,5 @@ yarn-error.*
 
 # local env (never commit; .env.example is the template)
 .env
+
+ServiceAccountEMCR.json
