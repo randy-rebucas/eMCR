@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import { apiRequest, AUTH_ENDPOINTS } from './api';
+import { ApiError, apiRequest, AUTH_ENDPOINTS } from './api';
 import { RefreshTopic } from './events';
 import { Notifications } from './notifications';
 import { getOrCreateDeviceId } from './storage';
@@ -75,6 +75,45 @@ export async function registerForPushNotifications({ prompt = true }: { prompt?:
       appVersion: Constants.expoConfig?.version,
     },
   });
+}
+
+/**
+ * The OS notification permission for this app: 'unavailable' where push can't work at all
+ * (Expo Go on Android, simulators, web), otherwise the OS status.
+ */
+export type PushPermission = 'unavailable' | 'granted' | 'denied' | 'undetermined';
+
+export async function getPushPermission(): Promise<PushPermission> {
+  if (!pushSupported() || !Notifications) return 'unavailable';
+  const { status, canAskAgain } = await Notifications.getPermissionsAsync();
+  if (status === 'granted') return 'granted';
+  // Asked once and refused: only the phone's Settings app can turn it back on.
+  return status === 'undetermined' && canAskAgain ? 'undetermined' : 'denied';
+}
+
+/** Push categories the patient can mute on this device (server: MobileDevice.pushPrefs). */
+export type PushCategory = 'appointments' | 'labResults' | 'queue' | 'messages';
+export type PushPrefs = Record<PushCategory, boolean>;
+
+const PREFS_ENDPOINT = `${AUTH_ENDPOINTS.devices}/preferences`;
+
+/** This device's push categories. Registers the device first if the server doesn't know it yet. */
+export async function getPushPrefs(): Promise<PushPrefs> {
+  const deviceId = await getOrCreateDeviceId();
+  const load = () => apiRequest<PushPrefs>(`${PREFS_ENDPOINT}?deviceId=${encodeURIComponent(deviceId)}`, { profile: false });
+  try {
+    return await load();
+  } catch (err) {
+    if (!(err instanceof ApiError && err.code === 'DEVICE_NOT_FOUND')) throw err;
+    await registerForPushNotifications({ prompt: false });
+    return load();
+  }
+}
+
+/** Turn categories on or off for this device. Returns the full set as saved. */
+export async function updatePushPrefs(changes: Partial<PushPrefs>): Promise<PushPrefs> {
+  const deviceId = await getOrCreateDeviceId();
+  return apiRequest<PushPrefs>(PREFS_ENDPOINT, { method: 'PATCH', body: { deviceId, ...changes }, profile: false });
 }
 
 /** Re-register when the OS rotates the push token. Returns an unsubscribe function. */

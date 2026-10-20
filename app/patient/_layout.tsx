@@ -54,6 +54,7 @@ function ProfileScreens() {
           <Stack.Screen name="health-summary" options={{ title: 'Health Summary', headerShown: false }} />
           <Stack.Screen name="family" options={{ title: 'Family', headerShown: false }} />
           <Stack.Screen name="notifications" options={{ title: 'Notifications', headerShown: false }} />
+          <Stack.Screen name="notification-settings" options={{ title: 'Notification Settings', headerShown: false }} />
           <Stack.Screen name="profile/index" options={{ title: 'Profile', headerShown: false }} />
           <Stack.Screen name="profile/edit" options={{ title: 'Edit contact details', headerShown: false }} />
           <Stack.Screen name="profile/password" options={{ title: 'Password', headerShown: false }} />

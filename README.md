@@ -15,7 +15,7 @@ Built with Expo SDK 57 (React Native 0.86, Expo Router, TypeScript). The backend
 | Appointments | List, view details, book, cancel |
 | Queue | Live position in the clinic queue |
 | Results | Lab results list and detail |
-| More | Prescriptions, billing/invoices, documents, notifications, profile, password, sign out |
+| More | Prescriptions, billing/invoices, documents, notifications, notification settings, profile, password, sign out |
 | Push | Notifications for appointments, lab results and queue updates; tapping one opens the matching screen |
 
 The app only reads billing data. In-app payment is deliberately not built.

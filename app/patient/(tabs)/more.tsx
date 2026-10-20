@@ -8,7 +8,6 @@ import { useAuth } from '@/lib/auth';
 import { useProfile } from '@/lib/profile';
 import { useUnread } from '@/lib/unread';
 import { ApiError, errorMessage } from '@/lib/api';
-import { API_BASE_URL } from '@/lib/config';
 import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
@@ -24,8 +23,11 @@ const TINTS: Record<Tint, { bg: string; fg: string }> = {
   rose: { bg: '#FDE8E8', fg: '#B3261E' },
 };
 
-function openWebPage(path: string) {
-  Linking.openURL(`${API_BASE_URL}${path}`).catch(() =>
+const PRIVACY_URL = 'https://www.myclinicsoft.solutions/privacy';
+const TERMS_URL = 'https://www.myclinicsoft.solutions/terms';
+
+function openWebPage(url: string) {
+  Linking.openURL(url).catch(() =>
     Alert.alert("Couldn't open the page", 'Please check your connection and try again.')
   );
 }
@@ -197,9 +199,8 @@ export default function MoreScreen() {
           icon="notifications-outline"
           tint="amber"
           label="Notification Settings"
-          detail="Turn alerts on or off in your phone's settings"
-          external
-          onPress={() => Linking.openSettings()}
+          detail="Choose which updates alert you"
+          onPress={() => router.push('/patient/notification-settings')}
           last
         />
       </Group>
@@ -222,15 +223,15 @@ export default function MoreScreen() {
           label="Privacy Policy"
           detail="How we protect your data"
           external
-          onPress={() => openWebPage('/privacy')}
+          onPress={() => openWebPage(PRIVACY_URL)}
         />
         <Row
           icon="information-circle-outline"
           tint="teal"
-          label="Terms of Service"
+          label="Terms of Use"
           detail="The terms for using eMCR"
           external
-          onPress={() => openWebPage('/terms')}
+          onPress={() => openWebPage(TERMS_URL)}
           last
         />
       </Group>
