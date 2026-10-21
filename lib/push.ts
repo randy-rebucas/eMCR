@@ -135,10 +135,15 @@ export interface NotificationRoute {
 /**
  * Where a tapped push should take the user. Patient payloads carry `data.tag`
  * (`appointment-confirm-<id>`, `lab-result-<id>`, `queue-<id>`) and sometimes a
- * web `data.url`, which is ignored.
+ * web `data.url`, which is ignored. `data.screen: "activate"` opens the activation screen.
  */
 export function routeForNotification(data: Record<string, unknown> | undefined): NotificationRoute {
   const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+
+  // eMCR activation and renewal reminders (`data.screen: "activate"`, tag `emcr-renewal-…`).
+  if (str(data?.screen) === 'activate' || str(data?.tag)?.startsWith('emcr-renewal-')) {
+    return { href: '/patient/activate', topics: ['activation'] };
+  }
 
   const tag = str(data?.tag) ?? '';
   const idAfter = (prefix: string) => (tag.startsWith(prefix) ? tag.slice(prefix.length) || null : null);

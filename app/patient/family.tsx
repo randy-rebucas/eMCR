@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ApiError, apiFetch, apiRequest, errorMessage } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { useProfile } from '@/lib/profile';
 import { FamilyMember, FamilyOverview, FamilySuggestion } from '@/lib/types';
 import { formatDate, humanize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, LoadingView, useBottomPadding } from '@/components/ui';
+import { Banner, Button, LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { OtpConfirm } from '@/components/auth';
 
@@ -28,6 +30,7 @@ function age(dateOfBirth: string | null): number | null {
 export default function FamilyScreen() {
   const bottomPad = useBottomPadding();
   const { viewing, family, refreshFamily, switchTo } = useProfile();
+  const auth = useAuth();
   const [loading, setLoading] = useState(!family);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +119,14 @@ export default function FamilyScreen() {
   if (loading && !family) return <LoadingView />;
 
   const overview: FamilyOverview | null = family;
+  // An eMCR account with no record of its own: signed in on one of the members, no "you" row,
+  // and the family add/remove routes refuse the session.
+  const guardianOnly = !!overview?.guardianOnly || auth.guardianOnly;
+
+  /** The signed-in record shows with no profile header; any other member is switched to. */
+  function choose(member: FamilyMember) {
+    switchTo(member.id === auth.patient?.id ? null : member);
+  }
 
   return (
     <ScrollView
@@ -130,7 +141,11 @@ export default function FamilyScreen() {
         <Text style={styles.title} accessibilityRole="header">
           Family
         </Text>
-        <Text style={styles.subtitle}>See and manage your family’s records from your own login. Tap a name to switch.</Text>
+        <Text style={styles.subtitle}>
+          {guardianOnly
+            ? 'The people you look after. Tap a name to see their records.'
+            : 'See and manage your family’s records from your own login. Tap a name to switch.'}
+        </Text>
       </SafeAreaView>
 
       {error ? <Banner message={error} /> : null}
@@ -138,13 +153,17 @@ export default function FamilyScreen() {
       {overview ? (
         <>
           <View style={styles.card}>
-            <PersonRow
-              name={`${overview.self.firstName} ${overview.self.lastName}`}
-              detail="You"
-              active={!!viewing?.self}
-              onPress={() => switchTo(null)}
-              last={overview.members.length === 0}
-            />
+            {overview.self ? (
+              <PersonRow
+                name={`${overview.self.firstName} ${overview.self.lastName}`}
+                detail="You"
+                active={!!viewing?.self}
+                onPress={() => switchTo(null)}
+                last={overview.members.length === 0}
+              />
+            ) : overview.members.length === 0 ? (
+              <Text style={styles.empty}>No one is linked to your eMCR yet.</Text>
+            ) : null}
             {overview.members.map((m, i) => {
               const years = age(m.dateOfBirth);
               const detail = [
@@ -162,15 +181,27 @@ export default function FamilyScreen() {
                   note={m.accessEndsAt ? `Access ends ${formatDate(m.accessEndsAt, { utc: true })} (18th birthday)` : null}
                   active={viewing?.id === m.id}
                   busy={busyKey === m.id}
-                  onPress={() => switchTo(m)}
-                  onRemove={() => confirmRemove(m)}
+                  onPress={() => choose(m)}
+                  onRemove={guardianOnly ? undefined : () => confirmRemove(m)}
                   last={i === overview.members.length - 1}
                 />
               );
             })}
           </View>
 
-          {overview.suggestions.length ? (
+          <Button
+            title="Add someone I look after"
+            icon="person-add-outline"
+            variant="secondary"
+            onPress={() => router.push('/phone?purpose=add')}
+            style={styles.addSomeone}
+          />
+          <Text style={styles.addNote}>
+            Their clinic must have your mobile number on their record. We’ll text you a code, then ask for their first
+            name and birth date.
+          </Text>
+
+          {!guardianOnly && overview.suggestions.length ? (
             <>
               <Text style={styles.sectionTitle} accessibilityRole="header">
                 Children on your phone number
@@ -229,8 +260,8 @@ export default function FamilyScreen() {
           <View style={styles.note}>
             <Ionicons name="information-circle-outline" size={18} color={colors.slate} />
             <Text style={styles.noteText}>
-              Managing a parent’s or another adult’s records? Ask the front desk at their clinic to link you. They’ll confirm
-              it with them first.
+              Adding a parent or another adult? Their clinic confirms it with them in person first, then they appear here.
+              You can also ask the front desk to link you.
             </Text>
           </View>
         </>
@@ -372,4 +403,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   noteText: { flex: 1, fontSize: 12, lineHeight: 17, color: colors.slate },
+  empty: { fontSize: 14, color: colors.textMuted, paddingVertical: spacing.md },
+  addSomeone: { marginTop: spacing.md },
+  addNote: { fontSize: 12, color: colors.textMuted, marginTop: spacing.xs },
 });

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, StyleSheet, Text, View } from 'react-native';
-import { Redirect, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/lib/auth';
+import { claimContextFrom, requestPhoneCode, setClaimContext, verifyPhoneCode } from '@/lib/emcr';
+import { tokenClaims } from '@/lib/api';
+import { getSession } from '@/lib/storage';
 import { colors, spacing } from '@/lib/theme';
 import { Banner, Button } from '@/components/ui';
 import {
@@ -19,12 +22,18 @@ import {
   TextLink,
 } from '@/components/auth';
 
-type Purpose = 'signin' | 'forgot' | 'activate';
+/**
+ * - signin: eMCR phone sign-in (emcr/auth/otp/*). A returning account is signed in at once; a
+ *   first sign-in continues to "Is this your record?".
+ * - add: signed in, adding someone they look after. The claim needs a fresh phone proof.
+ * - forgot: the patient-record code sign-in (patients/auth/otp + auth/token), then a new password.
+ */
+type Purpose = 'signin' | 'forgot' | 'add';
 
 const COPY: Record<Purpose, { title: string; subtitle: string; verifyTitle: string }> = {
   signin: {
-    title: 'Sign In With a Code',
-    subtitle: "Enter the mobile number registered with your clinic and we'll text you a 6-digit code.",
+    title: 'Sign In With Your Phone',
+    subtitle: "Enter the mobile number your clinic has on file and we'll text you a 6-digit code.",
     verifyTitle: 'Enter Your Code',
   },
   forgot: {
@@ -32,20 +41,32 @@ const COPY: Record<Purpose, { title: string; subtitle: string; verifyTitle: stri
     subtitle: "Enter your registered mobile number and we'll text you a code, then you can choose a new password.",
     verifyTitle: 'Enter Your Code',
   },
-  activate: {
-    title: 'Activate Your Account',
-    subtitle: "Enter the mobile number you gave your clinic. We'll text you a code to confirm it's you.",
-    verifyTitle: 'Verify Your Account',
+  add: {
+    title: 'Confirm Your Phone',
+    subtitle:
+      "To add someone you look after, confirm your mobile number. It must be the number their clinic has on file. We'll text you a 6-digit code.",
+    verifyTitle: 'Enter Your Code',
   },
 };
 
 const RESEND_SECONDS = 30;
 
-/** Phone + SMS code sign-in, used for "sign in with a code", forgot password and first-time activation. */
+/**
+ * Adding from Family while signed in on an eMCR account (`acc` claim): the number must be that
+ * account's. A session without `acc` (password / QR) moves onto the phone's account instead.
+ */
+async function belongsToOtherAccount(accountId: string | null | undefined): Promise<boolean> {
+  const session = await getSession();
+  const current = session ? tokenClaims(session.accessToken)?.acc : undefined;
+  return typeof current === 'string' && !!accountId && current !== accountId;
+}
+
+/** Phone + SMS code: eMCR sign-in, adding someone you look after, and forgot password. */
 export default function PhoneScreen() {
   const auth = useAuth();
   const params = useLocalSearchParams<{ purpose?: string }>();
-  const purpose: Purpose = params.purpose === 'forgot' || params.purpose === 'activate' ? params.purpose : 'signin';
+  // 'activate' was the old first-time path; it is the phone sign-in now.
+  const purpose: Purpose = params.purpose === 'forgot' || params.purpose === 'add' ? params.purpose : 'signin';
   const copy = COPY[purpose];
 
   const [step, setStep] = useState<'phone' | 'code'>('phone');
@@ -82,11 +103,9 @@ export default function PhoneScreen() {
     }, [step, backToPhone])
   );
 
-  if (auth.signedIn) {
+  if (auth.signedIn && purpose !== 'add') {
     // The code signed the patient in; continue with the step this flow was for.
-    const next =
-      purpose === 'activate' ? '/set-password' : purpose === 'forgot' ? '/set-password?mode=reset' : '/enable-notifications';
-    return <Redirect href={next} />;
+    return <Redirect href={purpose === 'forgot' ? '/set-password?mode=reset' : '/enable-notifications'} />;
   }
 
   async function sendCode() {
@@ -100,7 +119,8 @@ export default function PhoneScreen() {
     setRetryAction(() => sendCode);
     setSubmitting(true);
     try {
-      await auth.requestOtp(phone.trim());
+      if (purpose === 'forgot') await auth.requestOtp(phone.trim());
+      else await requestPhoneCode(phone.trim());
       setCode('');
       setStep('code');
       setResendIn(RESEND_SECONDS);
@@ -123,7 +143,29 @@ export default function PhoneScreen() {
     setRetryAction(() => () => verify(value));
     setSubmitting(true);
     try {
-      await auth.loginWithOtp(phone.trim(), value);
+      if (purpose === 'forgot') {
+        await auth.loginWithOtp(phone.trim(), value);
+        return;
+      }
+      const result = await verifyPhoneCode(phone.trim(), value);
+      if (purpose === 'signin' && result.session) {
+        // A returning account: signed in (the redirect above takes over).
+        setClaimContext(null);
+        await auth.applySession(result.session);
+        return;
+      }
+      if (purpose === 'add' && (await belongsToOtherAccount(result.account?.id))) {
+        setCode('');
+        setFailure({
+          kind: 'message',
+          message:
+            'This number belongs to a different eMCR account. Use the number you signed in with, or sign out and sign in with this one.',
+          status: 0,
+        });
+        return;
+      }
+      setClaimContext(claimContextFrom(result, phone.trim(), purpose === 'add' ? 'add' : 'signin'));
+      router.replace(purpose === 'add' ? '/claim-details?relation=other' : '/verify-owner');
     } catch (err) {
       const f = classifyAuthError(err);
       if (f.kind === 'message') setCode('');

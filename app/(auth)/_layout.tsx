@@ -8,6 +8,10 @@ export default function AuthLayout() {
       <Stack.Screen name="welcome" />
       <Stack.Screen name="login" />
       <Stack.Screen name="phone" />
+      <Stack.Screen name="verify-owner" />
+      <Stack.Screen name="claim-details" />
+      <Stack.Screen name="pending-approval" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="request-access" />
       <Stack.Screen name="set-password" options={{ gestureEnabled: false }} />
       <Stack.Screen name="all-set" options={{ gestureEnabled: false }} />
       <Stack.Screen name="enable-notifications" options={{ gestureEnabled: false }} />

@@ -114,10 +114,32 @@ export default function LoginScreen() {
       <View style={styles.logo}>
         <BrandLogo />
       </View>
-      <AuthHeader title="Welcome Back" subtitle="Sign in to access your health records." align="center" />
+      <AuthHeader title="Welcome" subtitle="Sign in to see your health records from every clinic." align="center" />
 
       {auth.notice ? <Banner message={auth.notice} tone="warning" /> : null}
       {inlineError ? <Banner message={inlineError} /> : null}
+
+      <Button
+        title="Sign in with your phone"
+        icon="phone-portrait-outline"
+        onPress={() => {
+          clear();
+          router.push('/phone?purpose=signin');
+        }}
+        disabled={submitting}
+      />
+      <Button
+        title="Scan clinic QR code"
+        icon="qr-code-outline"
+        variant="secondary"
+        onPress={() => {
+          clear();
+          setScanning(true);
+        }}
+        disabled={submitting}
+      />
+
+      <Divider label="or use your email" />
 
       <IconField
         icon="person-outline"
@@ -148,31 +170,11 @@ export default function LoginScreen() {
         style={styles.forgot}
       />
 
-      <Button title="Sign In" onPress={submitPassword} loading={submitting && !scanning} />
-
-      <Divider label="or" />
-
-      <Button
-        title="Sign in with a phone code"
-        icon="phone-portrait-outline"
-        variant="secondary"
-        onPress={() => router.push('/phone?purpose=signin')}
-        disabled={submitting}
-      />
-      <Button
-        title="Scan clinic QR code"
-        icon="qr-code-outline"
-        variant="secondary"
-        onPress={() => {
-          clear();
-          setScanning(true);
-        }}
-        disabled={submitting}
-      />
+      <Button title="Sign In" variant="secondary" onPress={submitPassword} loading={submitting && !scanning} />
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>First time on eMCR? </Text>
-        <TextLink title="Activate Account" onPress={() => router.push('/phone?purpose=activate')} />
+        <Text style={styles.footerText}>Clinic doesn't have your number? </Text>
+        <TextLink title="Request access" onPress={() => router.push('/request-access')} disabled={submitting} />
       </View>
 
       <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>

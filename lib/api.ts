@@ -85,6 +85,18 @@ export function setProfileLostHandler(handler: ((message: string) => void) | nul
   profileLostHandler = handler;
 }
 
+/** Called when the server says the feature needs an active eMCR year (402 ACTIVATION_REQUIRED). */
+let activationRequiredHandler: ((message: string) => void) | null = null;
+
+export function setActivationRequiredHandler(handler: ((message: string) => void) | null): void {
+  activationRequiredHandler = handler;
+}
+
+/** For requests made outside `apiFetch` (file downloads) that came back 402. */
+export function reportActivationRequired(message = 'Activate eMCR to use this.'): void {
+  activationRequiredHandler?.(message);
+}
+
 /** Headers for an authenticated request made outside `apiFetch` (e.g. file downloads). */
 export function authHeaders(token: string): Record<string, string> {
   return activeProfileId
@@ -157,18 +169,24 @@ function decodeBase64Url(input: string): string | null {
   }
 }
 
-/** The access token's `exp` claim as epoch ms, or null when the token isn't a readable JWT. */
-function jwtExpiresAt(token: string): number | null {
+/** The access token's payload (decoded, not verified), or null when it isn't a readable JWT. */
+export function tokenClaims(token: string): Record<string, unknown> | null {
   const parts = token.split('.');
   if (parts.length !== 3 || !parts[1]) return null;
   const json = decodeBase64Url(parts[1]);
   if (!json) return null;
   try {
-    const exp = (JSON.parse(json) as { exp?: unknown } | null)?.exp;
-    return typeof exp === 'number' && isFinite(exp) && exp > 0 ? exp * 1000 : null;
+    const claims = JSON.parse(json) as unknown;
+    return claims && typeof claims === 'object' ? (claims as Record<string, unknown>) : null;
   } catch {
     return null;
   }
+}
+
+/** The access token's `exp` claim as epoch ms, or null when the token isn't a readable JWT. */
+function jwtExpiresAt(token: string): number | null {
+  const exp = tokenClaims(token)?.exp;
+  return typeof exp === 'number' && isFinite(exp) && exp > 0 ? exp * 1000 : null;
 }
 
 // ── Refresh (single-flight) ──────────────────────────────────────────────────
@@ -327,6 +345,12 @@ export async function apiFetch<E = unknown>(path: string, options: RequestOption
   // person. The session itself is fine, so this is never treated like a 401.
   if (response.status === 403 && json?.code === 'PROFILE_FORBIDDEN') {
     profileLostHandler?.(typeof json.error === 'string' ? json.error : 'You no longer manage this family member’s records.');
+  }
+
+  // eMCR isn't activated: the app opens the "Enter your activation code" screen. The call still
+  // fails, so the screen that made it shows the server's message too.
+  if (response.status === 402 && json?.code === 'ACTIVATION_REQUIRED') {
+    reportActivationRequired(typeof json.error === 'string' ? json.error : undefined);
   }
 
   if (!response.ok || json?.success === false) {

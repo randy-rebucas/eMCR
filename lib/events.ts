@@ -12,7 +12,9 @@ export type RefreshTopic =
   | 'documents'
   | 'queue'
   | 'notifications'
-  | 'profile';
+  | 'profile'
+  | 'family'
+  | 'activation';
 
 type Listener = () => void;
 const listeners = new Map<RefreshTopic, Set<Listener>>();

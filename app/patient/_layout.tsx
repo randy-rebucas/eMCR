@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
-import { Redirect, router, Stack } from 'expo-router';
+import { useEffect, useRef } from 'react';
+import { Redirect, router, Stack, usePathname } from 'expo-router';
+import { setActivationRequiredHandler } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/theme';
 import { ProfileProvider, useProfile } from '@/lib/profile';
@@ -17,6 +18,7 @@ export default function PatientLayout() {
   return (
     <ProfileProvider>
       <NotificationResponder />
+      <ActivationPrompt />
       <ProfileScreens />
     </ProfileProvider>
   );
@@ -58,6 +60,7 @@ function ProfileScreens() {
           <Stack.Screen name="profile/index" options={{ title: 'Profile', headerShown: false }} />
           <Stack.Screen name="profile/edit" options={{ title: 'Edit contact details', headerShown: false }} />
           <Stack.Screen name="profile/password" options={{ title: 'Password', headerShown: false }} />
+          <Stack.Screen name="activate" options={{ title: 'Activate eMCR', headerShown: false }} />
         </Stack>
       </TourProvider>
     </UnreadProvider>
@@ -73,5 +76,33 @@ function PendingRoute() {
     if (router.canDismiss()) router.dismissAll();
     router.navigate(href as never);
   }, [takePendingRoute]);
+  return null;
+}
+
+const ACTIVATE_HREF = '/patient/activate';
+/** Several gated calls often fail together (a screen loading its parts): open the screen once. */
+const PROMPT_COOLDOWN_MS = 5000;
+
+/**
+ * A call answered 402 ACTIVATION_REQUIRED: open "Enter your activation code", unless it is
+ * already showing or was just opened.
+ */
+function ActivationPrompt() {
+  const pathname = usePathname();
+  const pathRef = useRef(pathname);
+  pathRef.current = pathname;
+  const lastShown = useRef(0);
+
+  useEffect(() => {
+    setActivationRequiredHandler(() => {
+      if (pathRef.current === ACTIVATE_HREF) return;
+      const now = Date.now();
+      if (now - lastShown.current < PROMPT_COOLDOWN_MS) return;
+      lastShown.current = now;
+      router.push(ACTIVATE_HREF);
+    });
+    return () => setActivationRequiredHandler(null);
+  }, []);
+
   return null;
 }

@@ -1,6 +1,6 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { ApiError, authHeaders, getAccessToken, recoverFromUnauthorized } from './api';
+import { ApiError, authHeaders, getAccessToken, recoverFromUnauthorized, reportActivationRequired } from './api';
 import { API_BASE_URL } from './config';
 import { PatientDocument } from './types';
 
@@ -35,7 +35,7 @@ function safeFileName(doc: PatientDocument): string {
 }
 
 function statusOf(error: unknown): number | null {
-  const match = /\b(401|403|404|410|429|5\d\d)\b/.exec(error instanceof Error ? error.message : String(error));
+  const match = /\b(401|402|403|404|410|429|5\d\d)\b/.exec(error instanceof Error ? error.message : String(error));
   return match ? Number(match[1]) : null;
 }
 
@@ -80,6 +80,10 @@ export async function openDocument(doc: PatientDocument): Promise<void> {
 
 function toApiError(error: unknown): ApiError {
   const status = statusOf(error);
+  if (status === 402) {
+    reportActivationRequired();
+    return new ApiError('Activate eMCR with a voucher code from your clinic to open documents.', 402, 'ACTIVATION_REQUIRED');
+  }
   if (status === 404) return new ApiError('This document is no longer available.', 404);
   if (status === 401) return new ApiError('Your session has expired. Please sign in again.', 401);
   if (status === 429) return new ApiError('Too many requests. Please wait a moment and try again.', 429);

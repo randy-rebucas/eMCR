@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import { apiRequest, setActiveProfileId, setProfileLostHandler } from './api';
 import { useAuth } from './auth';
 import { clearDocumentCache } from './documents';
+import { useRefreshOn } from './events';
 import { FamilyMember, FamilyOverview } from './types';
 
 /** The person whose records the app is showing. */
@@ -10,7 +11,10 @@ export interface ViewingPerson {
   id: string;
   firstName: string;
   lastName: string;
-  /** True for the signed-in person; false for a family member they manage. */
+  /**
+   * True for the signed-in person; false for a family member they manage. Always false for a
+   * guardian-only eMCR session, which is signed in on a managed record.
+   */
   self: boolean;
 }
 
@@ -40,7 +44,7 @@ const HOME = '/patient/home';
  * (`X-Patient-Profile`, see lib/api.ts). Starts as the signed-in person on every launch.
  */
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
-  const { signedIn, patient } = useAuth();
+  const { signedIn, patient, guardianOnly } = useAuth();
   const [family, setFamily] = useState<FamilyOverview | null>(null);
   const [active, setActive] = useState<FamilyMember | null>(null);
   const pendingRoute = useRef<string | null>(null);
@@ -64,7 +68,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   const switchToId = useCallback(
     async (id: string, href?: string) => {
-      if (id === patient?.id || id === family?.self.id) {
+      if (id === patient?.id || id === family?.self?.id) {
         switchTo(null, href);
         return true;
       }
@@ -85,6 +89,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     if (signedIn) refreshFamily();
   }, [signedIn, patient?.id, refreshFamily]);
 
+  // A claim or removal elsewhere in the app changed who is in the family.
+  useRefreshOn(signedIn ? 'family' : null, () => {
+    refreshFamily();
+  });
+
   // The server refused the active profile: back to the signed-in person and say why.
   useEffect(() => {
     setProfileLostHandler((message) => {
@@ -97,9 +106,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   const viewing = useMemo<ViewingPerson | null>(() => {
     if (active) return { id: active.id, firstName: active.firstName, lastName: active.lastName, self: false };
-    if (patient) return { id: patient.id, firstName: patient.firstName, lastName: patient.lastName, self: true };
+    if (patient) {
+      return { id: patient.id, firstName: patient.firstName, lastName: patient.lastName, self: !guardianOnly };
+    }
     return null;
-  }, [active, patient]);
+  }, [active, patient, guardianOnly]);
 
   const value = useMemo<ProfileContextValue>(
     () => ({

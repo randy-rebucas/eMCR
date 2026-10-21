@@ -8,6 +8,10 @@ import { useAuth } from '@/lib/auth';
 import { useProfile } from '@/lib/profile';
 import { useUnread } from '@/lib/unread';
 import { ApiError, errorMessage } from '@/lib/api';
+import { EMCR_ENDPOINTS } from '@/lib/emcr';
+import { formatDate } from '@/lib/format';
+import { EmcrAccount } from '@/lib/types';
+import { useApiData } from '@/lib/useApiData';
 import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
@@ -33,7 +37,16 @@ function openWebPage(url: string) {
 }
 
 export default function MoreScreen() {
-  const { patient: me, signOut } = useAuth();
+  const { patient: me, signOut, guardianOnly } = useAuth();
+  const account = useApiData<EmcrAccount>(EMCR_ENDPOINTS.account, { refreshOn: ['activation'] });
+  const activation = account.data?.activation ?? null;
+  const activationDetail = !activation
+    ? 'Enter your activation code'
+    : activation.active && activation.expiresAt
+      ? `eMCR active until ${formatDate(activation.expiresAt, { month: 'long', day: 'numeric', year: 'numeric' })}`
+      : activation.expiresAt
+        ? 'Ended. Enter a new activation code'
+        : 'Enter your activation code';
   const { viewing, family } = useProfile();
   const self = viewing?.self !== false;
   // The profile card shows whoever's records are on screen.
@@ -63,6 +76,15 @@ export default function MoreScreen() {
   }
 
   function confirmSignOut() {
+    // A guardian-only session is signed in on someone else's record: "all devices" would sign
+    // that person out everywhere too, so only this device is offered.
+    if (guardianOnly) {
+      Alert.alert('Sign out?', undefined, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign out', style: 'destructive', onPress: () => runSignOut(false) },
+      ]);
+      return;
+    }
     Alert.alert('Sign out?', 'Choose "All devices" if you lost a phone or think someone else has access.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'All devices', style: 'destructive', onPress: () => runSignOut(true) },
@@ -115,7 +137,9 @@ export default function MoreScreen() {
           tint="rose"
           label={self ? 'Family' : 'Switch Profile'}
           detail={
-            !self
+            guardianOnly
+              ? `Viewing ${viewing?.firstName}. Switch to another person you look after`
+              : !self
               ? `Viewing ${viewing?.firstName}. Switch back to you or another family member`
               : familyCount
                 ? `You manage ${familyCount} family member${familyCount === 1 ? '' : 's'}`
@@ -172,13 +196,20 @@ export default function MoreScreen() {
 
       <Group title="Account & Settings">
         <Row
+          icon="key-outline"
+          tint={activation && !activation.active && activation.enforced ? 'amber' : 'teal'}
+          label="Activation"
+          detail={activationDetail}
+          onPress={() => router.push('/patient/activate')}
+        />
+        <Row
           icon="person-outline"
           tint="blue"
           label="Profile"
           detail="Your personal and contact information"
           onPress={() => router.push('/patient/profile')}
         />
-        {self ? (
+        {self && !guardianOnly ? (
           <Row
             icon="lock-closed-outline"
             tint="purple"

@@ -7,26 +7,39 @@ import {
   query,
   setSessionExpiredHandler,
   storeTokens,
+  tokenClaims,
   TokenPair,
 } from './api';
 import { clearSession, getOrCreateDeviceId, getSession } from './storage';
 import { registerForPushNotifications, watchPushToken } from './push';
 import { clearDocumentCache } from './documents';
-import { PatientProfile, PatientSummary } from './types';
+import { EmcrSession, PatientProfile, PatientSummary } from './types';
 
 type AuthState =
   | { status: 'loading' }
   | { status: 'signedOut' }
-  | { status: 'signedIn'; patient: PatientSummary | null };
+  | { status: 'signedIn'; patient: PatientSummary | null; guardianOnly: boolean };
 
 interface PatientTokenResponse extends TokenPair {
   patient: PatientSummary;
+  /** eMCR sessions: the account has no record of its own (token `rel: "guardian"`). */
+  guardianOnly?: boolean;
+}
+
+/** Whether a token is a guardian-only eMCR session (`rel: "guardian"`; refresh keeps it). */
+function isGuardianToken(token: string | null | undefined): boolean {
+  return !!token && tokenClaims(token)?.rel === 'guardian';
 }
 
 interface AuthContextValue {
   loading: boolean;
   signedIn: boolean;
   patient: PatientSummary | null;
+  /**
+   * Signed in on a record the account manages, with no record of its own (eMCR guardian-only).
+   * Credential actions (password, login QR, family add/remove) aren't available.
+   */
+  guardianOnly: boolean;
   /** One-off message for the sign-in screen (e.g. "session expired"). */
   notice: string | null;
   clearNotice: () => void;
@@ -35,6 +48,11 @@ interface AuthContextValue {
   requestOtp: (phone: string) => Promise<string>;
   loginWithOtp: (phone: string, otp: string) => Promise<void>;
   loginWithQr: (qrCode: string) => Promise<void>;
+  /**
+   * Store a session from the eMCR sign-in endpoints (otp/verify, claim). Replaces any current
+   * session, the same way a fresh sign-in does.
+   */
+  applySession: (session: EmcrSession) => Promise<void>;
 
   /** Store the new token pair a password change returns (other devices are signed out). */
   applyRotatedTokens: (pair: Partial<TokenPair>) => Promise<void>;
@@ -84,7 +102,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       try {
         const profile = await apiRequest<PatientProfile>('/api/patients/me');
-        setState({ status: 'signedIn', patient: patientSummaryFromProfile(profile) });
+        const current = await getSession();
+        setState({
+          status: 'signedIn',
+          patient: patientSummaryFromProfile(profile),
+          guardianOnly: isGuardianToken(current?.accessToken),
+        });
         registerForPushNotifications({ prompt: false }).catch(() => {});
       } catch (error) {
         if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
@@ -95,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         // Offline or server error: keep the session; screens show their own errors.
-        setState({ status: 'signedIn', patient: null });
+        setState({ status: 'signedIn', patient: null, guardianOnly: isGuardianToken(session.accessToken) });
       }
     })();
   }, []);
@@ -110,7 +133,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const completeSignIn = useCallback(async (result: PatientTokenResponse) => {
     await storeTokens(result);
     setNotice(null);
-    setState({ status: 'signedIn', patient: result.patient });
+    setState({
+      status: 'signedIn',
+      patient: result.patient,
+      guardianOnly: result.guardianOnly ?? isGuardianToken(result.token),
+    });
     registerForPushNotifications({ prompt: false }).catch(() => {});
   }, []);
 
@@ -159,6 +186,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [completeSignIn]
   );
 
+  const applySession = useCallback(
+    async (session: EmcrSession) => {
+      await completeSignIn(session);
+    },
+    [completeSignIn]
+  );
+
   const applyRotatedTokens = useCallback(async (pair: Partial<TokenPair>) => {
     const session = await getSession();
     if (!session || !pair.token) return;
@@ -172,7 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setPatientSummary = useCallback((patient: PatientSummary) => {
-    setState((prev) => (prev.status === 'signedIn' ? { status: 'signedIn', patient } : prev));
+    setState((prev) => (prev.status === 'signedIn' ? { ...prev, patient } : prev));
   }, []);
 
   const signOut = useCallback(async (options: { everywhere?: boolean } = {}) => {
@@ -229,12 +263,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading: state.status === 'loading',
       signedIn,
       patient: state.status === 'signedIn' ? state.patient : null,
+      guardianOnly: state.status === 'signedIn' ? state.guardianOnly : false,
       notice,
       clearNotice: () => setNotice(null),
       loginWithPassword,
       requestOtp,
       loginWithOtp,
       loginWithQr,
+      applySession,
       applyRotatedTokens,
       setPatientSummary,
       signOut,
@@ -247,6 +283,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       requestOtp,
       loginWithOtp,
       loginWithQr,
+      applySession,
       applyRotatedTokens,
       setPatientSummary,
       signOut,

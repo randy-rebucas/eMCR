@@ -290,9 +290,92 @@ export interface FamilySuggestion {
 
 /** `GET /api/patients/me/family` */
 export interface FamilyOverview {
-  self: { id: string; firstName: string; lastName: string };
+  /**
+   * Null for a guardian-only eMCR account (no record of its own): the session is signed in on
+   * one of `members`.
+   */
+  self: { id: string; firstName: string; lastName: string } | null;
+  /** True when `self` is null. Missing from older servers. */
+  guardianOnly?: boolean;
   members: FamilyMember[];
   suggestions: FamilySuggestion[];
+}
+
+// ── eMCR account, claim and activation ───────────────────────────────────────
+
+/** Relationships accepted by `POST /api/emcr/auth/claim` (`relationship`). */
+export const FAMILY_RELATIONSHIPS = ['child', 'parent', 'spouse', 'sibling', 'grandparent', 'grandchild', 'other'] as const;
+export type FamilyRelationship = (typeof FAMILY_RELATIONSHIPS)[number];
+
+/** The account's activation year. */
+export interface EmcrActivation {
+  active: boolean;
+  plan: 'basic' | 'plus' | null;
+  activatedAt: string | null;
+  expiresAt: string | null;
+  /** Whole days until `expiresAt` (0 when inactive). */
+  daysLeft: number;
+  /** False while the server doesn't gate features on activation yet. */
+  enforced: boolean;
+}
+
+/** `GET /api/emcr/account` (and `account` on the sign-in/claim responses, without `guardianOnly`). */
+export interface EmcrAccount {
+  id: string | null;
+  hasOwnRecord: boolean;
+  guardianOnly?: boolean;
+  pendingRequests: number;
+  activation: EmcrActivation;
+}
+
+/** Bearer fields from the eMCR sign-in endpoints (same shape as `POST /api/patients/auth/token`). */
+export interface EmcrSession {
+  token: string;
+  tokenType?: 'Bearer';
+  expiresIn?: number;
+  refreshToken?: string | null;
+  refreshExpiresIn?: number;
+  guardianOnly?: boolean;
+  patient: PatientSummary;
+}
+
+/** `POST /api/emcr/auth/otp/verify` */
+export interface EmcrVerifyResult {
+  claimToken: string;
+  claimExpiresAt: string;
+  peopleOnNumber: number;
+  account: EmcrAccount;
+  /** Null on a first sign-in: ask "Is this your record?" with `claimToken`. */
+  session: EmcrSession | null;
+}
+
+/** `POST /api/emcr/auth/claim` */
+export interface EmcrClaimResult {
+  status: 'linked' | 'already_linked' | 'pending_approval';
+  profileId?: string;
+  /** For `pending_approval`: how many clinics were asked. */
+  clinics?: number;
+  account: EmcrAccount;
+  session: EmcrSession | null;
+}
+
+/** `POST /api/emcr/activation/redeem` */
+export interface EmcrRedeemResult {
+  message?: string;
+  activation: EmcrActivation;
+  soldBy?: string | null;
+}
+
+/** `GET /api/tenants/directory` row. */
+export interface ClinicDirectoryEntry {
+  id: string;
+  name: string;
+  displayName: string;
+  subdomain: string;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  logo: string | null;
 }
 
 // ── Health summary ───────────────────────────────────────────────────────────

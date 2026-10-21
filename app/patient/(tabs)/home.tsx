@@ -7,7 +7,8 @@ import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 import { useProfile } from '@/lib/profile';
 import { useApiData } from '@/lib/useApiData';
 import { useUnread } from '@/lib/unread';
-import { Appointment, InvoiceListEnvelope, LabResult, QueueEntry } from '@/lib/types';
+import { Appointment, EmcrAccount, InvoiceListEnvelope, LabResult, QueueEntry } from '@/lib/types';
+import { EMCR_ENDPOINTS } from '@/lib/emcr';
 import { clinicTodayYmd, clinicYmd, formatDate, formatMoney } from '@/lib/format';
 import { appointmentStart, isUpcoming } from '@/lib/appointments';
 import { colors, radius, spacing } from '@/lib/theme';
@@ -37,7 +38,14 @@ export default function HomeScreen() {
   const appointments = useApiData<Appointment[]>('/api/patients/me/appointments?limit=20', {
     refreshOn: ['appointments'],
   });
-  const queue = useApiData<QueueEntry | null>('/api/patients/me/queue', { refreshOn: ['queue'] });
+  const account = useApiData<EmcrAccount>(EMCR_ENDPOINTS.account, { refreshOn: ['activation'] });
+  const activation = account.data?.activation ?? null;
+  // The queue needs an active eMCR year once the server enforces it; don't call it (and get sent
+  // to the activation screen) just for opening Home. Wait for the account so we know.
+  const locked = !!activation && activation.enforced && !activation.active;
+  const queue = useApiData<QueueEntry | null>(account.loading || locked ? null : '/api/patients/me/queue', {
+    refreshOn: ['queue'],
+  });
   const results = useApiData<LabResult[]>('/api/patients/me/lab-results?limit=1', { refreshOn: ['lab-results'] });
   const invoices = useApiData<InvoiceListEnvelope>('/api/patients/me/invoices?limit=1', {
     envelope: true,
@@ -53,12 +61,14 @@ export default function HomeScreen() {
   const queueEntry = queue.data && ACTIVE_QUEUE.has(queue.data.status) ? queue.data : null;
   // An in-person visit today with no check-in yet: offer the clinic's self check-in.
   const nextIsToday = !!next && next.modality !== 'teleconsult' && clinicYmd(new Date(appointmentStart(next))) === clinicTodayYmd();
-  const offerCheckIn = !queue.loading && !queue.error && ((nextIsToday && !queueEntry) || (queueEntry?.status === 'waiting' && !queueEntry.checkedIn));
+  const offerCheckIn = !account.loading && !queue.loading && !queue.error && ((nextIsToday && !queueEntry) || (queueEntry?.status === 'waiting' && !queueEntry.checkedIn));
   const latestResult = results.data?.[0];
   const balance = invoices.data?.summary?.outstandingBalance ?? 0;
-  const refreshing = appointments.refreshing || queue.refreshing || results.refreshing || invoices.refreshing;
+  const refreshing =
+    appointments.refreshing || queue.refreshing || results.refreshing || invoices.refreshing || account.refreshing;
 
   function refreshAll() {
+    account.refresh();
     appointments.refresh();
     queue.refresh();
     results.refresh();
@@ -102,6 +112,9 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.body}>
+          {/* eMCR activation */}
+          {activation ? <ActivationCard activation={activation} /> : null}
+
           {/* Booking CTA */}
           <TourTarget id="home-book">
             <TouchableOpacity
@@ -287,6 +300,41 @@ export default function HomeScreen() {
   );
 }
 
+/**
+ * Not activated (and the server enforces it): a prominent card to the activation screen.
+ * Ending within 30 days: a renewal reminder. Otherwise nothing (More shows the end date).
+ */
+function ActivationCard({ activation }: { activation: EmcrAccount['activation'] }) {
+  const needed = !activation.active && activation.enforced;
+  const renew = activation.active && activation.daysLeft <= 30;
+  if (!needed && !renew) return null;
+
+  const until = activation.expiresAt ? formatDate(activation.expiresAt, { month: 'long', day: 'numeric', year: 'numeric' }) : null;
+  const title = needed ? 'Activate eMCR' : 'Renew your eMCR';
+  const text = needed
+    ? 'Get an activation voucher at your clinic, then enter the code to book, check in and see your results.'
+    : `Your eMCR ends ${until ? `on ${until}` : 'soon'}${
+        activation.daysLeft > 0 ? ` (${activation.daysLeft} day${activation.daysLeft === 1 ? '' : 's'} left)` : ''
+      }. Enter a new code to add a year.`;
+  return (
+    <TouchableOpacity
+      style={[styles.card, styles.rowCard, needed ? styles.activateCard : styles.renewCard]}
+      onPress={() => router.push('/patient/activate')}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${text}`}
+    >
+      <View style={[styles.tile, needed ? styles.activateTile : styles.renewTile]}>
+        <Ionicons name={needed ? 'key-outline' : 'time-outline'} size={24} color={needed ? colors.primaryText : colors.warning} />
+      </View>
+      <View style={styles.flex}>
+        <Text style={styles.cardTitle}>{title}</Text>
+        <Text style={styles.meta}>{text}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={needed ? colors.primary : colors.textMuted} />
+    </TouchableOpacity>
+  );
+}
+
 function Section({
   title,
   action,
@@ -404,6 +452,10 @@ const styles = StyleSheet.create({
   messageAction: { marginTop: spacing.xs, minHeight: 44, minWidth: 44, justifyContent: 'center', paddingHorizontal: spacing.sm },
   rowCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4 },
   checkInCard: { marginTop: spacing.lg, borderColor: '#BFE3E0' },
+  activateCard: { marginBottom: spacing.lg, borderColor: colors.primary, borderWidth: 1.5 },
+  renewCard: { marginBottom: spacing.lg, borderColor: '#F1D9A6', backgroundColor: '#FFFBF2' },
+  activateTile: { backgroundColor: colors.primary },
+  renewTile: { backgroundColor: colors.warningSoft },
   cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   meta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   queueCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: '#F1F8FD' },

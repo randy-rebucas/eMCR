@@ -5,6 +5,8 @@ import { Notifications as MaybeNotifications } from '@/lib/notifications';
 import { routeForNotification } from '@/lib/push';
 import { useProfile } from '@/lib/profile';
 
+const ACTIVATE_HREF = '/patient/activate';
+
 // Survives remounts (sign out → sign in) so one tap is never handled twice.
 const handled = new Set<string>();
 
@@ -31,8 +33,10 @@ function Responder({ Notifications }: { Notifications: NonNullable<typeof MaybeN
     const data = lastResponse.notification.request.content.data ?? undefined;
     const route = routeForNotification(data);
     // A push about a family member (`data.profileId`) opens their profile first. The screens
-    // remount for that person, so there's nothing to refresh here.
-    const profileId = typeof data?.profileId === 'string' ? data.profileId : null;
+    // remount for that person, so there's nothing to refresh here. Activation belongs to the
+    // account, not to one person, so an activation reminder never switches profile.
+    const profileId =
+      typeof data?.profileId === 'string' && route.href !== ACTIVATE_HREF ? data.profileId : null;
     if (profileId && profileId !== viewing?.id) {
       switchToId(profileId, route.href ?? undefined).then((switched) => {
         if (!switched && route.href) router.push(route.href);
