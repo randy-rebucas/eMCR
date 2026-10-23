@@ -325,6 +325,15 @@ export interface EmcrAccount {
   hasOwnRecord: boolean;
   guardianOnly?: boolean;
   pendingRequests: number;
+  /** False until the holder chooses a password for mobile number + password sign-in. */
+  hasPassword?: boolean;
+  /** Signed in with the clinic's temporary password: must choose their own before going on. */
+  mustChangePassword?: boolean;
+  /**
+   * Structured login ID, e.g. `qc01.jdc.19900425@myclinicsoft.solutions`: signs in with the password
+   * like the mobile number. Not a mailbox. Null for guardian-only accounts and until one is given.
+   */
+  loginId?: string | null;
   activation: EmcrActivation;
 }
 
@@ -355,6 +364,23 @@ export interface EmcrClaimResult {
   profileId?: string;
   /** For `pending_approval`: how many clinics were asked. */
   clinics?: number;
+  account: EmcrAccount;
+  session: EmcrSession | null;
+}
+
+/** `POST /api/emcr/invite/preview` */
+export interface EmcrInvitePreview {
+  clinicName: string;
+  mode: 'self' | 'guardian';
+  /** "Maria D." for each person on the invite; the first is the record it was made from. */
+  people: string[];
+  /** The masked number the sign-in code goes to. */
+  phoneHint: string;
+  expiresAt: string;
+}
+
+/** `POST /api/emcr/invite/redeem` and `POST /api/emcr/auth/password` */
+export interface EmcrInviteRedeemResult {
   account: EmcrAccount;
   session: EmcrSession | null;
 }

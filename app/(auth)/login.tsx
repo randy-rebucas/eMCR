@@ -19,11 +19,14 @@ import {
   TextLink,
 } from '@/components/auth';
 import { QrScanner } from '@/components/QrScanner';
+import { isEmcrLoginId, noteAccountCredentials, parseInviteCode, setCredentialStep, signInWithPassword } from '@/lib/emcr';
 
 type Failure = AuthFailure | { kind: 'credentials' };
 
 export default function LoginScreen() {
   const auth = useAuth();
+  // A mobile number or eMCR login ID (qc01.jdc.19900425@myclinicsoft.solutions), or for older
+  // sign-ins an email address.
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -59,15 +62,36 @@ export default function LoginScreen() {
   }
 
   function submitPassword() {
-    if (!email.trim() || !password) {
-      setFailure({ kind: 'message', message: 'Enter your email address and password.', status: 0 });
+    const id = email.trim();
+    if (!id || !password) {
+      setFailure({ kind: 'message', message: 'Enter your mobile number or login ID, and your password.', status: 0 });
       return;
     }
-    run(() => auth.loginWithPassword(email.trim(), password), { wrongCredentialsScreen: true });
+    if (id.includes('@') && !isEmcrLoginId(id)) {
+      run(() => auth.loginWithPassword(id, password), { wrongCredentialsScreen: true });
+      return;
+    }
+    run(
+      async () => {
+        const result = await signInWithPassword(id, password);
+        if (!result.session) return;
+        if (result.account?.mustChangePassword) setCredentialStep({ mode: 'temp', currentPassword: password });
+        else noteAccountCredentials(result.account);
+        await auth.applySession(result.session);
+      },
+      { wrongCredentialsScreen: true }
+    );
   }
 
   function handleQrScanned(data: string) {
     setScanning(false);
+    // The QR on a clinic invite slip: continue on the invite screen.
+    const invite = parseInviteCode(data);
+    if (invite) {
+      clear();
+      router.push(`/invite?c=${invite}`);
+      return;
+    }
     // Sign-in QRs are JSON. Anything else is usually the clinic's patient-lookup code.
     if (!data.trim().startsWith('{')) {
       clear();
@@ -94,7 +118,7 @@ export default function LoginScreen() {
         onBack={clear}
         art={<IconBadge icon="warning" tone="danger" />}
         title="Unable to Sign In"
-        message="The email or password you entered is incorrect."
+        message="The login or password you entered is incorrect."
         action={{
           title: 'Try Again',
           onPress: () => {
@@ -120,8 +144,18 @@ export default function LoginScreen() {
       {inlineError ? <Banner message={inlineError} /> : null}
 
       <Button
+        title="I have an invite from my clinic"
+        icon="mail-open-outline"
+        onPress={() => {
+          clear();
+          router.push('/invite');
+        }}
+        disabled={submitting}
+      />
+      <Button
         title="Sign in with your phone"
         icon="phone-portrait-outline"
+        variant="secondary"
         onPress={() => {
           clear();
           router.push('/phone?purpose=signin');
@@ -139,18 +173,18 @@ export default function LoginScreen() {
         disabled={submitting}
       />
 
-      <Divider label="or use your email" />
+      <Divider label="or use your password" />
 
       <IconField
         icon="person-outline"
-        label="Email address"
+        label="Mobile number or login ID"
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
         autoCorrect={false}
-        autoComplete="email"
+        autoComplete="username"
         keyboardType="email-address"
-        textContentType="emailAddress"
+        textContentType="username"
         returnKeyType="next"
       />
       <IconField

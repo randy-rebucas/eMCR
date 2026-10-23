@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, StyleSheet, Text, View } from 'react-native';
 import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/lib/auth';
-import { claimContextFrom, requestPhoneCode, setClaimContext, verifyPhoneCode } from '@/lib/emcr';
+import { claimContextFrom, noteAccountCredentials, requestPhoneCode, setClaimContext, setCredentialStep, verifyPhoneCode } from '@/lib/emcr';
 import { tokenClaims } from '@/lib/api';
 import { getSession } from '@/lib/storage';
 import { colors, spacing } from '@/lib/theme';
@@ -26,7 +26,7 @@ import {
  * - signin: eMCR phone sign-in (emcr/auth/otp/*). A returning account is signed in at once; a
  *   first sign-in continues to "Is this your record?".
  * - add: signed in, adding someone they look after. The claim needs a fresh phone proof.
- * - forgot: the patient-record code sign-in (patients/auth/otp + auth/token), then a new password.
+ * - forgot: the same eMCR code sign-in, then a new password for mobile number + password sign-in.
  */
 type Purpose = 'signin' | 'forgot' | 'add';
 
@@ -38,7 +38,7 @@ const COPY: Record<Purpose, { title: string; subtitle: string; verifyTitle: stri
   },
   forgot: {
     title: 'Forgot Password',
-    subtitle: "Enter your registered mobile number and we'll text you a code, then you can choose a new password.",
+    subtitle: "Enter the mobile number you sign in with and we'll text you a code, then you can choose a new password.",
     verifyTitle: 'Enter Your Code',
   },
   add: {
@@ -105,7 +105,8 @@ export default function PhoneScreen() {
 
   if (auth.signedIn && purpose !== 'add') {
     // The code signed the patient in; continue with the step this flow was for.
-    return <Redirect href={purpose === 'forgot' ? '/set-password?mode=reset' : '/enable-notifications'} />;
+    // The notifications step forwards to /create-password while a password is owed.
+    return <Redirect href="/enable-notifications" />;
   }
 
   async function sendCode() {
@@ -119,8 +120,7 @@ export default function PhoneScreen() {
     setRetryAction(() => sendCode);
     setSubmitting(true);
     try {
-      if (purpose === 'forgot') await auth.requestOtp(phone.trim());
-      else await requestPhoneCode(phone.trim());
+      await requestPhoneCode(phone.trim());
       setCode('');
       setStep('code');
       setResendIn(RESEND_SECONDS);
@@ -143,14 +143,26 @@ export default function PhoneScreen() {
     setRetryAction(() => () => verify(value));
     setSubmitting(true);
     try {
+      const result = await verifyPhoneCode(phone.trim(), value);
       if (purpose === 'forgot') {
-        await auth.loginWithOtp(phone.trim(), value);
+        if (!result.session) {
+          setCode('');
+          setFailure({
+            kind: 'message',
+            message: 'No records are linked to this number yet, so there is no password to reset. Sign in with your phone instead.',
+            status: 0,
+          });
+          return;
+        }
+        setCredentialStep({ mode: 'reset' });
+        await auth.applySession(result.session);
         return;
       }
-      const result = await verifyPhoneCode(phone.trim(), value);
       if (purpose === 'signin' && result.session) {
-        // A returning account: signed in (the redirect above takes over).
+        // A returning account: signed in (the redirect above takes over). No password yet:
+        // create one first.
         setClaimContext(null);
+        noteAccountCredentials(result.account);
         await auth.applySession(result.session);
         return;
       }
@@ -240,6 +252,12 @@ export default function PhoneScreen() {
           {resendIn > 0 ? <Text style={styles.resendText}> (00:{String(resendIn).padStart(2, '0')})</Text> : null}
         </View>
         <TextLink title="Use a different number" onPress={backToPhone} disabled={submitting} style={styles.change} />
+        {purpose === 'signin' ? (
+          <View style={styles.inviteHint}>
+            <Text style={styles.resendText}>Still nothing? Your clinic may have a different number. Ask them for an app invite.</Text>
+            <TextLink title="I have an invite" onPress={() => router.replace('/invite')} disabled={submitting} />
+          </View>
+        ) : null}
       </View>
     </AuthScreen>
   );
@@ -253,4 +271,5 @@ const styles = StyleSheet.create({
   resendRow: { flexDirection: 'row', alignItems: 'center' },
   resendText: { fontSize: 14, color: colors.textMuted },
   change: { marginTop: spacing.md },
+  inviteHint: { alignItems: 'center', marginTop: spacing.lg, gap: spacing.xs, paddingHorizontal: spacing.md },
 });

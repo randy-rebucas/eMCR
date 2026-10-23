@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/lib/auth';
+import { getCredentialStep } from '@/lib/emcr';
 import { registerForPushNotifications, shouldAskForNotifications } from '@/lib/push';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Button, LoadingView } from '@/components/ui';
@@ -12,7 +13,8 @@ const BENEFITS = ['Appointment reminders', 'Lab result notifications', 'Queue up
 
 /**
  * Explains notifications before the OS permission dialog. Every fresh sign-in
- * passes through here; it skips straight to home once the OS has been asked.
+ * passes through here; it skips straight to home once the OS has been asked, and first sends
+ * a sign-in that still owes a password to /create-password.
  */
 export default function EnableNotificationsScreen() {
   const { signedIn } = useAuth();
@@ -28,6 +30,8 @@ export default function EnableNotificationsScreen() {
   }, []);
 
   if (!signedIn) return <Redirect href="/login" />;
+  // A sign-in that still owes a password (none yet, the clinic's temporary one, or a reset).
+  if (getCredentialStep()) return <Redirect href="/create-password" />;
   if (needed === null) return <LoadingView />;
   if (!needed) return <Redirect href="/patient/home" />;
 
