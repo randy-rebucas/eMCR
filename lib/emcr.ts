@@ -3,6 +3,8 @@ import {
   ClinicDirectoryEntry,
   EmcrAccount,
   EmcrClaimResult,
+  EmcrInvitePreview,
+  EmcrInviteRedeemResult,
   EmcrRedeemResult,
   EmcrVerifyResult,
   FamilyRelationship,
@@ -21,7 +23,109 @@ export const EMCR_ENDPOINTS = {
   account: '/api/emcr/account',
   redeem: '/api/emcr/activation/redeem',
   clinics: '/api/tenants/directory',
+  invitePreview: '/api/emcr/invite/preview',
+  inviteSendCode: '/api/emcr/invite/send-code',
+  inviteRedeem: '/api/emcr/invite/redeem',
+  passwordSignIn: '/api/emcr/auth/password',
+  accountPassword: '/api/emcr/account/password',
 } as const;
+
+// ── Password (mobile number + password) ─────────────────────────────────────
+
+/**
+ * The password step owed after a sign-in, kept in memory: `create` (first sign-in, no password
+ * yet), `temp` (signed in with the clinic's temporary password, which must be replaced) or
+ * `reset` (forgot password, signed in by SMS code). The notifications step sends the user to
+ * /create-password while one is pending.
+ */
+export type CredentialStep = { mode: 'create' } | { mode: 'temp'; currentPassword: string } | { mode: 'reset' };
+
+let credentialStep: CredentialStep | null = null;
+
+export function getCredentialStep(): CredentialStep | null {
+  return credentialStep;
+}
+
+export function setCredentialStep(step: CredentialStep | null): void {
+  credentialStep = step;
+}
+
+/** After a sign-in that returned the account: owe a password if it has none yet. */
+export function noteAccountCredentials(account: EmcrAccount | null | undefined): void {
+  if (account && account.hasPassword === false) credentialStep = { mode: 'create' };
+}
+
+/** The domain of eMCR login IDs (`qc01.jdc.19900425@myclinicsoft.solutions`). */
+export const LOGIN_ID_DOMAIN = 'myclinicsoft.solutions';
+
+export function isEmcrLoginId(value: string): boolean {
+  return value.trim().toLowerCase().endsWith(`@${LOGIN_ID_DOMAIN}`);
+}
+
+/** Mobile number or login ID + password sign-in. */
+export function signInWithPassword(login: string, password: string): Promise<EmcrInviteRedeemResult> {
+  return apiFetch<EmcrInviteRedeemResult>(EMCR_ENDPOINTS.passwordSignIn, { method: 'POST', auth: false, body: { login, password } });
+}
+
+/** The login ID handed back by the last password save, for the "Your login ID" screen. */
+let issuedLoginId: string | null = null;
+
+export function takeIssuedLoginId(): string | null {
+  const id = issuedLoginId;
+  issuedLoginId = null;
+  return id;
+}
+
+export function rememberIssuedLoginId(id: string | null | undefined): void {
+  issuedLoginId = id ?? null;
+}
+
+/** Create or change the account's password (signed in). */
+export function saveAccountPassword(newPassword: string, currentPassword?: string): Promise<{ account: EmcrAccount | null }> {
+  return apiFetch<{ account: EmcrAccount | null }>(EMCR_ENDPOINTS.accountPassword, {
+    method: 'POST',
+    body: { newPassword, ...(currentPassword ? { currentPassword } : {}) },
+  });
+}
+
+// ── Clinic invites ───────────────────────────────────────────────────────────
+
+const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+/**
+ * The bare invite code from a typed "abcd-2345", the texted link (https://…/i/ABCD2345) or the
+ * app link (myclinicsoft://invite?c=ABCD2345). Null when it isn't one (e.g. a sign-in QR).
+ */
+export function parseInviteCode(input: string | null | undefined): string | null {
+  if (!input) return null;
+  let raw = input.trim();
+  const fromLink = raw.match(/[?&]c=([A-Za-z0-9-]+)/) ?? raw.match(/\/i\/([A-Za-z0-9-]+)\/?$/);
+  if (fromLink) raw = fromLink[1];
+  const code = raw.toUpperCase().replace(/[\s-]/g, '');
+  if (code.length !== 8 || [...code].some((ch) => !INVITE_ALPHABET.includes(ch))) return null;
+  return code;
+}
+
+/** "ABCD2345" → "ABCD-2345" */
+export function formatInviteCode(code: string): string {
+  return code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
+}
+
+/** Who the invite is for and where the code will go, before texting it. */
+export function previewInvite(code: string): Promise<EmcrInvitePreview> {
+  return apiFetch<EmcrInvitePreview>(EMCR_ENDPOINTS.invitePreview, { method: 'POST', auth: false, body: { code } });
+}
+
+/** Text a sign-in code to the number on the invite. Returns the masked number. */
+export async function sendInviteCode(code: string): Promise<string> {
+  const result = await apiFetch<{ sentTo?: string }>(EMCR_ENDPOINTS.inviteSendCode, { method: 'POST', auth: false, body: { code } });
+  return result.sentTo ?? '';
+}
+
+/** Spend the invite with the SMS code: links its records and signs in. */
+export function redeemInvite(code: string, otp: string): Promise<EmcrInviteRedeemResult> {
+  return apiFetch<EmcrInviteRedeemResult>(EMCR_ENDPOINTS.inviteRedeem, { method: 'POST', auth: false, body: { code, otp } });
+}
 
 // ── Sign-in and claim ────────────────────────────────────────────────────────
 

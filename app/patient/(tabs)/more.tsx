@@ -122,6 +122,11 @@ export default function MoreScreen() {
           </Text>
           {!self ? <Text style={styles.profileMeta}>Family member · you manage these records</Text> : null}
           {patient?.patientCode ? <Text style={styles.profileMeta}>Patient ID: {patient.patientCode}</Text> : null}
+          {self && account.data?.loginId ? (
+            <Text style={styles.profileMeta} numberOfLines={1} selectable>
+              Login ID: {account.data.loginId}
+            </Text>
+          ) : null}
           {patient?.email ? (
             <Text style={styles.profileMeta} numberOfLines={1}>
               {patient.email}

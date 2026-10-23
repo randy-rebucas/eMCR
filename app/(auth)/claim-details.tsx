@@ -8,6 +8,7 @@ import {
   claimRecord,
   getClaimContext,
   isValidBirthDate,
+  noteAccountCredentials,
   setClaimContext,
   updateClaimContext,
 } from '@/lib/emcr';
@@ -108,7 +109,10 @@ export default function ClaimDetailsScreen() {
       updateClaimContext({ hasOwnRecord: !!result.account?.hasOwnRecord });
       // Sign in on the account (or move this device onto it when adding from Family), so the
       // new person shows up in the family list.
-      if (result.session) await auth.applySession(result.session);
+      if (result.session) {
+        if (mode === 'signin') noteAccountCredentials(result.account);
+        await auth.applySession(result.session);
+      }
       emitRefresh('family');
 
       if (result.status === 'pending_approval') {
