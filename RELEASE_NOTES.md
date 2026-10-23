@@ -1,5 +1,31 @@
 # eMCR release notes
 
+## 1.0.2
+
+### Google Play "What's new" (under 500 characters)
+
+```
+• Got an invite slip or text from your clinic? Tap "I have an invite from my clinic" to sign in with its code or link
+• Sign in with your mobile number or login ID and a password
+• Set your own password after your first sign-in
+• Forgot your password? Reset it with an SMS code
+• See your login ID anytime under More
+• Bug fixes and improvements
+```
+
+### Full notes
+
+**Clinic invites**
+- Your clinic can now invite you to eMCR with a printed slip or a text message.
+- Tap "I have an invite from my clinic", then scan or type the code on the slip, or just open the link from the text.
+- eMCR sends an SMS code to the mobile number your clinic confirmed. Once you enter it, you're signed in with every record on the invite.
+
+**Passwords and login IDs**
+- Sign in with your mobile number or your login ID, plus your password.
+- After your first sign-in, or if your clinic gave you a temporary password, you'll be asked to create your own password.
+- Your login ID is shown once after you set your first password, and you can always find it under More.
+- Forgot your password? Reset it with a one-time SMS code.
+
 ## 1.0.1
 
 ### Google Play "What's new" (under 500 characters)
