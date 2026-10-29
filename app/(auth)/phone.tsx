@@ -14,12 +14,15 @@ import {
   classifyAuthError,
   formatPhone,
   IconBadge,
-  IconField,
   InlineError,
+  isPhMobile,
   MaintenanceScreen,
   OfflineScreen,
   OtpInput,
+  PhPhoneField,
   TextLink,
+  toPhE164,
+  toPhLocal,
 } from '@/components/auth';
 
 /**
@@ -64,18 +67,22 @@ async function belongsToOtherAccount(accountId: string | null | undefined): Prom
 /** Phone + SMS code: eMCR sign-in, adding someone you look after, and forgot password. */
 export default function PhoneScreen() {
   const auth = useAuth();
-  const params = useLocalSearchParams<{ purpose?: string }>();
+  // `phone` + `sent=1`: the login screen already texted the code, so open on the code step.
+  const params = useLocalSearchParams<{ purpose?: string; phone?: string; sent?: string }>();
   // 'activate' was the old first-time path; it is the phone sign-in now.
   const purpose: Purpose = params.purpose === 'forgot' || params.purpose === 'add' ? params.purpose : 'signin';
   const copy = COPY[purpose];
 
-  const [step, setStep] = useState<'phone' | 'code'>('phone');
-  const [phone, setPhone] = useState('');
+  const alreadySent = params.sent === '1' && isPhMobile(toPhLocal(params.phone ?? ''));
+  const [step, setStep] = useState<'phone' | 'code'>(alreadySent ? 'code' : 'phone');
+  // The 10 digits after +63; sent to the API as +63XXXXXXXXXX.
+  const [local, setLocal] = useState(() => toPhLocal(params.phone ?? ''));
+  const phone = toPhE164(local);
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [failure, setFailure] = useState<AuthFailure | null>(null);
   const [retryAction, setRetryAction] = useState<(() => void) | null>(null);
-  const [resendIn, setResendIn] = useState(0);
+  const [resendIn, setResendIn] = useState(alreadySent ? RESEND_SECONDS : 0);
   // Keyboard "send", the button and the auto-submit on the 6th digit can all fire
   // in the same frame, before `submitting` re-renders; this ref is the real guard.
   const inFlight = useRef(false);
@@ -111,8 +118,8 @@ export default function PhoneScreen() {
 
   async function sendCode() {
     if (inFlight.current) return;
-    if (!phone.trim()) {
-      setFailure({ kind: 'message', message: 'Enter the mobile number registered with your clinic.', status: 0 });
+    if (!isPhMobile(local)) {
+      setFailure({ kind: 'message', message: 'Enter a PH mobile number, like 917 123 4567.', status: 0 });
       return;
     }
     inFlight.current = true;
@@ -120,7 +127,7 @@ export default function PhoneScreen() {
     setRetryAction(() => sendCode);
     setSubmitting(true);
     try {
-      await requestPhoneCode(phone.trim());
+      await requestPhoneCode(phone);
       setCode('');
       setStep('code');
       setResendIn(RESEND_SECONDS);
@@ -143,7 +150,7 @@ export default function PhoneScreen() {
     setRetryAction(() => () => verify(value));
     setSubmitting(true);
     try {
-      const result = await verifyPhoneCode(phone.trim(), value);
+      const result = await verifyPhoneCode(phone, value);
       if (purpose === 'forgot') {
         if (!result.session) {
           setCode('');
@@ -176,7 +183,7 @@ export default function PhoneScreen() {
         });
         return;
       }
-      setClaimContext(claimContextFrom(result, phone.trim(), purpose === 'add' ? 'add' : 'signin'));
+      setClaimContext(claimContextFrom(result, phone, purpose === 'add' ? 'add' : 'signin'));
       router.replace(purpose === 'add' ? '/claim-details?relation=other' : '/verify-owner');
     } catch (err) {
       const f = classifyAuthError(err);
@@ -208,14 +215,9 @@ export default function PhoneScreen() {
       <AuthScreen back>
         <AuthHeader title={copy.title} subtitle={copy.subtitle} />
         {errorText ? <Banner message={errorText} /> : null}
-        <IconField
-          icon="call-outline"
-          label="Mobile number"
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-          autoComplete="tel"
-          textContentType="telephoneNumber"
+        <PhPhoneField
+          value={local}
+          onChange={setLocal}
           returnKeyType="send"
           onSubmitEditing={sendCode}
           autoFocus

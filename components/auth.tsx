@@ -130,6 +130,58 @@ export function IconField({
   );
 }
 
+/** A PH mobile number as the 10 digits after +63: "0917 123 4567" / "+63 917…" → "9171234567". */
+export function toPhLocal(raw: string): string {
+  let d = raw.replace(/\D/g, '');
+  // PH mobiles start with 9, so a leading 63 or 0 is always the prefix, never part of the number.
+  if (d.startsWith('63')) d = d.slice(2);
+  else if (d.startsWith('0')) d = d.slice(1);
+  return d.slice(0, 10);
+}
+
+export const isPhMobile = (local: string) => /^9\d{9}$/.test(local);
+
+export const toPhE164 = (local: string) => `+63${local}`;
+
+/** Mobile number field fixed to the Philippines: "+63" prefix, digits grouped as 917 123 4567. */
+export function PhPhoneField({
+  value,
+  onChange,
+  error,
+  ...rest
+}: Omit<TextInputProps, 'value' | 'onChange' | 'onChangeText'> & { value: string; onChange: (local: string) => void; error?: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const grouped = [value.slice(0, 3), value.slice(3, 6), value.slice(6)].filter(Boolean).join(' ');
+  return (
+    <View style={[styles.field, focused && styles.fieldFocused, error && styles.fieldError]}>
+      <Ionicons name="call-outline" size={20} color={focused ? colors.primary : colors.textMuted} />
+      <Text style={styles.phPrefix}>+63</Text>
+      <View style={styles.phDivider} />
+      <TextInput
+        placeholder="917 123 4567"
+        {...rest}
+        value={grouped}
+        onChangeText={(t) => onChange(toPhLocal(t))}
+        maxLength={16}
+        keyboardType="phone-pad"
+        autoComplete="tel"
+        textContentType="telephoneNumber"
+        style={styles.fieldInput}
+        placeholderTextColor={colors.textMuted}
+        accessibilityLabel="Mobile number, Philippines +63"
+        onFocus={(e) => {
+          setFocused(true);
+          rest.onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          setFocused(false);
+          rest.onBlur?.(e);
+        }}
+      />
+    </View>
+  );
+}
+
 /** Six digit boxes backed by one hidden input, so paste and SMS autofill work. */
 export function OtpInput({
   value,
@@ -491,6 +543,8 @@ const styles = StyleSheet.create({
   fieldFocused: { borderColor: colors.primary, backgroundColor: colors.surface },
   fieldError: { borderColor: colors.danger },
   fieldInput: { flex: 1, fontSize: 16, color: colors.text, paddingVertical: spacing.sm + 4 },
+  phPrefix: { fontSize: 16, fontWeight: '600', color: colors.text },
+  phDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch', marginVertical: spacing.md, backgroundColor: colors.border },
   otpRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.sm, marginVertical: spacing.lg },
   otpBox: {
     // Not individual tap targets (the whole row is); shrink on narrow phones, grow with text.

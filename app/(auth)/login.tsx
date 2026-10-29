@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react';
-import { Modal, StyleSheet, Text, View } from 'react-native';
+import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Redirect, router } from 'expo-router';
 import { useAuth } from '@/lib/auth';
-import { colors, spacing } from '@/lib/theme';
+import { colors, radius, spacing } from '@/lib/theme';
 import { BrandLogo } from '@/components/BrandLogo';
-import { Banner, Button } from '@/components/ui';
+import { Banner, Button, IconName } from '@/components/ui';
 import {
   AuthFailure,
   AuthHeader,
@@ -13,13 +14,23 @@ import {
   Divider,
   IconBadge,
   IconField,
+  isPhMobile,
   MaintenanceScreen,
   OfflineScreen,
+  PhPhoneField,
   StatusScreen,
   TextLink,
+  toPhE164,
 } from '@/components/auth';
 import { QrScanner } from '@/components/QrScanner';
-import { isEmcrLoginId, noteAccountCredentials, parseInviteCode, setCredentialStep, signInWithPassword } from '@/lib/emcr';
+import {
+  isEmcrLoginId,
+  noteAccountCredentials,
+  parseInviteCode,
+  requestPhoneCode,
+  setCredentialStep,
+  signInWithPassword,
+} from '@/lib/emcr';
 
 type Failure = AuthFailure | { kind: 'credentials' };
 
@@ -32,6 +43,10 @@ export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  // The 10 digits after +63.
+  const [phone, setPhone] = useState('');
+  const [sendingCode, setSendingCode] = useState(false);
   const [lastAttempt, setLastAttempt] = useState<(() => Promise<void>) | null>(null);
   // Keyboard "Go" and the button can both fire before `submitting` re-renders.
   const inFlight = useRef(false);
@@ -81,6 +96,23 @@ export default function LoginScreen() {
       },
       { wrongCredentialsScreen: true }
     );
+  }
+
+  function submitPhone() {
+    if (!isPhMobile(phone)) {
+      setFailure({ kind: 'message', message: 'Enter a PH mobile number, like 917 123 4567.', status: 0 });
+      return;
+    }
+    const e164 = toPhE164(phone);
+    run(async () => {
+      setSendingCode(true);
+      try {
+        await requestPhoneCode(e164);
+        router.push(`/phone?purpose=signin&sent=1&phone=${encodeURIComponent(e164)}`);
+      } finally {
+        setSendingCode(false);
+      }
+    });
   }
 
   function handleQrScanned(data: string) {
@@ -143,68 +175,96 @@ export default function LoginScreen() {
       {auth.notice ? <Banner message={auth.notice} tone="warning" /> : null}
       {inlineError ? <Banner message={inlineError} /> : null}
 
+      <View style={styles.primary}>
+        <Text style={styles.primaryLabel}>Sign in with your mobile number</Text>
+        <PhPhoneField
+          value={phone}
+          onChange={(v) => {
+            setPhone(v);
+            if (failure) clear();
+          }}
+          returnKeyType="send"
+          onSubmitEditing={submitPhone}
+        />
+        <Button
+          title="Send Code"
+          icon="chatbubble-ellipses-outline"
+          onPress={submitPhone}
+          loading={sendingCode}
+          disabled={submitting}
+        />
+        <Text style={styles.primaryHint}>Use the number your clinic has on file. We'll text you a 6-digit code.</Text>
+      </View>
+
+      <Divider label="or sign in with" />
+
+      <View style={styles.grid}>
+        <MethodTile
+          icon="mail-outline"
+          label="Email"
+          active={showPassword}
+          disabled={submitting}
+          onPress={() => {
+            clear();
+            setShowPassword((v) => !v);
+          }}
+        />
+        <MethodTile
+          icon="qr-code-outline"
+          label="QR code"
+          disabled={submitting}
+          onPress={() => {
+            clear();
+            setScanning(true);
+          }}
+        />
+      </View>
+
+      {showPassword ? (
+        <View style={styles.passwordForm}>
+          <IconField
+            icon="person-outline"
+            label="Email, mobile number or login ID"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="username"
+            keyboardType="email-address"
+            textContentType="username"
+            returnKeyType="next"
+          />
+          <IconField
+            icon="lock-closed-outline"
+            label="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoComplete="current-password"
+            textContentType="password"
+            returnKeyType="go"
+            onSubmitEditing={submitPassword}
+          />
+          <TextLink
+            title="Forgot password?"
+            onPress={() => router.push('/phone?purpose=forgot')}
+            style={styles.forgot}
+          />
+          <Button title="Sign In" onPress={submitPassword} loading={submitting && !scanning && !sendingCode} />
+        </View>
+      ) : null}
+
       <Button
         title="I have an invite from my clinic"
         icon="mail-open-outline"
+        variant="secondary"
+        style={styles.invite}
         onPress={() => {
           clear();
           router.push('/invite');
         }}
         disabled={submitting}
       />
-      <Button
-        title="Sign in with your phone"
-        icon="phone-portrait-outline"
-        variant="secondary"
-        onPress={() => {
-          clear();
-          router.push('/phone?purpose=signin');
-        }}
-        disabled={submitting}
-      />
-      <Button
-        title="Scan clinic QR code"
-        icon="qr-code-outline"
-        variant="secondary"
-        onPress={() => {
-          clear();
-          setScanning(true);
-        }}
-        disabled={submitting}
-      />
-
-      <Divider label="or use your password" />
-
-      <IconField
-        icon="person-outline"
-        label="Mobile number or login ID"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        autoCorrect={false}
-        autoComplete="username"
-        keyboardType="email-address"
-        textContentType="username"
-        returnKeyType="next"
-      />
-      <IconField
-        icon="lock-closed-outline"
-        label="Password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        autoComplete="current-password"
-        textContentType="password"
-        returnKeyType="go"
-        onSubmitEditing={submitPassword}
-      />
-      <TextLink
-        title="Forgot password?"
-        onPress={() => router.push('/phone?purpose=forgot')}
-        style={styles.forgot}
-      />
-
-      <Button title="Sign In" variant="secondary" onPress={submitPassword} loading={submitting && !scanning} />
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>Clinic doesn't have your number? </Text>
@@ -218,8 +278,58 @@ export default function LoginScreen() {
   );
 }
 
+function MethodTile({
+  icon,
+  label,
+  onPress,
+  active = false,
+  disabled = false,
+}: {
+  icon: IconName;
+  label: string;
+  onPress: () => void;
+  active?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.tile, active && styles.tileActive, disabled && styles.tileDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={`Sign in with ${label}`}
+      accessibilityState={{ disabled, expanded: active }}
+    >
+      <Ionicons name={icon} size={26} color={active ? colors.primaryOnSoft : colors.primary} />
+      <Text style={[styles.tileLabel, active && styles.tileLabelActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   logo: { marginTop: spacing.lg, marginBottom: spacing.xl },
+  primary: { marginBottom: spacing.sm },
+  primaryLabel: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: spacing.sm },
+  primaryHint: { fontSize: 13, color: colors.textMuted, textAlign: 'center', marginTop: spacing.sm },
+  grid: { flexDirection: 'row', gap: spacing.sm },
+  tile: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    minHeight: 84,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  tileActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  tileDisabled: { opacity: 0.5 },
+  tileLabel: { fontSize: 15, fontWeight: '600', color: colors.text },
+  tileLabelActive: { color: colors.primaryOnSoft },
+  passwordForm: { marginTop: spacing.md },
+  invite: { marginTop: spacing.md },
   forgot: { alignSelf: 'flex-end', marginBottom: spacing.md, marginTop: spacing.xs },
   footer: {
     flexDirection: 'row',
