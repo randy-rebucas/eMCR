@@ -8,6 +8,7 @@ import { formatDate, formatDateTime, humanize } from '@/lib/format';
 import { analyteLabel, displayValue, Flag, flagOf, isReady, summarize } from '@/lib/labResults';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Button, DetailRow, IconName, LoadingView, useBottomPadding } from '@/components/ui';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { ErrorState } from '@/components/ErrorState';
 import { ResultStatusPill } from '@/components/ResultStatusPill';
 import { softShadow } from '@/components/AppHeader';
@@ -23,9 +24,9 @@ const FLAG_TONE: Record<Flag, { label: string; bg: string; fg: string }> = {
 export default function LabResultDetailScreen() {
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, loading, refreshing, error, refresh } = useApiData<LabResult>(
+  const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<LabResult>(
     id ? `/api/patients/me/lab-results/${encodeURIComponent(id)}` : null,
-    { refreshOn: ['lab-results'] }
+    { refreshOn: ['lab-results'], offline: true }
   );
   const [tab, setTab] = useState<Tab>('summary');
 
@@ -62,6 +63,7 @@ export default function LabResultDetailScreen() {
       contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
     >
+      <OfflineBanner offline={offline} updatedAt={updatedAt} />
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTile}>

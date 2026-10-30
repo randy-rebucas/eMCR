@@ -1,23 +1,24 @@
 import { useEffect, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { errorMessage } from '@/lib/api';
-import { cancelAppointment, canCancel } from '@/lib/appointments';
+import { cancelAppointment, canCancel, canReschedule } from '@/lib/appointments';
 import { useApiData } from '@/lib/useApiData';
 import { Appointment } from '@/lib/types';
 import { doctorName, formatDate, formatTime } from '@/lib/format';
 import { colors } from '@/lib/theme';
 import { isVideoVisit, openVideoCall, opensLabel } from '@/lib/teleconsult';
 import { Banner, Button, Card, DetailRow, LoadingView, screenStyles, useBottomPadding } from '@/components/ui';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorState } from '@/components/ErrorState';
 
 export default function AppointmentDetailScreen() {
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, loading, refreshing, error, refresh, poll } = useApiData<Appointment>(
+  const { data, loading, refreshing, error, refresh, poll, offline, updatedAt } = useApiData<Appointment>(
     id ? `/api/patients/me/appointments/${encodeURIComponent(id)}` : null,
-    { refreshOn: ['appointments'] }
+    { refreshOn: ['appointments'], offline: true }
   );
   const [cancelling, setCancelling] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -38,6 +39,7 @@ export default function AppointmentDetailScreen() {
 
   const appointment = data;
   const cancellable = canCancel(appointment);
+  const movable = canReschedule(appointment);
   const video = isVideoVisit(appointment);
   const joinUrl = appointment.teleconsult?.joinable ? appointment.teleconsult.joinUrl : null;
   const opens = video ? opensLabel(appointment) : null;
@@ -68,6 +70,7 @@ export default function AppointmentDetailScreen() {
       contentContainerStyle={[screenStyles.content, { paddingBottom: bottomPad }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
     >
+      <OfflineBanner offline={offline} updatedAt={updatedAt} />
       {actionError ? <Banner message={actionError} /> : null}
       <Card>
         <View style={screenStyles.cardHeader}>
@@ -101,6 +104,15 @@ export default function AppointmentDetailScreen() {
         <Text style={screenStyles.muted}>The clinic will confirm this request. You'll get a notification once it does.</Text>
       ) : null}
 
+      {movable ? (
+        <Button
+          title="Reschedule"
+          icon="calendar-outline"
+          variant="secondary"
+          onPress={() => router.push({ pathname: '/patient/appointments/reschedule', params: { id: appointment._id } })}
+          disabled={cancelling}
+        />
+      ) : null}
       {cancellable ? (
         <Button title="Cancel appointment" variant="dangerOutline" onPress={confirmCancel} loading={cancelling} />
       ) : null}

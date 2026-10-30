@@ -1,7 +1,8 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { possessive, useProfile } from '@/lib/profile';
+import { useProfile } from '@/lib/profile';
+import { possessiveName, useT } from '@/lib/i18n';
 import { useUnread } from '@/lib/unread';
 import { colors, radius, spacing } from '@/lib/theme';
 import { BrandLogo } from './BrandLogo';
@@ -15,6 +16,8 @@ export function AppHeader({ back = false }: { back?: boolean }) {
   const { viewing } = useProfile();
   const { unreadCount } = useUnread();
   const pathname = usePathname();
+  const t = useT();
+  const whose = viewing && !viewing.self ? possessiveName(viewing.firstName) : '';
   const initials = viewing ? `${viewing.firstName?.[0] ?? ''}${viewing.lastName?.[0] ?? ''}`.toUpperCase() : '';
 
   return (
@@ -22,7 +25,7 @@ export function AppHeader({ back = false }: { back?: boolean }) {
       <View style={styles.bar}>
         <View style={styles.brand}>
           {back ? (
-            <TouchableOpacity onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Go back">
+            <TouchableOpacity onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('common.goBack')}>
               <Ionicons name="chevron-back" size={26} color={colors.text} />
             </TouchableOpacity>
           ) : null}
@@ -34,7 +37,9 @@ export function AppHeader({ back = false }: { back?: boolean }) {
               style={styles.iconButton}
               onPress={() => router.push('/patient/notifications')}
               accessibilityRole="button"
-              accessibilityLabel={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+              accessibilityLabel={
+                unreadCount ? t('common.header.notificationsUnread', { count: unreadCount }) : t('common.header.notifications')
+              }
             >
               <Ionicons name="notifications-outline" size={22} color={colors.text} />
               {unreadCount > 0 ? (
@@ -52,7 +57,9 @@ export function AppHeader({ back = false }: { back?: boolean }) {
               if (pathname !== '/patient/profile') router.push('/patient/profile');
             }}
             accessibilityRole="button"
-            accessibilityLabel={viewing && !viewing.self ? `${viewing.firstName}'s profile` : 'Your profile'}
+            accessibilityLabel={
+              viewing && !viewing.self ? t('common.header.memberProfile', { name: viewing.firstName }) : t('common.header.yourProfile')
+            }
           >
             {initials ? (
               <Text style={styles.avatarText}>{initials}</Text>
@@ -67,13 +74,15 @@ export function AppHeader({ back = false }: { back?: boolean }) {
           style={styles.viewing}
           onPress={() => router.push('/patient/family')}
           accessibilityRole="button"
-          accessibilityLabel={`Viewing ${possessive(viewing)} records. Switch profile`}
+          accessibilityLabel={t('common.header.viewingA11y', { whose })}
         >
           <Ionicons name="people" size={16} color={colors.primaryOnSoft} />
           <Text style={styles.viewingText} numberOfLines={1}>
-            Viewing <Text style={styles.viewingName}>{possessive(viewing)}</Text> records
+            {t('common.header.viewingBefore')}
+            <Text style={styles.viewingName}>{whose}</Text>
+            {t('common.header.viewingAfter')}
           </Text>
-          <Text style={styles.viewingAction}>Switch</Text>
+          <Text style={styles.viewingAction}>{t('common.header.switch')}</Text>
         </TouchableOpacity>
       ) : null}
     </View>

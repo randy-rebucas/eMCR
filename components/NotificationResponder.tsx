@@ -2,7 +2,9 @@ import { useEffect } from 'react';
 import { router } from 'expo-router';
 import { emitRefresh } from '@/lib/events';
 import { Notifications as MaybeNotifications } from '@/lib/notifications';
+import { useMedicineReminderSync } from '@/lib/medicineReminders';
 import { routeForNotification } from '@/lib/push';
+import { useAuth } from '@/lib/auth';
 import { useProfile } from '@/lib/profile';
 
 const ACTIVATE_HREF = '/patient/activate';
@@ -22,6 +24,10 @@ export function NotificationResponder() {
 function Responder({ Notifications }: { Notifications: NonNullable<typeof MaybeNotifications> }) {
   const lastResponse = Notifications.useLastNotificationResponse();
   const { viewing, switchToId } = useProfile();
+  const { patient } = useAuth();
+
+  // Local medicine reminders follow prescription changes even when their screen isn't open.
+  useMedicineReminderSync(patient?.id, viewing ? { id: viewing.id, who: viewing.self ? null : viewing.firstName } : null);
 
   useEffect(() => {
     if (!lastResponse || lastResponse.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;

@@ -15,6 +15,7 @@ import { router, usePathname } from 'expo-router';
 import Svg, { Defs, Mask, Rect } from 'react-native-svg';
 import { getTourSeen, setTourSeen } from '@/lib/storage';
 import { colors, radius, spacing } from '@/lib/theme';
+import { useT } from '@/lib/i18n';
 
 /**
  * First-run coach marks over the patient home screen. Screens mark what the
@@ -26,52 +27,20 @@ type TourId = 'home-book' | 'home-shortcuts' | 'bell' | 'tab-appointments' | 'ta
 
 type Step = {
   target: TourId;
-  title: string;
-  body: string;
+  /** Text is `common.tour.<text>.title` and `.body`. */
+  text: 'homeBook' | 'shortcuts' | 'bell' | 'appointments' | 'queue' | 'results' | 'more';
   /** Tab icons are small; their spotlight grows to cover the icon and label. */
   shape?: 'tab';
 };
 
 const STEPS: Step[] = [
-  {
-    target: 'home-book',
-    title: 'Book in a few taps',
-    body: 'Choose a doctor and a time that works for you. Your clinic confirms it here in the app.',
-  },
-  {
-    target: 'home-shortcuts',
-    title: 'Shortcuts',
-    body: 'Jump straight to your appointments, queue number, results and prescriptions.',
-  },
-  {
-    target: 'bell',
-    title: 'Notifications',
-    body: 'Reminders, new lab results, payment updates and clinic announcements arrive here.',
-  },
-  {
-    target: 'tab-appointments',
-    shape: 'tab',
-    title: 'Appointments',
-    body: 'See upcoming and past visits, and reschedule or cancel when plans change.',
-  },
-  {
-    target: 'tab-queue',
-    shape: 'tab',
-    title: 'Live queue',
-    body: 'On visit day, follow your queue number and how many patients are ahead of you.',
-  },
-  {
-    target: 'tab-results',
-    shape: 'tab',
-    title: 'Results',
-    body: 'Lab results and imaging reports appear as soon as your clinic releases them.',
-  },
-  {
-    target: 'tab-more',
-    shape: 'tab',
-    title: 'Everything else',
-    body: 'Prescriptions, billing, documents and your profile. You can replay this tour from here anytime.',
-  },
+  { target: 'home-book', text: 'homeBook' },
+  { target: 'home-shortcuts', text: 'shortcuts' },
+  { target: 'bell', text: 'bell' },
+  { target: 'tab-appointments', shape: 'tab', text: 'appointments' },
+  { target: 'tab-queue', shape: 'tab', text: 'queue' },
+  { target: 'tab-results', shape: 'tab', text: 'results' },
+  { target: 'tab-more', shape: 'tab', text: 'more' },
 ];
 
 const HOME = '/patient/home';
@@ -195,7 +164,10 @@ function TourOverlay({
   const rootRef = useRef<View>(null);
   const [hole, setHole] = useState<Box | null>(null);
   const fade = useRef(new Animated.Value(0)).current;
+  const t = useT();
   const current = STEPS[step];
+  const title = t(`common.tour.${current.text}.title`);
+  const body = t(`common.tour.${current.text}.body`);
   const last = step === STEPS.length - 1;
 
   const next = useCallback(() => (last ? onFinish() : onStep(step + 1)), [last, onFinish, onStep, step]);
@@ -213,7 +185,7 @@ function TourOverlay({
       const box = { ...target, x: target.x - (origin?.x ?? 0), y: target.y - (origin?.y ?? 0) };
       setHole(current.shape === 'tab' ? tabHole(box, W) : pad(box, 8));
       Animated.timing(fade, { toValue: 1, duration: 180, useNativeDriver: true }).start();
-      AccessibilityInfo.announceForAccessibility(`${current.title}. ${current.body}`);
+      AccessibilityInfo.announceForAccessibility(`${title}. ${body}`);
     })();
     return () => {
       cancelled = true;
@@ -267,17 +239,17 @@ function TourOverlay({
         >
           <View style={[styles.arrow, { left: arrowX }, below ? styles.arrowTop : styles.arrowBottom]} />
           <Text style={styles.count}>
-            {step + 1} of {STEPS.length}
+            {t('common.tour.count', { step: step + 1, total: STEPS.length })}
           </Text>
           <Text style={styles.title} accessibilityRole="header">
-            {current.title}
+            {title}
           </Text>
-          <Text style={styles.body}>{current.body}</Text>
+          <Text style={styles.body}>{body}</Text>
 
           <View style={styles.actions}>
             {!last ? (
-              <Pressable onPress={onFinish} hitSlop={10} accessibilityRole="button" accessibilityLabel="Skip tour">
-                <Text style={styles.skip}>Skip</Text>
+              <Pressable onPress={onFinish} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('common.tour.skipA11y')}>
+                <Text style={styles.skip}>{t('common.skip')}</Text>
               </Pressable>
             ) : (
               <View />
@@ -289,7 +261,7 @@ function TourOverlay({
                   style={({ pressed }) => [styles.btn, styles.btnGhost, pressed && styles.pressed]}
                   accessibilityRole="button"
                 >
-                  <Text style={[styles.btnText, { color: colors.primaryOnSoft }]}>Back</Text>
+                  <Text style={[styles.btnText, { color: colors.primaryOnSoft }]}>{t('common.back')}</Text>
                 </Pressable>
               ) : null}
               <Pressable
@@ -297,7 +269,7 @@ function TourOverlay({
                 style={({ pressed }) => [styles.btn, styles.btnPrimary, pressed && styles.pressed]}
                 accessibilityRole="button"
               >
-                <Text style={[styles.btnText, { color: colors.primaryText }]}>{last ? 'Done' : 'Next'}</Text>
+                <Text style={[styles.btnText, { color: colors.primaryText }]}>{last ? t('common.done') : t('common.next')}</Text>
               </Pressable>
             </View>
           </View>

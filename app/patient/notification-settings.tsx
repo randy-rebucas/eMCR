@@ -23,7 +23,20 @@ const CATEGORIES: { key: PushCategory; icon: IconName; label: string; detail: st
     label: 'Appointments',
     detail: 'Confirmations, reminders and schedule changes',
   },
+  {
+    key: 'followUps',
+    icon: 'repeat-outline',
+    label: 'Follow-up Visits',
+    detail: 'Reminders when a follow-up visit is coming up',
+  },
   { key: 'labResults', icon: 'flask-outline', label: 'Lab Results', detail: 'When a new result is ready to view' },
+  {
+    key: 'prescriptions',
+    icon: 'medkit-outline',
+    label: 'Prescription Refills',
+    detail: 'When a prescription is due for a refill',
+  },
+  { key: 'billing', icon: 'receipt-outline', label: 'Payments', detail: 'Reminders about unpaid balances' },
   { key: 'queue', icon: 'people-outline', label: 'Queue Updates', detail: "When you're next or it's your turn" },
   { key: 'messages', icon: 'chatbubble-ellipses-outline', label: 'Clinic Messages', detail: 'Messages and announcements from your clinic' },
 ];

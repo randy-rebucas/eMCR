@@ -1,3 +1,5 @@
+import { getLanguage } from './i18n';
+
 /**
  * Clinics run on Philippine time. Dates and times are shown, and calendar days
  * computed, in this zone regardless of the device's timezone.
@@ -5,7 +7,30 @@
 export const CLINIC_TIME_ZONE = 'Asia/Manila';
 /** Asia/Manila has had no DST since 1978; used only if Intl lacks timezone support. */
 const CLINIC_FALLBACK_OFFSET_MS = 8 * 60 * 60 * 1000;
+/** Money and the English UI. */
 const LOCALE = 'en-PH';
+
+let filDates: boolean | undefined;
+
+/**
+ * Locale for month and weekday names: 'fil-PH' ("Okt 18, 2026", "Linggo") while the app is in
+ * Filipino, if this JS engine's Intl really has Filipino data; otherwise 'en-PH'.
+ */
+function dateLocale(): string {
+  if (getLanguage() !== 'fil') return LOCALE;
+  if (filDates === undefined) {
+    try {
+      const supported = Intl.DateTimeFormat.supportedLocalesOf(['fil-PH']).length > 0;
+      const resolved = new Intl.DateTimeFormat('fil-PH').resolvedOptions().locale.toLowerCase();
+      // An engine without Filipino data falls back to its default locale instead of throwing.
+      const october = new Date(Date.UTC(2026, 9, 15)).toLocaleDateString('fil-PH', { month: 'long', timeZone: 'UTC' });
+      filDates = supported && resolved.startsWith('fil') && october === 'Oktubre';
+    } catch {
+      filDates = false;
+    }
+  }
+  return filDates ? 'fil-PH' : LOCALE;
+}
 
 type DateInput = string | number | Date | null | undefined;
 
@@ -106,7 +131,7 @@ export function formatDate(value: DateInput, options: FormatDateOptions = {}): s
   const fields: Intl.DateTimeFormatOptions =
     Object.keys(parts).length > 0 ? parts : { month: 'short', day: 'numeric', year: 'numeric' };
   try {
-    return d.toLocaleDateString(LOCALE, { ...fields, timeZone: utc ? 'UTC' : CLINIC_TIME_ZONE });
+    return d.toLocaleDateString(dateLocale(), { ...fields, timeZone: utc ? 'UTC' : CLINIC_TIME_ZONE });
   } catch {
     return d.toLocaleDateString(undefined, fields);
   }

@@ -5,6 +5,7 @@ import {
   ApiError,
   AUTH_ENDPOINTS,
   query,
+  setActiveProfileId,
   setSessionExpiredHandler,
   storeTokens,
   tokenClaims,
@@ -13,6 +14,10 @@ import {
 import { clearSession, getOrCreateDeviceId, getSession } from './storage';
 import { registerForPushNotifications, watchPushToken } from './push';
 import { clearDocumentCache } from './documents';
+import { noteFreshSignIn } from './appLock';
+import { clearOfflineCache } from './offlineCache';
+import { t } from './i18n';
+import { clearMedicineReminders } from './medicineReminders';
 import { EmcrSession, PatientProfile, PatientSummary } from './types';
 
 type AuthState =
@@ -86,8 +91,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setSessionExpiredHandler((message) => {
       clearDocumentCache();
+      clearMedicineReminders().catch(() => {});
       setState({ status: 'signedOut' });
-      if (!signingOut.current) setNotice(message ?? 'Your session has expired. Please sign in again.');
+      if (!signingOut.current) setNotice(message ?? t('common.sessionExpired'));
     });
     return () => setSessionExpiredHandler(null);
   }, []);
@@ -113,6 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
           // 401 here means even the refresh failed; 403 means the account was deactivated.
           await clearSession();
+          clearMedicineReminders().catch(() => {});
           setState({ status: 'signedOut' });
           if (error.status === 403) setNotice(error.message);
           return;
@@ -131,6 +138,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [signedIn]);
 
   const completeSignIn = useCallback(async (result: PatientTokenResponse) => {
+    noteFreshSignIn();
+    // A sign-in can replace another person's session without a sign-out: start with no offline copies.
+    await clearOfflineCache();
     await storeTokens(result);
     setNotice(null);
     setState({
@@ -159,7 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       auth: false,
       body: { phone },
     });
-    return result.message ?? 'If a matching account is found, a code will be sent to your phone.';
+    return result.message ?? t('auth.otpRequested');
   }, []);
 
   const loginWithOtp = useCallback(
@@ -236,14 +246,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
       // Whatever the server said, this device is signed out.
+      setActiveProfileId(null);
       await clearSession();
       clearDocumentCache();
+      await clearMedicineReminders().catch(() => {});
       setState({ status: 'signedOut' });
       if (everywhere && failure) {
         // "Everywhere" is a security action: tell the user it may not have happened.
-        const message =
-          "You're signed out on this device, but we couldn't confirm your other devices were signed out. " +
-          'Sign in and try again, or change your password.';
+        const message = t('auth.notice.signOutEverywhereFailed');
         setNotice(message);
         throw new ApiError(
           message,

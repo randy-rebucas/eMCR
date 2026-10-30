@@ -9,6 +9,7 @@ import { formatDate, humanize } from '@/lib/format';
 import { groupByVisit, isCurrent, PrescriptionGroup } from '@/lib/prescriptions';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { MedicationCard } from '@/components/MedicationCard';
 
@@ -30,6 +31,7 @@ export default function PrescriptionsScreen() {
   const list = usePaginatedList<Prescription>('/api/patients/me/prescriptions', {
     limit: 20,
     refreshOn: ['prescriptions'],
+    offline: true,
   });
 
   const current = useMemo(() => list.items.filter(isCurrent), [list.items]);
@@ -88,7 +90,8 @@ export default function PrescriptionsScreen() {
         </View>
       ) : null}
 
-      {list.error && list.items.length > 0 ? <Banner message={list.error} /> : null}
+      <OfflineBanner offline={list.offline} updatedAt={list.updatedAt} />
+      {list.error && list.items.length > 0 && !list.offline ? <Banner message={list.error} /> : null}
     </SafeAreaView>
   );
 

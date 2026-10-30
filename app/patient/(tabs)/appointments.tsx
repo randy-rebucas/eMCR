@@ -17,6 +17,7 @@ import { appointmentStart, isUpcoming } from '@/lib/appointments';
 import { Appointment } from '@/lib/types';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, ListFooter } from '@/components/ui';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppHeader } from '@/components/AppHeader';
 import { AppointmentCard } from '@/components/AppointmentCard';
 import { BookedSummary, BookingForm, BookingSuccess } from '@/components/BookingForm';
@@ -36,6 +37,7 @@ export default function AppointmentsScreen() {
   const list = usePaginatedList<Appointment>('/api/patients/me/appointments', {
     limit: 20,
     refreshOn: ['appointments'],
+    offline: true,
   });
 
   const upcoming = useMemo(
@@ -113,7 +115,8 @@ export default function AppointmentsScreen() {
           <BookingForm onBooked={setBooked} />
         )
       ) : null}
-      {segment !== 'book' && list.error && list.items.length > 0 ? <Banner message={list.error} /> : null}
+      {segment !== 'book' ? <OfflineBanner offline={list.offline} updatedAt={list.updatedAt} /> : null}
+      {segment !== 'book' && list.error && list.items.length > 0 && !list.offline ? <Banner message={list.error} /> : null}
     </SafeAreaView>
   );
 

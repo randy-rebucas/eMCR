@@ -51,6 +51,12 @@
           "barcodeScannerEnabled": true
         }
       ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow $(PRODUCT_NAME) to use Face ID to unlock your health records."
+        }
+      ],
       "expo-font",
       [
         "expo-splash-screen",
@@ -60,7 +66,9 @@
           "resizeMode": "contain",
           "backgroundColor": "#E3F6F5"
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-localization"
     ],
     "extra": {
       "apiUrl": "http://localhost:3000",

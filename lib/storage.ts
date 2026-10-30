@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { clearOfflineCache } from './offlineCache';
 
 /**
  * Session credentials live in SecureStore only — never AsyncStorage. They are
@@ -27,6 +28,17 @@ const KEYS = {
 
 // In-memory mirror so every request doesn't hit the keychain. `undefined` = not loaded yet.
 let cache: StoredSession | null | undefined;
+
+/**
+ * Bumped whenever the session is replaced or cleared. A token refresh captures it before its
+ * request and only stores the result if it is unchanged, so a refresh that finishes after
+ * sign-out (or after a new sign-in) can't write the old session back.
+ */
+let generation = 0;
+
+export function sessionGeneration(): number {
+  return generation;
+}
 
 export async function getSession(): Promise<StoredSession | null> {
   if (cache !== undefined) return cache;
@@ -71,7 +83,13 @@ export async function getSession(): Promise<StoredSession | null> {
   return null;
 }
 
-export async function setSession(session: StoredSession): Promise<void> {
+/**
+ * Store a session. With `ifGeneration` (token refresh), nothing is written and false is
+ * returned when the session was replaced or cleared since that generation was read.
+ */
+export async function setSession(session: StoredSession, options: { ifGeneration?: number } = {}): Promise<boolean> {
+  if (options.ifGeneration === undefined) generation++;
+  else if (options.ifGeneration !== generation) return false;
   cache = session;
   await Promise.all([
     SecureStore.setItemAsync(KEYS.audience, 'patient'),
@@ -83,11 +101,15 @@ export async function setSession(session: StoredSession): Promise<void> {
       ? SecureStore.setItemAsync(KEYS.accessExpiresAt, String(session.accessExpiresAt))
       : SecureStore.deleteItemAsync(KEYS.accessExpiresAt),
   ]);
+  return true;
 }
 
+/** Sign-out on this device, whatever the path: the session and every offline copy of records go. */
 export async function clearSession(): Promise<void> {
+  generation++;
   cache = null;
   await Promise.all([
+    clearOfflineCache(),
     SecureStore.deleteItemAsync(KEYS.audience),
     SecureStore.deleteItemAsync(KEYS.access),
     SecureStore.deleteItemAsync(KEYS.refresh),
@@ -112,6 +134,26 @@ export async function getTourSeen(): Promise<boolean> {
 
 export async function setTourSeen(): Promise<void> {
   await SecureStore.setItemAsync('tour_seen', '1');
+}
+
+/** The app language the patient picked ('en' | 'fil'); null = same as the phone. Not PHI. */
+export async function getLanguagePreference(): Promise<string | null> {
+  return SecureStore.getItemAsync('app_language');
+}
+
+export async function setLanguagePreference(language: string | null): Promise<void> {
+  if (language) await SecureStore.setItemAsync('app_language', language);
+  else await SecureStore.deleteItemAsync('app_language');
+}
+
+/** Whether the patient turned on App Lock (fingerprint, face or screen lock to open the app). */
+export async function getAppLockEnabled(): Promise<boolean> {
+  return (await SecureStore.getItemAsync('app_lock')) === '1';
+}
+
+export async function setAppLockEnabled(enabled: boolean): Promise<void> {
+  if (enabled) await SecureStore.setItemAsync('app_lock', '1');
+  else await SecureStore.deleteItemAsync('app_lock');
 }
 
 /**

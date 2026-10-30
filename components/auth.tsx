@@ -20,6 +20,8 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ApiError } from '@/lib/api';
 import { colors, radius, spacing } from '@/lib/theme';
+import { t as translate, useT } from '@/lib/i18n';
+import { rich } from '@/lib/i18n/rich';
 import { Button, IconName, useAnnounce } from './ui';
 
 // Building blocks for the signed-out and onboarding screens, so they share
@@ -38,6 +40,7 @@ export function AuthScreen({
   center?: boolean;
   footer?: ReactNode;
 }) {
+  const t = useT();
   const onBack = typeof back === 'function' ? back : back ? () => router.back() : null;
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
@@ -48,7 +51,7 @@ export function AuthScreen({
             onPress={onBack}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Go back"
+            accessibilityLabel={t('common.goBack')}
           >
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
@@ -94,6 +97,7 @@ export function IconField({
   secureTextEntry,
   ...rest
 }: TextInputProps & { icon: IconName; label: string; error?: boolean }) {
+  const t = useT();
   const [focused, setFocused] = useState(false);
   const [hidden, setHidden] = useState(true);
   const isSecret = !!secureTextEntry;
@@ -121,7 +125,7 @@ export function IconField({
           onPress={() => setHidden((h) => !h)}
           hitSlop={10}
           accessibilityRole="button"
-          accessibilityLabel={hidden ? 'Show password' : 'Hide password'}
+          accessibilityLabel={hidden ? t('auth.showPassword') : t('auth.hidePassword')}
         >
           <Ionicons name={hidden ? 'eye-outline' : 'eye-off-outline'} size={20} color={colors.textMuted} />
         </TouchableOpacity>
@@ -150,6 +154,7 @@ export function PhPhoneField({
   error,
   ...rest
 }: Omit<TextInputProps, 'value' | 'onChange' | 'onChangeText'> & { value: string; onChange: (local: string) => void; error?: boolean }) {
+  const t = useT();
   const [focused, setFocused] = useState(false);
   const grouped = [value.slice(0, 3), value.slice(3, 6), value.slice(6)].filter(Boolean).join(' ');
   return (
@@ -168,7 +173,7 @@ export function PhPhoneField({
         textContentType="telephoneNumber"
         style={styles.fieldInput}
         placeholderTextColor={colors.textMuted}
-        accessibilityLabel="Mobile number, Philippines +63"
+        accessibilityLabel={t('auth.phoneA11y')}
         onFocus={(e) => {
           setFocused(true);
           rest.onFocus?.(e);
@@ -196,6 +201,7 @@ export function OtpInput({
   length?: number;
   autoFocus?: boolean;
 }) {
+  const t = useT();
   const input = useRef<TextInput>(null);
   const [focused, setFocused] = useState(autoFocus);
   const digits = value.split('');
@@ -207,8 +213,8 @@ export function OtpInput({
       onPress={() => input.current?.focus()}
       accessible
       accessibilityRole="button"
-      accessibilityLabel={`${length}-digit code, ${digits.length} of ${length} entered${error ? ', incorrect' : ''}`}
-      accessibilityHint="Double tap to type the code"
+      accessibilityLabel={t(error ? 'auth.otp.a11yIncorrect' : 'auth.otp.a11y', { length, entered: digits.length })}
+      accessibilityHint={t('auth.otp.hint')}
     >
       {Array.from({ length }).map((_, i) => {
         const active = focused && (i === digits.length || (i === length - 1 && digits.length === length));
@@ -236,7 +242,7 @@ export function OtpInput({
         onBlur={() => setFocused(false)}
         style={styles.otpHidden}
         caretHidden
-        accessibilityLabel={`${length}-digit code`}
+        accessibilityLabel={t('auth.otp.fieldA11y', { length })}
       />
     </Pressable>
   );
@@ -291,6 +297,7 @@ export function OtpConfirm({
   verifying: boolean;
   error: string | null;
 }) {
+  const t = useT();
   const [code, setCode] = useState('');
   const [resendIn, setResendIn] = useState(30);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -312,17 +319,14 @@ export function OtpConfirm({
       await sendCode();
       setResendIn(30);
     } catch (err) {
-      setSendError(err instanceof ApiError ? err.message : "Couldn't send a new code. Please try again.");
+      setSendError(err instanceof ApiError ? err.message : t('auth.otp.resendFailed'));
     }
   }
 
   const message = error ?? sendError;
   return (
     <View>
-      <Text style={styles.subtitle}>
-        To confirm it's you, enter the 6-digit code we sent to{' '}
-        <Text style={styles.confirmPhone}>{formatPhone(phone)}</Text>.
-      </Text>
+      <Text style={styles.subtitle}>{rich(t('auth.otp.confirmSentTo', { phone: formatPhone(phone) }), styles.confirmPhone)}</Text>
       <OtpInput
         value={code}
         error={!!message}
@@ -332,28 +336,45 @@ export function OtpConfirm({
         }}
       />
       {message ? <InlineError message={message} style={styles.confirmError} /> : null}
-      <Button title="Verify and Save" onPress={() => onVerify(code)} loading={verifying} disabled={code.length !== 6} />
+      <Button title={t('auth.otp.verifyAndSave')} onPress={() => onVerify(code)} loading={verifying} disabled={code.length !== 6} />
       <View style={styles.confirmLinks}>
         <TextLink
-          title={resendIn > 0 ? `Resend code (00:${String(resendIn).padStart(2, '0')})` : 'Resend code'}
+          title={resendIn > 0 ? t('auth.otp.resendIn', { seconds: String(resendIn).padStart(2, '0') }) : t('auth.otp.resend')}
           onPress={resend}
           disabled={resendIn > 0 || verifying}
         />
-        <TextLink title="Cancel" onPress={onCancel} disabled={verifying} />
+        <TextLink title={t('common.cancel')} onPress={onCancel} disabled={verifying} />
       </View>
     </View>
   );
 }
 
-export const PASSWORD_RULES: { label: string; test: (pw: string) => boolean }[] = [
-  { label: 'At least 8 characters', test: (pw) => pw.length >= 8 },
-  { label: 'One uppercase letter', test: (pw) => /[A-Z]/.test(pw) },
-  { label: 'One number', test: (pw) => /\d/.test(pw) },
+/** `label` is read in the current language each time (a getter), so render it from a component using useT(). */
+export const PASSWORD_RULES: { readonly label: string; test: (pw: string) => boolean }[] = [
+  {
+    get label() {
+      return translate('auth.pw.min8');
+    },
+    test: (pw) => pw.length >= 8,
+  },
+  {
+    get label() {
+      return translate('auth.pw.upper');
+    },
+    test: (pw) => /[A-Z]/.test(pw),
+  },
+  {
+    get label() {
+      return translate('auth.pw.number');
+    },
+    test: (pw) => /\d/.test(pw),
+  },
 ];
 
 export function ChecklistItem({ label, met }: { label: string; met: boolean }) {
+  const t = useT();
   return (
-    <View style={styles.checkRow} accessible accessibilityLabel={`${label}${met ? ', done' : ''}`}>
+    <View style={styles.checkRow} accessible accessibilityLabel={met ? t('auth.pw.done', { label }) : label}>
       <Ionicons
         name={met ? 'checkmark-circle' : 'ellipse-outline'}
         size={18}
@@ -469,25 +490,27 @@ export function StatusScreen({
 }
 
 export function OfflineScreen({ onRetry, onBack, retrying }: { onRetry: () => void; onBack?: () => void; retrying?: boolean }) {
+  const t = useT();
   return (
     <StatusScreen
       onBack={onBack}
       art={<IconBadge icon="wifi" tone="slate" badge={{ icon: 'close', tone: 'danger' }} />}
-      title="No Internet Connection"
-      message="Please check your internet connection and try again."
-      action={{ title: 'Try Again', onPress: onRetry, loading: retrying }}
+      title={t('auth.offline.title')}
+      message={t('auth.offline.message')}
+      action={{ title: t('common.tryAgainTitle'), onPress: onRetry, loading: retrying }}
     />
   );
 }
 
 export function MaintenanceScreen({ onRetry, onBack, retrying }: { onRetry: () => void; onBack?: () => void; retrying?: boolean }) {
+  const t = useT();
   return (
     <StatusScreen
       onBack={onBack}
       art={<IconBadge icon="construct" tone="slate" />}
-      title="We'll Be Right Back"
-      message="eMCR is temporarily unavailable while we do some maintenance. Please try again in a little while."
-      action={{ title: 'Try Again', onPress: onRetry, loading: retrying }}
+      title={t('auth.maintenance.title')}
+      message={t('auth.maintenance.message')}
+      action={{ title: t('common.tryAgainTitle'), onPress: onRetry, loading: retrying }}
     />
   );
 }
@@ -501,7 +524,7 @@ export function classifyAuthError(err: unknown): AuthFailure {
     if (err.status === 502 || err.status === 503 || err.status === 504) return { kind: 'maintenance' };
     return { kind: 'message', message: err.message, status: err.status };
   }
-  return { kind: 'message', message: 'Something went wrong. Please try again.', status: 0 };
+  return { kind: 'message', message: translate('common.somethingWrong'), status: 0 };
 }
 
 /** "09171234567" → "+63 917 123 4567"; anything else is shown as typed. */

@@ -21,9 +21,10 @@ import { ApiError, apiRequest, errorMessage } from '@/lib/api';
 import { emitRefresh } from '@/lib/events';
 import { CheckInResult, QueueEntry } from '@/lib/types';
 import { QrScanner } from '@/components/QrScanner';
-import { doctorName } from '@/lib/format';
+import { doctorName, formatTime } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Button, IconName } from '@/components/ui';
+import { Banner, Button, IconName } from '@/components/ui';
+import { OfflineBanner, savedAtLabel } from '@/components/OfflineBanner';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { BrandMark } from '@/components/BrandLogo';
 
@@ -46,9 +47,9 @@ const QUEUE_TYPE_LABEL: Record<string, string> = {
 type StepState = 'done' | 'current' | 'todo';
 
 export default function QueueScreen() {
-  const { data: entry, loading, refreshing, error, refresh, poll } = useApiData<QueueEntry | null>(
+  const { data: entry, loading, refreshing, error, updatedAt, offline, stale, refresh, poll } = useApiData<QueueEntry | null>(
     '/api/patients/me/queue',
-    { refreshOn: ['queue'] }
+    { refreshOn: ['queue'], offline: true }
   );
   const focusedBefore = useRef(false);
   const [showQr, setShowQr] = useState(false);
@@ -164,6 +165,25 @@ export default function QueueScreen() {
           <NotInQueue onScan={() => setScanning(true)} checkingIn={checkingIn} />
         ) : (
           <>
+            {/* A saved copy from an earlier visit: the position has almost certainly moved on. */}
+            {stale && !offline ? (
+              <Banner
+                tone="warning"
+                message={`Checking for updates. Showing your last queue position${updatedAt ? ` from ${savedAtLabel(updatedAt)}` : ''}, which may be out of date.`}
+              />
+            ) : null}
+            <OfflineBanner
+              offline={offline}
+              updatedAt={updatedAt}
+              subject="your last queue position, which may be out of date"
+            />
+            {/* A failed poll keeps the last position on screen; say it may be out of date. */}
+            {error && !offline ? (
+              <Banner
+                tone="warning"
+                message={`Couldn't update${updatedAt ? `. Last updated ${formatTime(updatedAt)}` : ''}. Pull down to try again.`}
+              />
+            ) : null}
             {/* Hero */}
             <View style={styles.hero}>
               <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" preserveAspectRatio="none">

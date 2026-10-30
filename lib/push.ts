@@ -92,15 +92,39 @@ export async function getPushPermission(): Promise<PushPermission> {
 }
 
 /** Push categories the patient can mute on this device (server: MobileDevice.pushPrefs). */
-export type PushCategory = 'appointments' | 'labResults' | 'queue' | 'messages';
+export type PushCategory =
+  | 'appointments'
+  | 'labResults'
+  | 'queue'
+  | 'messages'
+  | 'billing'
+  | 'prescriptions'
+  | 'followUps';
 export type PushPrefs = Record<PushCategory, boolean>;
 
 const PREFS_ENDPOINT = `${AUTH_ENDPOINTS.devices}/preferences`;
 
+/** A category the server didn't report (an older server) is on, as it is at send time. */
+function withDefaults(prefs: Partial<PushPrefs>): PushPrefs {
+  return {
+    appointments: true,
+    labResults: true,
+    queue: true,
+    messages: true,
+    billing: true,
+    prescriptions: true,
+    followUps: true,
+    ...prefs,
+  };
+}
+
 /** This device's push categories. Registers the device first if the server doesn't know it yet. */
 export async function getPushPrefs(): Promise<PushPrefs> {
   const deviceId = await getOrCreateDeviceId();
-  const load = () => apiRequest<PushPrefs>(`${PREFS_ENDPOINT}?deviceId=${encodeURIComponent(deviceId)}`, { profile: false });
+  const load = () =>
+    apiRequest<Partial<PushPrefs>>(`${PREFS_ENDPOINT}?deviceId=${encodeURIComponent(deviceId)}`, { profile: false }).then(
+      withDefaults
+    );
   try {
     return await load();
   } catch (err) {
@@ -113,7 +137,11 @@ export async function getPushPrefs(): Promise<PushPrefs> {
 /** Turn categories on or off for this device. Returns the full set as saved. */
 export async function updatePushPrefs(changes: Partial<PushPrefs>): Promise<PushPrefs> {
   const deviceId = await getOrCreateDeviceId();
-  return apiRequest<PushPrefs>(PREFS_ENDPOINT, { method: 'PATCH', body: { deviceId, ...changes }, profile: false });
+  return apiRequest<Partial<PushPrefs>>(PREFS_ENDPOINT, {
+    method: 'PATCH',
+    body: { deviceId, ...changes },
+    profile: false,
+  }).then(withDefaults);
 }
 
 /** Re-register when the OS rotates the push token. Returns an unsubscribe function. */
@@ -134,8 +162,10 @@ export interface NotificationRoute {
 
 /**
  * Where a tapped push should take the user. Patient payloads carry `data.tag`
- * (`appointment-confirm-<id>`, `lab-result-<id>`, `queue-<id>`) and sometimes a
- * web `data.url`, which is ignored. `data.screen: "activate"` opens the activation screen.
+ * (`appointment-confirm-<id>`, `appointment-reminder-<id>`, `lab-result-<id>`, `queue-<id>`,
+ * `message-<id>`, `invoice-<id>`, `prescription-refill-<id>`, `followup-<visitId>`) and sometimes
+ * a web `data.url`, which is ignored. `data.screen: "activate"` opens the activation screen.
+ * Local medicine reminders (lib/medicineReminders.ts) carry `medicine-reminder-<HH:mm>` and `data.slot`.
  */
 export function routeForNotification(data: Record<string, unknown> | undefined): NotificationRoute {
   const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
@@ -149,11 +179,27 @@ export function routeForNotification(data: Record<string, unknown> | undefined):
   const idAfter = (prefix: string) => (tag.startsWith(prefix) ? tag.slice(prefix.length) || null : null);
 
   if (tag.startsWith('appointment-')) {
-    const id = idAfter('appointment-confirm-');
+    const id = idAfter('appointment-confirm-') ?? idAfter('appointment-reminder-') ?? idAfter('appointment-waitlist-');
     return {
       href: id ? `/patient/appointments/${id}` : '/patient/appointments',
       topics: ['appointments', 'notifications'],
     };
+  }
+  // Follow-up visit reminders open the booked follow-up (`data.appointmentId`), else Book.
+  if (tag.startsWith('followup-')) {
+    const appointmentId = str(data?.appointmentId);
+    return {
+      href: appointmentId ? `/patient/appointments/${appointmentId}` : '/patient/appointments/book',
+      topics: ['appointments'],
+    };
+  }
+  if (tag.startsWith('invoice-')) {
+    const id = idAfter('invoice-');
+    return { href: id ? `/patient/invoices/${id}` : '/patient/invoices', topics: ['invoices'] };
+  }
+  if (tag.startsWith('prescription-')) {
+    const id = idAfter('prescription-refill-');
+    return { href: id ? `/patient/prescriptions/${id}` : '/patient/prescriptions', topics: ['prescriptions'] };
   }
   if (tag.startsWith('lab-result-')) {
     const id = idAfter('lab-result-');
@@ -162,8 +208,12 @@ export function routeForNotification(data: Record<string, unknown> | undefined):
   if (tag.startsWith('message-')) {
     return { href: '/patient/notifications', topics: ['notifications'] };
   }
+  if (tag.startsWith('medicine-reminder')) {
+    const slot = str(data?.slot);
+    return { href: slot ? `/patient/medicines?slot=${encodeURIComponent(slot)}` : '/patient/medicines', topics: [] };
+  }
   if (tag.startsWith('queue-')) {
     return { href: '/patient/queue', topics: ['queue'] };
   }
-  return { href: null, topics: ['notifications', 'appointments', 'lab-results', 'queue'] };
+  return { href: null, topics: ['notifications', 'appointments', 'lab-results', 'queue', 'invoices', 'prescriptions'] };
 }

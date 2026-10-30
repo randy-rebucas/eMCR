@@ -1,24 +1,74 @@
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApiData } from '@/lib/useApiData';
+import { errorMessage } from '@/lib/api';
+import { emitRefresh } from '@/lib/events';
+import { openInvoicePayPage, payLinkPath, type PayOnlineOffer } from '@/lib/invoicePay';
 import { InvoiceDetailEnvelope } from '@/lib/types';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { amountPaid, balanceOf, invoiceLook } from '@/lib/invoices';
 import { colors, radius, spacing } from '@/lib/theme';
-import { LoadingView, useBottomPadding } from '@/components/ui';
+import { Banner, Button, LoadingView, useBottomPadding } from '@/components/ui';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { ErrorState } from '@/components/ErrorState';
 import { InvoiceStatusPill } from '@/components/InvoiceStatusPill';
 import { softShadow } from '@/components/AppHeader';
 
-/** View only: patients can't pay from the app (the payment flow is staff-side). */
+/**
+ * One invoice. When the clinic takes payments online, "Pay online" opens its pay page (the same
+ * one staff text to patients) in an in-app browser; otherwise the balance is paid at the desk.
+ */
 export default function InvoiceDetailScreen() {
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, loading, refreshing, error, refresh } = useApiData<InvoiceDetailEnvelope>(
+  const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<InvoiceDetailEnvelope>(
     id ? `/api/patients/me/invoices/${encodeURIComponent(id)}` : null,
-    { envelope: true, refreshOn: ['invoices'] }
+    { envelope: true, refreshOn: ['invoices'], offline: true }
   );
+  // Fails (e.g. an older server) → treated as not offered: the front-desk note stays.
+  const { data: offer } = useApiData<PayOnlineOffer>(id ? payLinkPath(id) : null, { refreshOn: ['invoices'] });
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
+  /** Came back from the pay page this visit: the payment may not have reached the clinic yet. */
+  const [returned, setReturned] = useState(false);
+  const awaitingReturn = useRef(false);
+
+  const backFromPayPage = useCallback(() => {
+    awaitingReturn.current = false;
+    setReturned(true);
+    // Refetches this invoice, its pay options and the invoice list.
+    emitRefresh('invoices');
+  }, []);
+
+  // Android hands back control as soon as the browser opens; the app returning to the
+  // foreground is when the patient is done with the pay page.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && awaitingReturn.current) backFromPayPage();
+    });
+    return () => subscription.remove();
+  }, [backFromPayPage]);
+
+  const payOnline = useCallback(async () => {
+    if (!id) return;
+    setPaying(true);
+    setPayError(null);
+    try {
+      awaitingReturn.current = true;
+      const result = await openInvoicePayPage(id);
+      // iOS resolves when the browser closes.
+      if (result.type !== 'opened') backFromPayPage();
+    } catch (err) {
+      awaitingReturn.current = false;
+      setPayError(errorMessage(err, 'The payment page couldn’t be opened. Please try again.'));
+      // e.g. paid meanwhile (NOTHING_OWED): show the current state.
+      emitRefresh('invoices');
+    } finally {
+      setPaying(false);
+    }
+  }, [id, backFromPayPage]);
 
   if (loading) return <LoadingView />;
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
@@ -38,6 +88,7 @@ export default function InvoiceDetailScreen() {
       contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
     >
+      <OfflineBanner offline={offline} updatedAt={updatedAt} />
       {/* Header */}
       <View style={styles.card}>
         <View style={styles.header}>
@@ -59,11 +110,38 @@ export default function InvoiceDetailScreen() {
         </View>
       </View>
 
-      {balance > 0 ? (
-        <View style={styles.payNote}>
-          <Ionicons name="business-outline" size={18} color={colors.slate} />
-          <Text style={styles.payNoteText}>Pay the balance at the clinic's front desk.</Text>
+      {balance > 0 && offer?.offered ? (
+        <View style={styles.payOnline}>
+          {offer.pendingClaim ? (
+            <PayNote
+              icon="time-outline"
+              inline
+              text="You sent a payment for the clinic to check. The balance updates once they confirm it, so you don’t need to pay again."
+            />
+          ) : offer.recentCheckoutAt || returned ? (
+            <PayNote
+              icon="time-outline"
+              inline
+              text="If you just paid, it can take a few minutes to show here. Pull down to refresh, and check before paying again."
+            />
+          ) : null}
+          <Button title="Pay online" icon="card-outline" onPress={payOnline} loading={paying} />
+          <Text style={styles.payHint}>
+            {offer.methods.includes('online')
+              ? 'Opens the clinic’s secure payment page.'
+              : 'Opens the clinic’s payment page: pay by QR code or bank transfer, then send your reference number. The clinic confirms it before the balance updates.'}
+          </Text>
+          {payError ? <Banner message={payError} /> : null}
         </View>
+      ) : balance > 0 ? (
+        <PayNote
+          icon="business-outline"
+          text={
+            offer?.code === 'BELOW_MINIMUM'
+              ? `Online payments start at ${formatMoney(offer.minimum)}. Pay the balance at the clinic's front desk.`
+              : "Pay the balance at the clinic's front desk."
+          }
+        />
       ) : null}
 
       {/* Items */}
@@ -133,6 +211,15 @@ export default function InvoiceDetailScreen() {
   );
 }
 
+function PayNote({ icon, text, inline }: { icon: 'time-outline' | 'business-outline'; text: string; inline?: boolean }) {
+  return (
+    <View style={[styles.payNote, inline && styles.payNoteInline]}>
+      <Ionicons name={icon} size={18} color={colors.slate} />
+      <Text style={styles.payNoteText}>{text}</Text>
+    </View>
+  );
+}
+
 function Total({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'danger' }) {
   return (
     <View style={styles.total}>
@@ -187,6 +274,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm + 2,
   },
   payNoteText: { flex: 1, fontSize: 13, color: colors.slate },
+  payNoteInline: { marginTop: 0 },
+  payOnline: { gap: spacing.sm, marginTop: spacing.sm + 2 },
+  payHint: { fontSize: 12, color: colors.textMuted, textAlign: 'center' },
   section: { fontSize: 17, fontWeight: '700', color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
   line: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4, paddingVertical: spacing.sm + 2 },
   divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },

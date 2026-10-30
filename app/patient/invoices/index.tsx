@@ -9,6 +9,7 @@ import { formatDate, formatMoney } from '@/lib/format';
 import { balanceOf, invoiceLook, itemsSummary, lastPaymentDate } from '@/lib/invoices';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { InvoiceStatusPill } from '@/components/InvoiceStatusPill';
 
@@ -19,7 +20,7 @@ export default function InvoicesScreen() {
   const [filter, setFilter] = useState<Filter>('all');
   const list = usePaginatedList<Invoice, InvoiceListEnvelope>(
     `/api/patients/me/invoices${filter === 'all' ? '' : `?status=${filter}`}`,
-    { limit: 20, refreshOn: ['invoices'] }
+    { limit: 20, refreshOn: ['invoices'], offline: true }
   );
   // The summary covers every invoice regardless of the filter; keep the last one seen.
   const [summary, setSummary] = useState<InvoiceListEnvelope['summary']>(undefined);
@@ -93,7 +94,8 @@ export default function InvoicesScreen() {
         })}
       </View>
 
-      {list.error && list.items.length > 0 ? <Banner message={list.error} /> : null}
+      <OfflineBanner offline={list.offline} updatedAt={list.updatedAt} />
+      {list.error && list.items.length > 0 && !list.offline ? <Banner message={list.error} /> : null}
     </SafeAreaView>
   );
 

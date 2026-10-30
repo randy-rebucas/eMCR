@@ -1,11 +1,14 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { apiRequest, ApiError, errorMessage } from '@/lib/api';
 import { emitRefresh } from '@/lib/events';
 import { useApiData } from '@/lib/useApiData';
+import { appointmentStart, isUpcoming, rescheduleAppointment } from '@/lib/appointments';
+import { joinWaitlist } from '@/lib/waitlist';
 import { Appointment, BookingDoctor, BookingOptions } from '@/lib/types';
-import { clinicEpoch, clinicTodayYmd, doctorName, formatTime, toYmd } from '@/lib/format';
+import { clinicEpoch, clinicTodayYmd, clinicYmd, doctorName, formatTime, toYmd } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName } from './ui';
 import { softShadow } from './AppHeader';
@@ -45,6 +48,17 @@ function fromYmd(key: string): Date {
 
 function longDate(key: string): string {
   return fromYmd(key).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+/** The patient's upcoming appointment with this doctor at this slot, or null (also when offline). */
+async function findBooking(doctorId: string, date: string, time: string): Promise<Appointment | null> {
+  try {
+    const list = await apiRequest<Appointment[]>('/api/patients/me/appointments?limit=50');
+    const start = clinicEpoch(date, time);
+    return list.find((a) => a.doctor?._id === doctorId && isUpcoming(a) && appointmentStart(a) === start) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Minutes since midnight right now on the clinic's clock (not the phone's). */
@@ -95,24 +109,44 @@ export interface BookedSummary {
   video?: boolean;
 }
 
+/** The slot an appointment has now ("yyyy-MM-dd" clinic day + "HH:mm"), or null. */
+function currentSlot(a: Appointment | undefined): { date: string; time: string } | null {
+  const raw = a?.appointmentDate;
+  const day = raw ? new Date(raw) : null;
+  const t = /^(\d{1,2}):(\d{2})$/.exec(a?.appointmentTime?.trim() ?? '');
+  if (!day || isNaN(day.getTime()) || !t) return null;
+  return { date: clinicYmd(day), time: `${t[1].padStart(2, '0')}:${t[2]}` };
+}
+
 export function BookingForm({
   onBooked,
   tenantId,
+  reschedule,
 }: {
   onBooked: (booked: BookedSummary) => void;
   /** Clinic to book at (a `tenantId` from `/me/clinics`); the patient's first clinic when omitted. */
   tenantId?: string;
+  /**
+   * Move this appointment instead of booking a new one: the doctor, visit type and reason stay,
+   * only the date and time are chosen (its current slot is marked).
+   */
+  reschedule?: Appointment;
 }) {
   const clinicParam = tenantId ? `tenantId=${encodeURIComponent(tenantId)}` : '';
   const doctorsQuery = useApiData<BookingOptions>(`/api/patients/appointments${clinicParam ? `?${clinicParam}` : ''}`);
   // Calendar days are plain y/m/d values; "today" is the clinic's date, not the phone's.
   const todayKey = useClinicToday();
   const today = useMemo(() => fromYmd(todayKey), [todayKey]);
+  const moving = !!reschedule;
+  const was = useMemo(() => currentSlot(reschedule), [reschedule]);
 
   const [specialty, setSpecialty] = useState(ALL);
-  const [doctorId, setDoctorId] = useState<string | null>(null);
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(today));
-  const [date, setDate] = useState<string | null>(null);
+  const [doctorId, setDoctorId] = useState<string | null>(reschedule?.doctor?._id ?? null);
+  // Rescheduling opens on the appointment's current week and day.
+  const [weekStart, setWeekStart] = useState(() =>
+    startOfWeek(was && was.date >= todayKey ? fromYmd(was.date) : today)
+  );
+  const [date, setDate] = useState<string | null>(was && was.date >= todayKey ? was.date : null);
   const [slots, setSlots] = useState<string[] | null>(null);
   const [dayOff, setDayOff] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -163,8 +197,11 @@ export function BookingForm({
   }, [doctorId, date, slotsVersion, clinicParam]);
 
   const doctors: BookingDoctor[] = doctorsQuery.data?.doctors ?? [];
-  const videoOffered = doctorsQuery.data?.teleconsultAvailable === true;
-  const wantsVideo = videoOffered && video;
+  // A moved appointment keeps its visit type (and reason); neither step is shown.
+  const videoOffered = !moving && doctorsQuery.data?.teleconsultAvailable === true;
+  const wantsVideo = moving ? reschedule?.modality === 'teleconsult' : videoOffered && video;
+  // The current slot is booked by this very appointment, so the server doesn't offer it; show it, marked.
+  const currentTime = was && date === was.date ? was.time : null;
   const specialties = useMemo(
     () => [...new Set(doctors.map((d) => d.specialization).filter((s): s is string => !!s))].sort(),
     [doctors]
@@ -174,17 +211,16 @@ export function BookingForm({
   const bookable = useMemo(() => (doctor?.bookableDates ? new Set(doctor.bookableDates) : null), [doctor]);
   const lastDay = addDays(today, (doctor?.bookableDates ? HORIZON_DAYS : LEGACY_HORIZON_DAYS) - 1);
 
-  const grouped = useMemo(
-    () =>
-      PERIODS.map((p) => ({
-        ...p,
-        slots: (slots ?? []).filter((s) => {
-          const [h, m] = s.split(':').map(Number);
-          return p.test(h * 60 + m);
-        }),
-      })).filter((g) => g.slots.length > 0),
-    [slots]
-  );
+  const grouped = useMemo(() => {
+    const shown = slots && currentTime && !slots.includes(currentTime) ? [...slots, currentTime].sort() : slots ?? [];
+    return PERIODS.map((p) => ({
+      ...p,
+      slots: shown.filter((s) => {
+        const [h, m] = s.split(':').map(Number);
+        return p.test(h * 60 + m);
+      }),
+    })).filter((g) => g.slots.length > 0);
+  }, [slots, currentTime]);
 
   if (doctorsQuery.loading) {
     return (
@@ -203,6 +239,15 @@ export function BookingForm({
       </View>
     );
   }
+  if (moving && !doctors.some((d) => d._id === doctorId)) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.muted}>
+          {doctorName(reschedule?.doctor) ?? 'This doctor'} isn't taking online bookings right now. Please call the clinic to move this appointment.
+        </Text>
+      </View>
+    );
+  }
   if (doctors.length === 0) {
     return (
       <View style={styles.center}>
@@ -211,7 +256,7 @@ export function BookingForm({
     );
   }
 
-  const showSpecialties = specialties.length > 1;
+  const showSpecialties = !moving && specialties.length > 1;
   let step = 0;
   const nextStep = () => ++step;
 
@@ -251,6 +296,28 @@ export function BookingForm({
     inFlight.current = true;
     setError(null);
     setSubmitting(true);
+    if (reschedule) {
+      try {
+        const moved = await rescheduleAppointment(reschedule._id, date, time);
+        onBooked({ appointment: moved, doctor: doctorName(doctor), date, time, video: wantsVideo });
+      } catch (err) {
+        // The move may have been saved though the reply was lost (or a retry then hit it as
+        // "slot taken"): if the appointment is already at the new time, it worked.
+        const maybeSaved = err instanceof ApiError && (err.status === 0 || err.status === 409);
+        const saved = maybeSaved ? await findBooking(doctorId, date, time) : null;
+        if (saved && saved._id === reschedule._id) {
+          emitRefresh('appointments', 'notifications');
+          onBooked({ appointment: saved, doctor: doctorName(doctor), date, time, video: wantsVideo });
+          return;
+        }
+        setError(errorMessage(err, "Couldn't move the appointment. Please try again."));
+        if (err instanceof ApiError && (err.status === 409 || err.status === 400)) setSlotsVersion((v) => v + 1);
+      } finally {
+        inFlight.current = false;
+        setSubmitting(false);
+      }
+      return;
+    }
     try {
       const created = await apiRequest<Appointment>('/api/patients/appointments', {
         method: 'POST',
@@ -265,6 +332,15 @@ export function BookingForm({
       emitRefresh('appointments', 'notifications');
       onBooked({ appointment: created ?? null, doctor: doctorName(doctor), date, time, video: wantsVideo });
     } catch (err) {
+      // The booking may have been saved even though the reply was lost, and a retry then hits
+      // our own booking as "slot taken". Look for it before asking for another time.
+      const maybeSaved = err instanceof ApiError && (err.status === 0 || err.status === 409);
+      const saved = maybeSaved ? await findBooking(doctorId, date, time) : null;
+      if (saved) {
+        emitRefresh('appointments', 'notifications');
+        onBooked({ appointment: saved, doctor: doctorName(doctor), date, time, video: wantsVideo });
+        return;
+      }
       setError(errorMessage(err, "Couldn't book the appointment. Please try again."));
       if (err instanceof ApiError && (err.status === 409 || err.status === 400)) setSlotsVersion((v) => v + 1);
     } finally {
@@ -305,63 +381,74 @@ export function BookingForm({
         </Step>
       ) : null}
 
-      <Step n={nextStep()} title="Choose a Doctor" done={!!doctor}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList}>
-          {visibleDoctors.map((d) => {
-            const id = d._id ?? '';
-            const selected = id === doctorId;
-            const unavailable = d.bookableDates !== undefined && d.bookableDates.length === 0;
-            return (
-              <TouchableOpacity
-                key={id}
-                style={[styles.doctor, selected && styles.selected, unavailable && styles.doctorUnavailable]}
-                onPress={() => chooseDoctor(d)}
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                accessibilityLabel={`${doctorName(d)}${d.specialization ? `, ${d.specialization}` : ''}${d.hoursSummary ? `, ${d.hoursSummary}` : ''}`}
-              >
-                <View style={styles.doctorTop}>
-                  <View style={styles.doctorAvatar}>
-                    <Text style={styles.doctorInitials}>
-                      {`${d.firstName?.[0] ?? ''}${d.lastName?.[0] ?? ''}`.toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.flex}>
-                    <Text style={styles.doctorName} numberOfLines={2}>
-                      {doctorName(d)}
-                    </Text>
-                    {d.specialization ? (
-                      <Text style={styles.doctorSpec} numberOfLines={1}>
-                        {d.specialization}
+      {moving ? (
+        <Step n={nextStep()} title="Your Appointment" done>
+          <ReviewRow icon="person-outline" text={`${doctorName(doctor)}${doctor?.specialization ? ` · ${doctor.specialization}` : ''}`} />
+          {was ? <ReviewRow icon="calendar-outline" text={`Now: ${longDate(was.date)} at ${formatTime(was.time)}`} /> : null}
+          {wantsVideo ? <ReviewRow icon="videocam-outline" text="Video call" /> : null}
+        </Step>
+      ) : (
+        <Step n={nextStep()} title="Choose a Doctor" done={!!doctor}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList}>
+            {visibleDoctors.map((d) => {
+              const id = d._id ?? '';
+              const selected = id === doctorId;
+              const unavailable = d.bookableDates !== undefined && d.bookableDates.length === 0;
+              return (
+                <TouchableOpacity
+                  key={id}
+                  style={[styles.doctor, selected && styles.selected, unavailable && styles.doctorUnavailable]}
+                  onPress={() => chooseDoctor(d)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${doctorName(d)}${d.specialization ? `, ${d.specialization}` : ''}${d.hoursSummary ? `, ${d.hoursSummary}` : ''}`}
+                >
+                  <View style={styles.doctorTop}>
+                    <View style={styles.doctorAvatar}>
+                      <Text style={styles.doctorInitials}>
+                        {`${d.firstName?.[0] ?? ''}${d.lastName?.[0] ?? ''}`.toUpperCase()}
                       </Text>
-                    ) : null}
+                    </View>
+                    <View style={styles.flex}>
+                      <Text style={styles.doctorName} numberOfLines={2}>
+                        {doctorName(d)}
+                      </Text>
+                      {d.specialization ? (
+                        <Text style={styles.doctorSpec} numberOfLines={1}>
+                          {d.specialization}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
-                </View>
-                {d.hoursSummary || unavailable ? (
-                  <View style={styles.doctorHours}>
-                    <Ionicons name="time-outline" size={13} color={colors.textMuted} />
-                    <Text style={styles.doctorHoursText} numberOfLines={2}>
-                      {unavailable ? 'No openings in the next 2 months' : d.hoursSummary}
-                    </Text>
-                  </View>
-                ) : null}
-                <Ionicons
-                  name={selected ? 'checkmark-circle' : 'ellipse-outline'}
-                  size={22}
-                  color={selected ? colors.primary : colors.border}
-                  style={styles.radio}
-                />
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </Step>
+                  {d.hoursSummary || unavailable ? (
+                    <View style={styles.doctorHours}>
+                      <Ionicons name="time-outline" size={13} color={colors.textMuted} />
+                      <Text style={styles.doctorHoursText} numberOfLines={2}>
+                        {unavailable ? 'No openings in the next 2 months' : d.hoursSummary}
+                      </Text>
+                    </View>
+                  ) : null}
+                  <Ionicons
+                    name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={22}
+                    color={selected ? colors.primary : colors.border}
+                    style={styles.radio}
+                  />
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </Step>
+      )}
 
-      <Step n={nextStep()} title="Select Date" done={!!date} locked={!doctor} lockedHint="Choose a doctor first.">
+      <Step n={nextStep()} title={moving ? 'Choose a New Date' : 'Select Date'} done={!!date} locked={!doctor} lockedHint="Choose a doctor first.">
         {noDates ? (
-          <Text style={styles.muted}>
-            {doctorName(doctor)} has no openings in the next two months. Choose another doctor or call the clinic.
-          </Text>
+          <>
+            <Text style={styles.muted}>
+              {doctorName(doctor)} has no openings in the next two months. Choose another doctor or call the clinic.
+            </Text>
+            {!moving && doctorId ? <WaitlistOffer key={doctorId} doctorId={doctorId} doctorLabel={doctorName(doctor)} date={null} /> : null}
+          </>
         ) : (
           <View style={styles.calendar}>
             <View style={styles.calHeader}>
@@ -426,7 +513,7 @@ export function BookingForm({
 
       <Step
         n={nextStep()}
-        title="Select Time"
+        title={moving ? 'Choose a New Time' : 'Select Time'}
         done={!!time}
         locked={!doctor || !date}
         lockedHint="Choose a doctor and a date to see open times."
@@ -448,15 +535,21 @@ export function BookingForm({
               <View style={styles.slots}>
                 {g.slots.map((slot) => {
                   const selected = slot === time;
+                  const isCurrent = slot === currentTime;
                   return (
                     <TouchableOpacity
                       key={slot}
-                      style={[styles.slot, selected && styles.slotSelected]}
+                      style={[styles.slot, selected && styles.slotSelected, isCurrent && styles.slotCurrent]}
                       onPress={() => setTime(slot)}
+                      disabled={isCurrent}
                       accessibilityRole="button"
-                      accessibilityState={{ selected }}
+                      accessibilityState={{ selected, disabled: isCurrent }}
+                      accessibilityLabel={isCurrent ? `${formatTime(slot)}, your current time` : undefined}
                     >
-                      <Text style={[styles.slotText, selected && styles.slotTextSelected]}>{formatTime(slot)}</Text>
+                      <Text style={[styles.slotText, selected && styles.slotTextSelected, isCurrent && styles.slotTextCurrent]}>
+                        {formatTime(slot)}
+                      </Text>
+                      {isCurrent ? <Text style={styles.slotCurrentLabel}>Current</Text> : null}
                     </TouchableOpacity>
                   );
                 })}
@@ -464,11 +557,17 @@ export function BookingForm({
             </View>
           ))
         ) : slots ? (
-          <Text style={styles.muted}>
-            {dayOff
-              ? `${doctorName(doctor) ?? 'The doctor'} isn't seeing patients this day. Try another date.`
-              : 'This day is fully booked. Try another date.'}
-          </Text>
+          <>
+            <Text style={styles.muted}>
+              {dayOff
+                ? `${doctorName(doctor) ?? 'The doctor'} isn't seeing patients this day. Try another date.`
+                : 'This day is fully booked. Try another date, or wait for a time to open up.'}
+            </Text>
+            {/* A full day can free up when someone cancels; a day off can't. */}
+            {!dayOff && !moving && doctorId && date ? (
+              <WaitlistOffer key={`${doctorId}-${date}`} doctorId={doctorId} doctorLabel={doctorName(doctor)} date={date} />
+            ) : null}
+          </>
         ) : null}
       </Step>
 
@@ -499,54 +598,65 @@ export function BookingForm({
         </Step>
       ) : null}
 
-      <Step n={nextStep()} title="Reason for Visit" optional>
-        <TextInput
-          style={styles.reason}
-          value={reason}
-          onChangeText={setReason}
-          multiline
-          maxLength={500}
-          placeholder="e.g. Follow-up check-up, cough for 3 days"
-          placeholderTextColor={colors.textMuted}
-          accessibilityLabel="Reason for visit"
-        />
-        <Text style={styles.counter}>{reason.length}/500</Text>
-      </Step>
+      {moving ? null : (
+        <Step n={nextStep()} title="Reason for Visit" optional>
+          <TextInput
+            style={styles.reason}
+            value={reason}
+            onChangeText={setReason}
+            multiline
+            maxLength={500}
+            placeholder="e.g. Follow-up check-up, cough for 3 days"
+            placeholderTextColor={colors.textMuted}
+            accessibilityLabel="Reason for visit"
+          />
+          <Text style={styles.counter}>{reason.length}/500</Text>
+        </Step>
+      )}
 
       {doctor && date && time ? (
         <View style={styles.review} accessible accessibilityLabel={`Review: ${doctorName(doctor)}, ${longDate(date)} at ${formatTime(time)}`}>
-          <Text style={styles.reviewTitle}>Review your request</Text>
+          <Text style={styles.reviewTitle}>{moving ? 'Review the change' : 'Review your request'}</Text>
           <ReviewRow icon="person-outline" text={`${doctorName(doctor)}${doctor.specialization ? ` · ${doctor.specialization}` : ''}`} />
+          {was ? <ReviewRow icon="arrow-undo-outline" text={`From ${longDate(was.date)} at ${formatTime(was.time)}`} /> : null}
           <ReviewRow icon="calendar-outline" text={longDate(date)} />
           <ReviewRow icon="time-outline" text={formatTime(time)} />
           {wantsVideo ? <ReviewRow icon="videocam-outline" text="Video call — join from this app" /> : null}
-          {reason.trim() ? <ReviewRow icon="chatbox-ellipses-outline" text={reason.trim()} /> : null}
+          {!moving && reason.trim() ? <ReviewRow icon="chatbox-ellipses-outline" text={reason.trim()} /> : null}
         </View>
       ) : null}
 
       {error ? <Banner message={error} /> : null}
 
       <Button
-        title="Confirm Appointment"
+        title={moving ? 'Confirm New Time' : 'Confirm Appointment'}
         icon="calendar-outline"
         onPress={submit}
         loading={submitting}
         disabled={!doctorId || !date || !time}
       />
-      <Text style={styles.note}>The clinic confirms each request. You'll get a notification once it's confirmed.</Text>
+      <Text style={styles.note}>
+        {moving
+          ? "The clinic confirms the new time. You'll get a notification once it's confirmed."
+          : "The clinic confirms each request. You'll get a notification once it's confirmed."}
+      </Text>
     </View>
   );
 }
 
-/** Shown in place of the form once a request is sent. */
+/** Shown in place of the form once a request is sent (or an appointment moved). */
 export function BookingSuccess({
   booked,
   onView,
   onBookAnother,
+  rescheduled,
 }: {
   booked: BookedSummary;
   onView: () => void;
-  onBookAnother: () => void;
+  /** Left out: no "Book Another" button. */
+  onBookAnother?: () => void;
+  /** The appointment was moved rather than booked. */
+  rescheduled?: boolean;
 }) {
   const { appointment } = booked;
   return (
@@ -554,9 +664,11 @@ export function BookingSuccess({
       <View style={styles.successIcon}>
         <Ionicons name="checkmark" size={40} color={colors.primaryText} />
       </View>
-      <Text style={styles.successTitle}>Request Sent!</Text>
+      <Text style={styles.successTitle}>{rescheduled ? 'Appointment Moved' : 'Request Sent!'}</Text>
       <Text style={styles.successText}>
-        The clinic will review your request and confirm it. We'll notify you as soon as it's confirmed.
+        {rescheduled
+          ? "The clinic will confirm your new time. We'll notify you as soon as it's confirmed."
+          : "The clinic will review your request and confirm it. We'll notify you as soon as it's confirmed."}
       </Text>
       <View style={[styles.review, styles.successReview]}>
         {booked.doctor ? <ReviewRow icon="person-outline" text={booked.doctor} /> : null}
@@ -566,7 +678,72 @@ export function BookingSuccess({
         {appointment?.appointmentCode ? <ReviewRow icon="pricetag-outline" text={`Ref ${appointment.appointmentCode}`} /> : null}
       </View>
       {appointment?._id ? <Button title="View Appointment" onPress={onView} style={styles.stretch} /> : null}
-      <Button title="Book Another" variant="secondary" onPress={onBookAnother} style={styles.stretch} />
+      {onBookAnother ? <Button title="Book Another" variant="secondary" onPress={onBookAnother} style={styles.stretch} /> : null}
+    </View>
+  );
+}
+
+/**
+ * "Join the waitlist" for a doctor with no free time: for one full day (`date`), or for any day
+ * when the doctor has no openings at all. Keyed by doctor and day, so a new choice starts fresh.
+ */
+function WaitlistOffer({ doctorId, doctorLabel, date }: { doctorId: string; doctorLabel: string | null; date: string | null }) {
+  const [joining, setJoining] = useState(false);
+  const [joined, setJoined] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showList, setShowList] = useState(false);
+  const who = doctorLabel ?? 'this doctor';
+
+  async function join() {
+    if (joining) return;
+    setJoining(true);
+    setError(null);
+    try {
+      await joinWaitlist(doctorId, date);
+      setJoined(true);
+    } catch (err) {
+      setError(errorMessage(err, "Couldn't add you to the waitlist. Please try again."));
+      // Already waiting or at the limit: the list is where to sort that out.
+      setShowList(err instanceof ApiError && (err.code === 'ALREADY_WAITING' || err.code === 'WAITLIST_LIMIT'));
+    } finally {
+      setJoining(false);
+    }
+  }
+
+  if (joined) {
+    return (
+      <View style={styles.waitlist} accessibilityLiveRegion="polite">
+        <View style={styles.waitlistHead}>
+          <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+          <Text style={styles.waitlistTitle}>You're on the waitlist</Text>
+        </View>
+        <Text style={styles.waitlistText}>
+          If a time with {who} opens up{date ? ` within a week of ${longDate(date)}` : ''}, it's booked for you straight away
+          and we'll send you a notification. You can leave the waitlist at any time.
+        </Text>
+        <Button title="View waitlist" variant="secondary" icon="list-outline" onPress={() => router.push('/patient/waitlist')} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.waitlist}>
+      <View style={styles.waitlistHead}>
+        <Ionicons name="hourglass-outline" size={20} color={colors.primary} />
+        <Text style={styles.waitlistTitle}>Wait for a cancellation</Text>
+      </View>
+      <Text style={styles.waitlistText}>
+        {date
+          ? `Join the waitlist and if a time with ${who} opens up within a week of ${longDate(date)}, we'll book it for you and let you know.`
+          : `Join the waitlist and if a time with ${who} opens up on any day, we'll book it for you and let you know.`}
+      </Text>
+      {error ? <Banner message={error} /> : null}
+      <Button title="Join the waitlist" icon="hourglass-outline" variant="secondary" onPress={join} loading={joining} />
+      {showList ? (
+        <TouchableOpacity onPress={() => router.push('/patient/waitlist')} accessibilityRole="link" style={styles.waitlistLink}>
+          <Text style={styles.link}>See your waitlist</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -746,6 +923,9 @@ const styles = StyleSheet.create({
   slotSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
   slotText: { fontSize: 14, color: colors.text, fontWeight: '500' },
   slotTextSelected: { color: colors.primaryText, fontWeight: '600' },
+  slotCurrent: { borderStyle: 'dashed', borderColor: colors.primary, backgroundColor: colors.surface },
+  slotTextCurrent: { color: colors.textMuted },
+  slotCurrentLabel: { fontSize: 11, color: colors.primary, fontWeight: '600' },
   reason: {
     minHeight: 80,
     borderWidth: 1,
@@ -782,6 +962,17 @@ const styles = StyleSheet.create({
   reviewRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   reviewText: { flex: 1, fontSize: 14, color: colors.text },
   note: { fontSize: 13, color: colors.textMuted, textAlign: 'center', marginTop: spacing.sm + 4 },
+  waitlist: {
+    marginTop: spacing.sm + 4,
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    padding: spacing.sm + 4,
+    gap: spacing.sm,
+  },
+  waitlistHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  waitlistTitle: { fontSize: 15, fontWeight: '700', color: colors.text, flex: 1 },
+  waitlistText: { fontSize: 14, lineHeight: 20, color: colors.text },
+  waitlistLink: { minHeight: 44, justifyContent: 'center', alignSelf: 'center', paddingHorizontal: spacing.sm },
   success: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
   successIcon: {
     width: 80,

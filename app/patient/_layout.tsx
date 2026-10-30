@@ -6,6 +6,7 @@ import { colors } from '@/lib/theme';
 import { ProfileProvider, useProfile } from '@/lib/profile';
 import { UnreadProvider } from '@/lib/unread';
 import { NotificationResponder } from '@/components/NotificationResponder';
+import { PrivacyGuard } from '@/components/PrivacyGuard';
 import { TourProvider } from '@/components/QuickTour';
 
 /** Patient area: tabs plus pushed detail screens. Only for a signed-in session. */
@@ -20,6 +21,7 @@ export default function PatientLayout() {
       <NotificationResponder />
       <ActivationPrompt />
       <ProfileScreens />
+      <PrivacyGuard />
     </ProfileProvider>
   );
 }
@@ -46,6 +48,16 @@ function ProfileScreens() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="appointments/[id]" options={{ title: 'Appointment' }} />
           <Stack.Screen name="appointments/book" options={{ title: 'Book appointment' }} />
+          <Stack.Screen name="appointments/reschedule" options={{ title: 'Reschedule' }} />
+          <Stack.Screen name="visits/index" options={{ title: 'Visit History', headerShown: false }} />
+          <Stack.Screen name="visits/[id]" options={{ title: 'Visit' }} />
+          <Stack.Screen name="vitals" options={{ title: 'Vitals', headerShown: false }} />
+          <Stack.Screen name="share" options={{ title: 'Share with a doctor', headerShown: false }} />
+          <Stack.Screen name="medicines" options={{ title: 'Medicine Reminders', headerShown: false }} />
+          <Stack.Screen name="membership" options={{ title: 'Membership', headerShown: false }} />
+          <Stack.Screen name="waitlist" options={{ title: 'Waitlist', headerShown: false }} />
+          <Stack.Screen name="referrals/index" options={{ title: 'Referrals', headerShown: false }} />
+          <Stack.Screen name="referrals/[id]" options={{ title: 'Referral' }} />
           <Stack.Screen name="results/[id]" options={{ title: 'Lab result' }} />
           <Stack.Screen name="prescriptions/index" options={{ title: 'Prescriptions', headerShown: false }} />
           <Stack.Screen name="prescriptions/[id]" options={{ title: 'Prescription' }} />

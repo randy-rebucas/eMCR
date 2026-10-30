@@ -1,4 +1,5 @@
 import { apiFetch, apiRequest, query } from './api';
+import { t } from './i18n';
 import {
   ClinicDirectoryEntry,
   EmcrAccount,
@@ -136,7 +137,7 @@ export async function requestPhoneCode(phone: string): Promise<string> {
     auth: false,
     body: { phone },
   });
-  return result.message ?? 'If a clinic has this number on file, a code will arrive by SMS within a minute.';
+  return result.message ?? t('auth.phoneCodeRequested');
 }
 
 /** Prove the phone. Returns a claim token, and a session when the account already has a profile. */
@@ -249,8 +250,7 @@ export async function requestAccess(input: AccessRequestInput): Promise<string> 
     },
   });
   return (
-    result.message ??
-    'Thank you. If the clinic has your record, we’ll send sign-in instructions to the phone number or email the clinic has on file. If not, the clinic will contact you.'
+    result.message ?? t('auth.accessRequested')
   );
 }
 

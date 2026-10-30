@@ -1,5 +1,6 @@
 import { API_BASE_URL } from './config';
-import { clearSession, getSession, setSession, StoredSession } from './storage';
+import { clearSession, getSession, sessionGeneration, setSession, StoredSession } from './storage';
+import { t } from './i18n';
 
 export class ApiError extends Error {
   status: number;
@@ -65,6 +66,8 @@ export interface RequestOptions {
    * Default true; false for calls that are always about the signed-in person (the family list).
    */
   profile?: boolean;
+  /** Give up after this long (default `REQUEST_TIMEOUT_MS`). */
+  timeoutMs?: number;
 }
 
 // ── Family profile ───────────────────────────────────────────────────────────
@@ -80,6 +83,11 @@ export function setActiveProfileId(id: string | null): void {
   activeProfileId = id;
 }
 
+/** The active family profile's record id (null = the signed-in person). Offline copies are keyed by it. */
+export function getActiveProfileId(): string | null {
+  return activeProfileId;
+}
+
 /** Called when the server says the active profile can't be used any more (unlinked, turned 18). */
 export function setProfileLostHandler(handler: ((message: string) => void) | null): void {
   profileLostHandler = handler;
@@ -93,7 +101,7 @@ export function setActivationRequiredHandler(handler: ((message: string) => void
 }
 
 /** For requests made outside `apiFetch` (file downloads) that came back 402. */
-export function reportActivationRequired(message = 'Activate eMCR to use this.'): void {
+export function reportActivationRequired(message = t('common.activateToUse')): void {
   activationRequiredHandler?.(message);
 }
 
@@ -104,10 +112,27 @@ export function authHeaders(token: string): Record<string, string> {
     : { Authorization: `Bearer ${token}` };
 }
 
-const SESSION_EXPIRED_MESSAGE = 'Your session has expired. Please sign in again.';
-const NETWORK_MESSAGE = "Can't reach the server. Check your connection and try again.";
+// Functions, not constants, so the text follows the app language.
+const SESSION_EXPIRED_MESSAGE = () => t('common.sessionExpired');
+const NETWORK_MESSAGE = () => t('common.network');
 /** Refresh this long before the access token's stated expiry. */
 const EXPIRY_SKEW_MS = 60_000;
+/**
+ * React Native's fetch never times out on its own: on a dead connection a request can hang for
+ * minutes, and the screens that poll (the queue) skip polls while one is still in flight.
+ */
+const REQUEST_TIMEOUT_MS = 20_000;
+
+/** `fetch` that rejects (with an AbortError) after `timeoutMs`. */
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ── Session expiry notification ──────────────────────────────────────────────
 
@@ -125,9 +150,10 @@ export function setSessionExpiredHandler(handler: SessionExpiredHandler | null):
 }
 
 async function expireSession(message?: string): Promise<never> {
+  activeProfileId = null;
   await clearSession();
   sessionExpiredHandler?.(message);
-  throw new ApiError(message ?? SESSION_EXPIRED_MESSAGE, 401, 'SESSION_EXPIRED');
+  throw new ApiError(message ?? SESSION_EXPIRED_MESSAGE(), 401, 'SESSION_EXPIRED');
 }
 
 // ── Token storage ────────────────────────────────────────────────────────────
@@ -136,13 +162,17 @@ async function expireSession(message?: string): Promise<never> {
  * Persist a token pair from a sign-in, refresh or password-change response.
  * A response without a refresh token clears the stored one: the backend kills
  * old refresh tokens whenever it re-issues an access token for a new session version.
+ * With `ifGeneration` (refresh), returns false without storing when the session changed meanwhile.
  */
-export async function storeTokens(pair: TokenPair): Promise<void> {
-  await setSession({
-    accessToken: pair.token,
-    refreshToken: pair.refreshToken ?? null,
-    accessExpiresAt: pair.expiresIn ? Date.now() + pair.expiresIn * 1000 : jwtExpiresAt(pair.token),
-  });
+export async function storeTokens(pair: TokenPair, ifGeneration?: number): Promise<boolean> {
+  return setSession(
+    {
+      accessToken: pair.token,
+      refreshToken: pair.refreshToken ?? null,
+      accessExpiresAt: pair.expiresIn ? Date.now() + pair.expiresIn * 1000 : jwtExpiresAt(pair.token),
+    },
+    { ifGeneration }
+  );
 }
 
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -192,7 +222,8 @@ function jwtExpiresAt(token: string): number | null {
 // ── Refresh (single-flight) ──────────────────────────────────────────────────
 
 interface RefreshOutcome {
-  outcome: 'refreshed' | 'expired' | 'unavailable';
+  /** 'superseded': the user signed out or in while the refresh ran; its tokens were dropped. */
+  outcome: 'refreshed' | 'expired' | 'unavailable' | 'superseded';
   /** Server reason for an 'expired' outcome (e.g. account deactivated). */
   message?: string;
 }
@@ -214,12 +245,13 @@ function refreshSession(): Promise<RefreshOutcome> {
 }
 
 async function performRefresh(): Promise<RefreshOutcome> {
+  const generation = sessionGeneration();
   const session = await getSession();
   if (!session?.refreshToken) return { outcome: 'expired' };
 
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${AUTH_ENDPOINTS.refresh}`, {
+    response = await fetchWithTimeout(`${API_BASE_URL}${AUTH_ENDPOINTS.refresh}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken: session.refreshToken }),
@@ -233,13 +265,14 @@ async function performRefresh(): Promise<RefreshOutcome> {
     | null;
 
   if (response.ok && json?.token) {
-    await storeTokens({
-      token: json.token,
-      expiresIn: json.expiresIn,
-      refreshToken: json.refreshToken,
-    });
-    return { outcome: 'refreshed' };
+    const stored = await storeTokens(
+      { token: json.token, expiresIn: json.expiresIn, refreshToken: json.refreshToken },
+      generation
+    );
+    return { outcome: stored ? 'refreshed' : 'superseded' };
   }
+  // A lost or unreadable success body is retried later. The server accepts the spent token
+  // again for a short grace period, so the retry doesn't look like token theft.
 
   // 401 REFRESH_INVALID / REFRESH_REUSED: the chain is dead, sign in again.
   if (response.status === 401) return { outcome: 'expired' };
@@ -247,7 +280,7 @@ async function performRefresh(): Promise<RefreshOutcome> {
   if (response.status === 403 && json?.code === 'ACCOUNT_INACTIVE') {
     return {
       outcome: 'expired',
-      message: typeof json.error === 'string' && json.error ? json.error : 'Your account is no longer active.',
+      message: typeof json.error === 'string' && json.error ? json.error : t('common.accountInactive'),
     };
   }
   // 429 / 5xx: keep the session and let the caller retry later.
@@ -268,9 +301,20 @@ export async function getAccessToken(): Promise<string> {
   if (session.refreshToken && isExpiringSoon(session)) {
     const { outcome, message } = await refreshSession();
     if (outcome === 'expired') return expireSession(message);
+    if (outcome === 'superseded') return currentTokenAfterSupersede();
     // 'unavailable': try the current token anyway; the server has the final word.
   }
   return (await getSession())?.accessToken ?? expireSession();
+}
+
+/**
+ * After a refresh was superseded: the new session's token, or (signed out) a quiet failure.
+ * Not `expireSession`: the user chose to sign out, so there is no "session expired" notice.
+ */
+async function currentTokenAfterSupersede(): Promise<string> {
+  const current = await getSession();
+  if (current) return current.accessToken;
+  throw new ApiError(SESSION_EXPIRED_MESSAGE(), 401, 'SIGNED_OUT');
 }
 
 /**
@@ -285,7 +329,8 @@ export async function recoverFromUnauthorized(usedToken: string): Promise<string
 
   const { outcome, message } = await refreshSession();
   if (outcome === 'expired') return expireSession(message);
-  if (outcome === 'unavailable') throw new ApiError(NETWORK_MESSAGE, 0, 'NETWORK');
+  if (outcome === 'superseded') return currentTokenAfterSupersede();
+  if (outcome === 'unavailable') throw new ApiError(NETWORK_MESSAGE(), 0, 'NETWORK');
   const refreshed = await getSession();
   return refreshed?.accessToken ?? expireSession();
 }
@@ -311,13 +356,13 @@ async function send(path: string, options: RequestOptions, token: string | null)
 
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      method,
-      headers,
-      body: payload !== undefined ? JSON.stringify(payload) : undefined,
-    });
+    response = await fetchWithTimeout(
+      `${API_BASE_URL}${path}`,
+      { method, headers, body: payload !== undefined ? JSON.stringify(payload) : undefined },
+      options.timeoutMs
+    );
   } catch {
-    throw new ApiError(NETWORK_MESSAGE, 0, 'NETWORK');
+    throw new ApiError(NETWORK_MESSAGE(), 0, 'NETWORK');
   }
   return { response, json: (await readJson(response)) as Record<string, unknown> | null };
 }
@@ -344,7 +389,7 @@ export async function apiFetch<E = unknown>(path: string, options: RequestOption
   // The family member's profile is gone (unlinked, or a child turned 18): back to the signed-in
   // person. The session itself is fine, so this is never treated like a 401.
   if (response.status === 403 && json?.code === 'PROFILE_FORBIDDEN') {
-    profileLostHandler?.(typeof json.error === 'string' ? json.error : 'You no longer manage this family member’s records.');
+    profileLostHandler?.(typeof json.error === 'string' ? json.error : t('common.profileLost'));
   }
 
   // eMCR isn't activated: the app opens the "Enter your activation code" screen. The call still
@@ -358,8 +403,8 @@ export async function apiFetch<E = unknown>(path: string, options: RequestOption
       typeof json?.error === 'string'
         ? json.error
         : response.status === 429
-          ? 'Too many attempts. Please wait a moment and try again.'
-          : `Request failed (${response.status})`;
+          ? t('common.tooManyAttempts')
+          : t('common.requestFailed', { status: response.status });
     throw new ApiError(message, response.status, typeof json?.code === 'string' ? json.code : undefined, json);
   }
 
@@ -373,7 +418,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 /** Message to show for any error thrown by the api layer. */
-export function errorMessage(error: unknown, fallback = 'Something went wrong. Please try again.'): string {
+export function errorMessage(error: unknown, fallback = t('common.somethingWrong')): string {
   return error instanceof ApiError ? error.message : fallback;
 }
 

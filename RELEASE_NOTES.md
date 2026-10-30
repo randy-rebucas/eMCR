@@ -1,5 +1,66 @@
 # eMCR release notes
 
+## 1.1.0
+
+Needs a new store build: adds native modules (expo-local-authentication, expo-screen-capture,
+expo-web-browser, expo-crypto, expo-localization). Deploy the backend first: payments, reschedule,
+share links, waitlist, referrals, feedback, membership and the new reminder pushes all need it.
+
+### Google Play "What's new" (under 500 characters)
+
+```
+• Pay your bills in the app with GCash, Maya, card or QR Ph
+• Reschedule appointments, or join the waitlist when a doctor is fully booked
+• Medicine reminders, visit history and vitals charts
+• Share your health summary with a doctor through a link you can revoke
+• View your records even when you're offline
+• App Lock with your fingerprint, face or screen lock
+• Now in Filipino
+```
+
+### Full notes
+
+**Appointments**
+- Reschedule an appointment to another time with the same doctor.
+- When a doctor has no free slots, join the waitlist. If a slot opens, the clinic books it for you
+  and lets you know.
+- Reminders the day before your appointment now also arrive as notifications.
+
+**Your records**
+- Visit history: diagnoses, treatment plan and follow-up date from each visit.
+- Vitals: blood pressure, weight, heart rate and more, charted over time.
+- Referrals: where your doctor referred you, its status, and the referral letter.
+- Share your health summary with another doctor. Choose how long the link works (24 hours, 7 days
+  or 30 days), see how many times it was opened, and revoke it any time.
+- Your recent records stay viewable when you're offline. They are encrypted on your phone and
+  removed when you sign out.
+
+**Medicines**
+- Set reminders for the medicines on your prescriptions. The app suggests times from your
+  prescription; you confirm them. Reminders don't show medicine names on your lock screen.
+- Refill reminders arrive as notifications.
+
+**Bills and membership**
+- Pay bills in the app through your clinic's own payment account (GCash, Maya, card, GrabPay,
+  QR Ph, or the clinic's bank or QR details), when your clinic offers it.
+- Payment reminders arrive as notifications.
+- Your membership card, with points, discount and member QR code.
+
+**Privacy and security**
+- App Lock: open eMCR with your fingerprint, face or screen lock (More → App Lock).
+- Screenshots and screen recording are blocked while you're signed in, and the app is hidden in
+  the recent-apps view.
+- Prescription and health-summary PDFs now open inside the app instead of the browser.
+- Fixed: signing out while the app was renewing your session could leave you signed in.
+
+**Also**
+- Tell your clinic how your visit went, right from the Home screen.
+- New notification settings for follow-ups, prescription refills and payments.
+- The app is now available in Filipino (More → Language).
+- If the connection drops while booking, the app checks whether the booking went through before
+  asking you to pick another time.
+- The live queue says when its numbers are out of date.
+
 ## 1.0.2
 
 ### Google Play "What's new" (under 500 characters)

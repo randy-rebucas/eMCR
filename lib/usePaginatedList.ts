@@ -1,12 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiFetch, errorMessage, Pagination } from './api';
+import { apiFetch, ApiError, errorMessage, getActiveProfileId, Pagination } from './api';
 import { RefreshTopic, useRefreshOn } from './events';
+import {
+  offlineCacheEpoch,
+  offlineCacheKey,
+  readOffline,
+  removeOffline,
+  shouldDropCacheOnStatus,
+  writeOffline,
+} from './offlineCache';
+import { sessionGeneration } from './storage';
+import { t } from './i18n';
+import { isNetworkError } from './useApiData';
 
 interface Options {
   /** Page size sent as `limit`. */
   limit?: number;
   /** Refetch the first page silently when any of these topics is emitted. */
   refreshOn?: RefreshTopic[];
+  /**
+   * Keep an encrypted copy of the first page on the device (per family profile) and show it
+   * straight away on the next visit, then refetch. When the network is down the copy stays on
+   * screen with `offline: true` and `updatedAt` = when it was saved.
+   */
+  offline?: boolean;
 }
 
 type Envelope<T> = { data?: T[]; pagination?: Pagination } & Record<string, unknown>;
@@ -44,7 +61,7 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
   basePath: string | null,
   options: Options = {}
 ) {
-  const { limit = 20, refreshOn } = options;
+  const { limit = 20, refreshOn, offline: keepOffline = false } = options;
   const [items, setItems] = useState<T[]>([]);
   const [extra, setExtra] = useState<X | null>(null);
   const [page, setPage] = useState(1);
@@ -54,6 +71,14 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  /** When the first page last loaded (epoch ms); for a saved offline copy, when it was saved. */
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  /** The last first-page load couldn't reach the server, and `items` is an older copy. */
+  const [offline, setOffline] = useState(false);
+  /** `items` is the saved offline copy; the server hasn't confirmed it yet this visit. */
+  const [stale, setStale] = useState(false);
+  const fromCache = useRef(false);
+  const itemCount = useRef(0);
   const mounted = useRef(true);
   // Ignore responses from a superseded request (filter changed, pulled to refresh).
   // Silent polls don't bump it, so they never discard an in-flight loadMore.
@@ -86,13 +111,42 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
       if (mode === 'silent' && firstPageInFlight.current > 0) return;
       const gen = mode === 'silent' ? generation.current : ++generation.current;
       const current = () => mounted.current && gen === generation.current;
+      const cacheKey = keepOffline ? offlineCacheKey(url, getActiveProfileId(), 'list') : null;
+      // Read before the request: a response that lands after sign-out must not be saved.
+      const cacheEpoch = offlineCacheEpoch();
+      const sessionGen = sessionGeneration();
+      let outcome: 'pending' | 'ok' | 'network' | 'failed' = 'pending';
       firstPageInFlight.current++;
       if (mode === 'initial') setLoading(true);
       if (mode === 'refresh') setRefreshing(true);
       if (mode !== 'silent') setError(null);
+
+      // Stale-while-revalidate: show the saved first page while the request runs (or after it failed offline).
+      if (cacheKey && mode === 'initial') {
+        readOffline<Envelope<T>>(cacheKey).then((hit) => {
+          if (!hit || !current() || outcome === 'ok' || outcome === 'failed') return;
+          fromCache.current = true;
+          setItems(hit.data.data ?? []);
+          setExtra(hit.data as unknown as X);
+          setPage(1);
+          // No "load more" from a saved copy: later pages wait for the fresh first page.
+          setTotalPages(1);
+          setUpdatedAt(hit.savedAt);
+          setStale(true);
+          setLoading(false);
+          if (outcome === 'network') setOffline(true);
+        });
+      }
+
       try {
         const json = await apiFetch<Envelope<T>>(url);
+        outcome = 'ok';
+        if (cacheKey && sessionGen === sessionGeneration()) writeOffline(cacheKey, json, cacheEpoch);
         if (!current()) return;
+        fromCache.current = false;
+        setUpdatedAt(Date.now());
+        setOffline(false);
+        setStale(false);
         const total = json.pagination?.totalPages ?? json.pagination?.pages ?? 1;
         if (mode === 'silent') {
           // Keep what the user has scrolled through; just refresh the top.
@@ -107,8 +161,21 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
         setExtra(json as unknown as X);
         setError(null);
       } catch (err) {
+        const network = isNetworkError(err);
+        outcome = network ? 'network' : 'failed';
+        // Signed out, no access, or gone: the saved copy must not be shown again.
+        const drop = !network && err instanceof ApiError && shouldDropCacheOnStatus(err.status);
+        if (cacheKey && drop) removeOffline(cacheKey);
         if (!current()) return;
-        setError(errorMessage(err, 'Failed to load. Pull to retry.'));
+        if (drop && fromCache.current) {
+          fromCache.current = false;
+          setItems([]);
+          setExtra(null);
+          setUpdatedAt(null);
+          setStale(false);
+        }
+        setOffline(network && (itemCount.current > 0 || fromCache.current));
+        setError(errorMessage(err, t('common.failedToLoad')));
       } finally {
         firstPageInFlight.current--;
         if (current()) {
@@ -117,7 +184,7 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
         }
       }
     },
-    [urlFor]
+    [urlFor, keepOffline]
   );
 
   useEffect(() => {
@@ -126,9 +193,13 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
       return;
     }
     setItems([]);
+    fromCache.current = false;
+    setOffline(false);
+    setStale(false);
     loadFirst('initial');
   }, [loadFirst, basePath]);
 
+  itemCount.current = items.length;
   const hasMore = page < totalPages;
 
   const loadMore = useCallback(async () => {
@@ -177,5 +248,8 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
     reload,
     poll,
     loadMore,
+    updatedAt,
+    offline,
+    stale,
   };
 }

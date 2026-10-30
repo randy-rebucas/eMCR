@@ -1,9 +1,10 @@
 import { ReactNode, useState } from 'react';
-import { Alert, Linking, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { apiRequest, errorMessage } from '@/lib/api';
+import { openPdfLink } from '@/lib/documents';
 import { useApiData } from '@/lib/useApiData';
 import { possessive, useProfile } from '@/lib/profile';
 import { HealthSummary, SummaryMedication } from '@/lib/types';
@@ -12,6 +13,7 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { Button, IconName, LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
+import { OfflineBanner } from '@/components/OfflineBanner';
 
 const SEVERE = new Set(['severe', 'high', 'life-threatening', 'anaphylaxis']);
 
@@ -22,16 +24,17 @@ const SEVERE = new Set(['severe', 'high', 'life-threatening', 'anaphylaxis']);
 export default function HealthSummaryScreen() {
   const bottomPad = useBottomPadding();
   const { viewing } = useProfile();
-  const { data, loading, refreshing, error, refresh } = useApiData<HealthSummary>('/api/patients/me/health-summary', {
-    refreshOn: ['prescriptions', 'profile'],
-  });
+  const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<HealthSummary>(
+    '/api/patients/me/health-summary',
+    { refreshOn: ['prescriptions', 'profile'], offline: true }
+  );
   const [downloading, setDownloading] = useState(false);
 
   async function downloadPdf() {
     setDownloading(true);
     try {
       const link = await apiRequest<{ url: string }>('/api/patients/me/health-summary/pdf-link', { method: 'POST' });
-      await Linking.openURL(link.url);
+      await openPdfLink(link.url, 'Health-summary', 'Health Summary');
     } catch (err) {
       Alert.alert('Couldn’t open the PDF', errorMessage(err, 'Check your connection and try again.'));
     } finally {
@@ -72,11 +75,19 @@ export default function HealthSummaryScreen() {
     >
       {header}
 
+      <OfflineBanner offline={offline} updatedAt={updatedAt} />
       {error && !s ? (
         <ErrorState message={error} onRetry={refresh} />
       ) : s ? (
         <>
           <Button title="Download PDF" icon="download-outline" onPress={downloadPdf} loading={downloading} />
+          <Button
+            title="Share with a doctor"
+            variant="secondary"
+            icon="share-social-outline"
+            onPress={() => router.push('/patient/share')}
+            style={styles.shareButton}
+          />
           {s.clinics.length ? (
             <Text style={styles.sources}>
               From {s.clinics.map((c) => c.name).join(', ')} · updated {formatDate(s.generatedAt)}
@@ -246,6 +257,7 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.md + 4 },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2, marginBottom: spacing.lg },
+  shareButton: { marginTop: spacing.sm },
   sources: { fontSize: 12, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },
   section: { marginTop: spacing.lg },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },

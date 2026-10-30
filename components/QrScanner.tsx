@@ -3,6 +3,7 @@ import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '@/lib/theme';
+import { useT } from '@/lib/i18n';
 import { Button, LoadingView } from './ui';
 
 /**
@@ -12,16 +13,20 @@ import { Button, LoadingView } from './ui';
 export function QrScanner({
   onScanned,
   onCancel,
-  prompt = 'Point the camera at the login QR code from your clinic.',
-  purpose = 'To sign in with your clinic QR code',
+  prompt,
+  purpose,
 }: {
   onScanned: (data: string) => void;
   onCancel: () => void;
-  /** Shown over the camera. */
+  /** Shown over the camera (translated). Default: point at the clinic's login QR code. */
   prompt?: string;
-  /** Why the camera is needed, for the permission screen ("To … , allow the app to use the camera"). */
+  /**
+   * Why the camera is needed, translated, for the permission screen: "{purpose}, allow the app to
+   * use the camera" (en "To scan your member QR", fil "Para ma-scan ang …").
+   */
   purpose?: string;
 }) {
+  const t = useT();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const handledRef = useRef(false);
@@ -39,16 +44,16 @@ export function QrScanner({
   if (!permission.granted) {
     return (
       <SafeAreaView style={styles.permission}>
-        <Text style={styles.permissionTitle}>Camera access needed</Text>
+        <Text style={styles.permissionTitle}>{t('common.qr.permissionTitle')}</Text>
         <Text style={styles.permissionText}>
-          {purpose}, allow the app to use the camera. It's only used while this screen is open.
+          {t('common.qr.permissionBody', { purpose: purpose ?? t('common.qr.purpose') })}
         </Text>
         {permission.canAskAgain ? (
-          <Button title="Allow camera" onPress={requestPermission} />
+          <Button title={t('common.qr.allowCamera')} onPress={requestPermission} />
         ) : (
-          <Button title="Open settings" onPress={() => Linking.openSettings()} />
+          <Button title={t('common.qr.openSettings')} onPress={() => Linking.openSettings()} />
         )}
-        <Button title="Cancel" variant="secondary" onPress={onCancel} />
+        <Button title={t('common.cancel')} variant="secondary" onPress={onCancel} />
       </SafeAreaView>
     );
   }
@@ -62,10 +67,10 @@ export function QrScanner({
         onBarcodeScanned={scanned ? undefined : handleScan}
       />
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
-        <Text style={styles.overlayText}>{prompt}</Text>
+        <Text style={styles.overlayText}>{prompt ?? t('common.qr.prompt')}</Text>
         <View style={styles.frame} />
         <TouchableOpacity style={styles.cancel} onPress={onCancel} accessibilityRole="button">
-          <Text style={styles.cancelText}>Cancel</Text>
+          <Text style={styles.cancelText}>{t('common.cancel')}</Text>
         </TouchableOpacity>
       </SafeAreaView>
     </View>

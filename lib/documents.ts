@@ -71,11 +71,33 @@ export async function openDocument(doc: PatientDocument): Promise<void> {
     }
   }
 
+  await share(file, MIME[doc.documentType ?? ''] ?? {}, doc.title);
+}
+
+/**
+ * Open a PDF from a short-lived signed link (health summary, e-prescription). The link is
+ * downloaded into the same cache as documents rather than handed to the browser, so it doesn't
+ * land in browser history or the Downloads folder.
+ */
+export async function openPdfLink(url: string, fileName: string, title: string): Promise<void> {
+  clearDocumentCache();
+  const dir = cacheDir();
+  dir.create({ intermediates: true, idempotent: true });
+  const target = new File(dir, `${fileName.replace(/[^\w.\- ]+/g, '_').slice(0, 80)}.pdf`);
+  let file: File;
+  try {
+    file = await File.downloadFileAsync(url, target, { idempotent: true });
+  } catch (error) {
+    throw toApiError(error);
+  }
+  await share(file, MIME.pdf, title);
+}
+
+async function share(file: File, type: { mimeType?: string; UTI?: string }, title?: string): Promise<void> {
   if (!(await Sharing.isAvailableAsync())) {
     throw new ApiError("Opening files isn't supported on this device.", 0);
   }
-  const type = MIME[doc.documentType ?? ''] ?? {};
-  await Sharing.shareAsync(file.uri, { ...type, dialogTitle: doc.title });
+  await Sharing.shareAsync(file.uri, { ...type, dialogTitle: title });
 }
 
 function toApiError(error: unknown): ApiError {

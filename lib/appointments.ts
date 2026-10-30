@@ -37,3 +37,21 @@ export async function cancelAppointment(id: string): Promise<void> {
   await apiRequest(`/api/patients/appointments/${encodeURIComponent(id)}`, { method: 'DELETE' });
   emitRefresh('appointments', 'notifications');
 }
+
+/**
+ * Moving needs a doctor and a booked slot (not a walk-in); otherwise the same rule as cancelling.
+ * The server re-checks (clinic timezone, status, the slot's availability).
+ */
+export function canReschedule(a: Appointment): boolean {
+  return canCancel(a) && !!a.doctor?._id && !!a.appointmentDate && !!a.appointmentTime;
+}
+
+/** Move an appointment to another free slot with the same doctor; the clinic confirms the new time. */
+export async function rescheduleAppointment(id: string, appointmentDate: string, appointmentTime: string): Promise<Appointment | null> {
+  const moved = await apiRequest<Appointment>(`/api/patients/appointments/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: { appointmentDate, appointmentTime },
+  });
+  emitRefresh('appointments', 'notifications');
+  return moved ?? null;
+}

@@ -1,16 +1,18 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors, radius, spacing } from '@/lib/theme';
+import { useT } from '@/lib/i18n';
 import { useAnnounce } from './ui';
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const t = useT();
   useAnnounce(message);
   return (
     <View style={styles.container}>
       <Text style={styles.text} accessibilityRole="alert" accessibilityLiveRegion="polite">
         {message}
       </Text>
-      <TouchableOpacity style={styles.button} onPress={onRetry} accessibilityRole="button" accessibilityLabel="Try again">
-        <Text style={styles.buttonText}>Try again</Text>
+      <TouchableOpacity style={styles.button} onPress={onRetry} accessibilityRole="button" accessibilityLabel={t('common.tryAgain')}>
+        <Text style={styles.buttonText}>{t('common.tryAgain')}</Text>
       </TouchableOpacity>
     </View>
   );

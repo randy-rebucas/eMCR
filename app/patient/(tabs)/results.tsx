@@ -20,6 +20,7 @@ import { LabResult, PatientDocument } from '@/lib/types';
 import { formatDate, formatFileSize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName, ListFooter } from '@/components/ui';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ResultStatusPill } from '@/components/ResultStatusPill';
 
@@ -53,7 +54,11 @@ export default function ResultsScreen() {
   const [openError, setOpenError] = useState<string | null>(null);
 
   // Each tab loads the first time it's opened, then stays loaded.
-  const labs = usePaginatedList<LabResult>('/api/patients/me/lab-results', { limit: 20, refreshOn: ['lab-results'] });
+  const labs = usePaginatedList<LabResult>('/api/patients/me/lab-results', {
+    limit: 20,
+    refreshOn: ['lab-results'],
+    offline: true,
+  });
   const imaging = usePaginatedList<PatientDocument>(
     visited.has('imaging') ? `/api/patients/me/documents?category=${DOC_CATEGORY.imaging}` : null,
     { limit: 20, refreshOn: ['documents'] }
@@ -178,7 +183,8 @@ export default function ResultsScreen() {
       ) : null}
 
       {openError ? <Banner message={openError} /> : null}
-      {active.error && active.items.length > 0 ? <Banner message={active.error} /> : null}
+      <OfflineBanner offline={active.offline} updatedAt={active.updatedAt} />
+      {active.error && active.items.length > 0 && !active.offline ? <Banner message={active.error} /> : null}
     </SafeAreaView>
   );
 

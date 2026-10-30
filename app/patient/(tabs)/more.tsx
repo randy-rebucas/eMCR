@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -12,6 +12,7 @@ import { EMCR_ENDPOINTS } from '@/lib/emcr';
 import { formatDate } from '@/lib/format';
 import { EmcrAccount } from '@/lib/types';
 import { useApiData } from '@/lib/useApiData';
+import { canUseAppLock, getAppLockEnabled, setAppLock } from '@/lib/appLock';
 import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
@@ -55,6 +56,21 @@ export default function MoreScreen() {
   const { unreadCount } = useUnread();
   const { replay: replayTour } = useTour();
   const [signingOut, setSigningOut] = useState(false);
+  // null while loading, or when the phone has no screen lock App Lock could use.
+  const [appLock, setAppLockState] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      if (await canUseAppLock()) setAppLockState(await getAppLockEnabled());
+    })();
+  }, []);
+
+  async function toggleAppLock() {
+    const next = !appLock;
+    const result = await setAppLock(next);
+    if (result.ok) setAppLockState(next);
+    else if (result.message) Alert.alert("Couldn't turn on App Lock", result.message);
+  }
 
   const fullName = patient ? `${patient.firstName} ${patient.lastName}`.trim() : 'Your profile';
   const initials = patient ? `${patient.firstName?.[0] ?? ''}${patient.lastName?.[0] ?? ''}`.toUpperCase() : '';
@@ -165,6 +181,41 @@ export default function MoreScreen() {
           onPress={() => router.push('/patient/health-summary')}
         />
         <Row
+          icon="medkit-outline"
+          tint="teal"
+          label="Visit History"
+          detail="Past visits, diagnoses and follow-ups"
+          onPress={() => router.push('/patient/visits')}
+        />
+        <Row
+          icon="pulse-outline"
+          tint="blue"
+          label="Vitals"
+          detail="Blood pressure, weight and more over time"
+          onPress={() => router.push('/patient/vitals')}
+        />
+        <Row
+          icon="git-branch-outline"
+          tint="amber"
+          label="Referrals"
+          detail="Where your doctor referred you, and the letter"
+          onPress={() => router.push('/patient/referrals')}
+        />
+        <Row
+          icon="hourglass-outline"
+          tint="blue"
+          label="Waitlist"
+          detail="Get the next free slot with a fully booked doctor"
+          onPress={() => router.push('/patient/waitlist')}
+        />
+        <Row
+          icon="share-social-outline"
+          tint="purple"
+          label="Share with a Doctor"
+          detail="Send a link to your health summary; revoke it any time"
+          onPress={() => router.push('/patient/share')}
+        />
+        <Row
           icon="business-outline"
           tint="amber"
           label="My Clinics"
@@ -177,6 +228,13 @@ export default function MoreScreen() {
           label="Prescriptions"
           detail="Your current and past prescriptions"
           onPress={() => router.push('/patient/prescriptions')}
+        />
+        <Row
+          icon="alarm-outline"
+          tint="teal"
+          label="Medicine Reminders"
+          detail="Reminders to take your medicines"
+          onPress={() => router.push('/patient/medicines')}
         />
         <Row
           icon="document-text-outline"
@@ -195,6 +253,13 @@ export default function MoreScreen() {
           label="Billing & Invoices"
           detail="Your bills, balance and payment history"
           onPress={() => router.push('/patient/invoices')}
+        />
+        <Row
+          icon="card-outline"
+          tint="amber"
+          label="Membership"
+          detail="Points, discount and member QR"
+          onPress={() => router.push('/patient/membership')}
           last
         />
       </Group>
@@ -221,6 +286,15 @@ export default function MoreScreen() {
             label="Password"
             detail="Set or change your sign-in password"
             onPress={() => router.push('/patient/profile/password')}
+          />
+        ) : null}
+        {appLock !== null ? (
+          <Row
+            icon="finger-print-outline"
+            tint="rose"
+            label="App Lock"
+            detail={appLock ? 'On. Your fingerprint, face or screen lock opens the app' : 'Off. Ask for your fingerprint, face or screen lock'}
+            onPress={toggleAppLock}
           />
         ) : null}
         <Row

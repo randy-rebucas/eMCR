@@ -2,25 +2,27 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { maskBirthDate } from '@/lib/emcr';
 import { colors, spacing } from '@/lib/theme';
+import { useT } from '@/lib/i18n';
 import { IconBadge, IconField, StatusScreen } from './auth';
 
 // Pieces shared by the eMCR claim, request-access and activation screens.
 
 /** The 15-minute phone proof ran out (or the app restarted): verify the phone again. */
 export function ClaimExpiredScreen({ signedIn, mode = 'signin' }: { signedIn: boolean; mode?: 'signin' | 'add' }) {
+  const t = useT();
   return (
     <StatusScreen
       art={<IconBadge icon="time-outline" tone="slate" />}
-      title="This Step Timed Out"
-      message="For your security, please confirm your phone number again with a new code."
+      title={t('auth.expired.title')}
+      message={t('auth.expired.message')}
       action={{
-        title: 'Verify My Phone',
+        title: t('auth.expired.action'),
         onPress: () => router.replace(mode === 'add' || signedIn ? '/phone?purpose=add' : '/phone?purpose=signin'),
       }}
       link={
         signedIn
-          ? { title: 'Back to the app', onPress: () => router.dismissTo('/patient/home') }
-          : { title: 'Back to sign in', onPress: () => router.dismissTo('/login') }
+          ? { title: t('auth.backToApp'), onPress: () => router.dismissTo('/patient/home') }
+          : { title: t('auth.backToSignInLower'), onPress: () => router.dismissTo('/login') }
       }
     />
   );
@@ -30,7 +32,7 @@ export function ClaimExpiredScreen({ signedIn, mode = 'signin' }: { signedIn: bo
 export function BirthDateField({
   value,
   onChange,
-  label = 'Birth date (YYYY-MM-DD)',
+  label,
   error,
   onSubmitEditing,
 }: {
@@ -40,10 +42,11 @@ export function BirthDateField({
   error?: boolean;
   onSubmitEditing?: () => void;
 }) {
+  const t = useT();
   return (
     <IconField
       icon="calendar-outline"
-      label={label}
+      label={label ?? t('auth.birthDate')}
       value={value}
       onChangeText={(text) => onChange(maskBirthDate(text))}
       keyboardType="number-pad"

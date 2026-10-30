@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '@/lib/theme';
+import { useT } from '@/lib/i18n';
 
 export type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -159,11 +160,12 @@ export function ListFooter({
   error: string | null;
   onRetry: () => void;
 }) {
+  const t = useT();
   if (loadingMore) return <ActivityIndicator style={styles.footer} color={colors.primary} />;
   if (error) {
     return (
       <TouchableOpacity style={styles.footer} onPress={onRetry} accessibilityRole="button" accessibilityLiveRegion="polite">
-        <Text style={styles.footerError}>{error} Tap to retry.</Text>
+        <Text style={styles.footerError}>{t('common.tapToRetry', { error })}</Text>
       </TouchableOpacity>
     );
   }

@@ -17,6 +17,7 @@ import { AppHeader, softShadow } from '@/components/AppHeader';
 import { AppointmentCard } from '@/components/AppointmentCard';
 import { ResultStatusPill } from '@/components/ResultStatusPill';
 import { TourTarget } from '@/components/QuickTour';
+import { VisitFeedbackPrompt } from '@/components/VisitFeedbackPrompt';
 
 const ACTIVE_QUEUE = new Set(['waiting', 'in-progress']);
 
@@ -114,6 +115,9 @@ export default function HomeScreen() {
         <View style={styles.body}>
           {/* eMCR activation */}
           {activation ? <ActivationCard activation={activation} /> : null}
+
+          {/* Visit feedback the clinic asked for (closable for this session) */}
+          <VisitFeedbackPrompt />
 
           {/* Booking CTA */}
           <TourTarget id="home-book">

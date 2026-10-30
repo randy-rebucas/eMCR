@@ -1,6 +1,6 @@
 import { Alert, Linking } from 'react-native';
 import { Appointment } from './types';
-import { formatDate } from './format';
+import { formatDate, formatTime } from './format';
 
 /** Video visits. The server sends a join link only while the call can be joined. */
 
@@ -24,6 +24,5 @@ export function opensLabel(a: Appointment, now = Date.now()): string | null {
   if (!t || t.joinable || !t.opensAt) return null;
   const opens = new Date(t.opensAt);
   if (isNaN(opens.getTime()) || opens.getTime() <= now) return null;
-  const time = opens.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  return `The call opens ${formatDate(opens, { weekday: 'short', month: 'short', day: 'numeric' })} at ${time}`;
+  return `The call opens ${formatDate(opens, { weekday: 'short', month: 'short', day: 'numeric' })} at ${formatTime(opens)}`;
 }

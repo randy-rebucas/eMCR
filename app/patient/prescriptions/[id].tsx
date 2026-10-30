@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { apiRequest, errorMessage } from '@/lib/api';
+import { openPdfLink } from '@/lib/documents';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApiData } from '@/lib/useApiData';
@@ -9,6 +10,7 @@ import { formatDate, formatDateTime, humanize } from '@/lib/format';
 import { prescriberName, visitOf } from '@/lib/prescriptions';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, DetailRow, LoadingView, useBottomPadding } from '@/components/ui';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorState } from '@/components/ErrorState';
 import { MedicationCard } from '@/components/MedicationCard';
@@ -17,21 +19,21 @@ import { softShadow } from '@/components/AppHeader';
 export default function PrescriptionDetailScreen() {
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, loading, refreshing, error, refresh } = useApiData<Prescription>(
+  const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<Prescription>(
     id ? `/api/patients/me/prescriptions/${encodeURIComponent(id)}` : null,
-    { refreshOn: ['prescriptions'] }
+    { refreshOn: ['prescriptions'], offline: true }
   );
   const [opening, setOpening] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
 
-  // The browser can't send the app's sign-in, so ask for a short-lived link and open that.
+  // Ask for a short-lived link and download it into the app's cache (never the browser).
   async function openPdf() {
     if (!data) return;
     setOpening(true);
     setPdfError(null);
     try {
       const link = await apiRequest<{ url: string }>(`/api/patients/me/prescriptions/${encodeURIComponent(data._id)}/pdf-link`, { method: 'POST' });
-      await Linking.openURL(link.url);
+      await openPdfLink(link.url, `Prescription-${data.prescriptionCode ?? data._id}`, 'Prescription');
     } catch (err) {
       setPdfError(errorMessage(err, "Couldn't open the prescription. Please try again."));
     } finally {
@@ -52,6 +54,7 @@ export default function PrescriptionDetailScreen() {
       contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
     >
+      <OfflineBanner offline={offline} updatedAt={updatedAt} />
       <View style={styles.card}>
         <View style={styles.header}>
           <View style={styles.icon}>
