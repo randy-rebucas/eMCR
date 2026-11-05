@@ -11,6 +11,7 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from './ui';
 import { StatusBadge } from './StatusBadge';
 import { softShadow } from './AppHeader';
+import { useT } from '@/lib/i18n';
 
 /**
  * Date block + reason, doctor, time and room. `actions` adds the Cancel /
@@ -25,6 +26,7 @@ export function AppointmentCard({
   actions?: boolean;
   compact?: boolean;
 }) {
+  const t = useT();
   const [cancelling, setCancelling] = useState(false);
   const when = new Date(a.appointmentDate ?? a.scheduledAt ?? '');
   const valid = !isNaN(when.getTime());
@@ -33,17 +35,17 @@ export function AppointmentCard({
   const open = () => router.push(`/patient/appointments/${a._id}`);
 
   function confirmCancel() {
-    Alert.alert('Cancel appointment?', 'The clinic will be notified. This cannot be undone.', [
-      { text: 'Keep it', style: 'cancel' },
+    Alert.alert(t('appointments.cancel.title'), t('appointments.cancel.body'), [
+      { text: t('appointments.cancel.keep'), style: 'cancel' },
       {
-        text: 'Cancel appointment',
+        text: t('appointments.cancel.confirm'),
         style: 'destructive',
         onPress: async () => {
           setCancelling(true);
           try {
             await cancelAppointment(a._id);
           } catch (err) {
-            Alert.alert("Couldn't cancel", errorMessage(err, 'Please try again.'));
+            Alert.alert(t('appointments.cancel.failed'), errorMessage(err, t('appointments.pleaseTryAgain')));
           } finally {
             setCancelling(false);
           }
@@ -58,7 +60,11 @@ export function AppointmentCard({
         style={styles.main}
         onPress={open}
         accessibilityRole="button"
-        accessibilityLabel={`Appointment on ${formatDate(a.appointmentDate ?? a.scheduledAt)}${doctor ? ` with ${doctor}` : ''}, ${a.status}`}
+        accessibilityLabel={
+          doctor
+            ? t('appointments.card.a11yDoctor', { date: formatDate(a.appointmentDate ?? a.scheduledAt), doctor, status: a.status })
+            : t('appointments.card.a11y', { date: formatDate(a.appointmentDate ?? a.scheduledAt), status: a.status })
+        }
       >
         <View style={[styles.dateBlock, compact && styles.dateBlockCompact]}>
           {valid ? (
@@ -76,7 +82,7 @@ export function AppointmentCard({
         <View style={styles.flex}>
           <View style={styles.header}>
             <Text style={[styles.title, styles.flex]} numberOfLines={2}>
-              {a.reason || 'Appointment'}
+              {a.reason || t('appointments.card.fallbackTitle')}
             </Text>
             <StatusBadge status={a.status} />
           </View>
@@ -92,7 +98,7 @@ export function AppointmentCard({
             {isVideoVisit(a) ? (
               <View style={styles.metaItem}>
                 <Ionicons name="videocam-outline" size={16} color={colors.primary} />
-                <Text style={styles.metaStrong}>Video call</Text>
+                <Text style={styles.metaStrong}>{t('appointments.videoCall')}</Text>
               </View>
             ) : a.room ? (
               <View style={styles.metaItem}>
@@ -112,16 +118,16 @@ export function AppointmentCard({
           {canCancel(a) ? (
             <ActionButton
               icon="close-circle-outline"
-              label="Cancel"
+              label={t('common.cancel')}
               tone="danger"
               onPress={confirmCancel}
               loading={cancelling}
             />
           ) : null}
           {a.teleconsult?.joinable && a.teleconsult.joinUrl ? (
-            <ActionButton icon="videocam-outline" label="Join call" tone="primary" onPress={() => openVideoCall(a.teleconsult!.joinUrl!)} />
+            <ActionButton icon="videocam-outline" label={t('appointments.card.join')} tone="primary" onPress={() => openVideoCall(a.teleconsult!.joinUrl!)} />
           ) : null}
-          <ActionButton icon="document-text-outline" label="View Details" onPress={open} />
+          <ActionButton icon="document-text-outline" label={t('appointments.card.viewDetails')} onPress={open} />
         </View>
       ) : null}
     </View>

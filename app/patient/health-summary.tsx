@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { apiRequest, errorMessage } from '@/lib/api';
 import { openPdfLink } from '@/lib/documents';
 import { useApiData } from '@/lib/useApiData';
-import { possessive, useProfile } from '@/lib/profile';
+import { useProfile } from '@/lib/profile';
 import { HealthSummary, SummaryMedication } from '@/lib/types';
 import { formatDate, humanize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
@@ -14,6 +14,7 @@ import { Button, IconName, LoadingView, useBottomPadding } from '@/components/ui
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { possessiveName, useT } from '@/lib/i18n';
 
 const SEVERE = new Set(['severe', 'high', 'life-threatening', 'anaphylaxis']);
 
@@ -22,6 +23,7 @@ const SEVERE = new Set(['severe', 'high', 'life-threatening', 'anaphylaxis']);
  * and vaccinations, with a PDF to hand to a new clinic.
  */
 export default function HealthSummaryScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const { viewing } = useProfile();
   const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<HealthSummary>(
@@ -34,9 +36,9 @@ export default function HealthSummaryScreen() {
     setDownloading(true);
     try {
       const link = await apiRequest<{ url: string }>('/api/patients/me/health-summary/pdf-link', { method: 'POST' });
-      await openPdfLink(link.url, 'Health-summary', 'Health Summary');
+      await openPdfLink(link.url, 'Health-summary', t('healthSummary.pdfTitle'));
     } catch (err) {
-      Alert.alert('Couldn’t open the PDF', errorMessage(err, 'Check your connection and try again.'));
+      Alert.alert(t('healthSummary.pdfFailed'), errorMessage(err, t('healthSummary.pdfFailedFallback')));
     } finally {
       setDownloading(false);
     }
@@ -46,11 +48,12 @@ export default function HealthSummaryScreen() {
     <SafeAreaView edges={['top']}>
       <AppHeader back />
       <Text style={styles.title} accessibilityRole="header">
-        Health Summary
+        {t('healthSummary.title')}
       </Text>
       <Text style={styles.subtitle}>
-        {possessive(viewing)} allergies, medicines and vaccinations from every clinic. Show it, or send the PDF, when you
-        see a new doctor.
+        {!viewing || viewing.self
+          ? t('healthSummary.subtitleSelf')
+          : t('healthSummary.subtitleOther', { whose: possessiveName(viewing.firstName) })}
       </Text>
     </SafeAreaView>
   );
@@ -80,9 +83,9 @@ export default function HealthSummaryScreen() {
         <ErrorState message={error} onRetry={refresh} />
       ) : s ? (
         <>
-          <Button title="Download PDF" icon="download-outline" onPress={downloadPdf} loading={downloading} />
+          <Button title={t('healthSummary.downloadPdf')} icon="download-outline" onPress={downloadPdf} loading={downloading} />
           <Button
-            title="Share with a doctor"
+            title={t('healthSummary.shareWithDoctor')}
             variant="secondary"
             icon="share-social-outline"
             onPress={() => router.push('/patient/share')}
@@ -90,44 +93,44 @@ export default function HealthSummaryScreen() {
           />
           {s.clinics.length ? (
             <Text style={styles.sources}>
-              From {s.clinics.map((c) => c.name).join(', ')} · updated {formatDate(s.generatedAt)}
+              {t('healthSummary.sources', { clinics: s.clinics.map((c) => c.name).join(', '), date: formatDate(s.generatedAt) })}
             </Text>
           ) : null}
 
-          <Section title="Allergies" icon="alert-circle-outline" alert={s.allergies.length > 0}>
+          <Section title={t('healthSummary.allergies')} icon="alert-circle-outline" alert={s.allergies.length > 0}>
             {s.allergies.length ? (
               s.allergies.map((a, i) => (
                 <Item
                   key={a.substance}
                   title={a.substance}
                   lines={[[a.reaction, a.severity ? humanize(a.severity) : null].filter(Boolean).join(' · '), a.clinics.join(', ')]}
-                  flag={a.severity && SEVERE.has(a.severity.toLowerCase()) ? 'Severe' : null}
+                  flag={a.severity && SEVERE.has(a.severity.toLowerCase()) ? t('healthSummary.severe') : null}
                   last={i === s.allergies.length - 1}
                 />
               ))
             ) : (
-              <Empty text="No known allergies recorded." />
+              <Empty text={t('healthSummary.noAllergies')} />
             )}
           </Section>
 
-          <Section title="Current Medicines" icon="bandage-outline">
+          <Section title={t('healthSummary.currentMedicines')} icon="bandage-outline">
             {s.medications.current.length ? (
               s.medications.current.map((m, i) => (
                 <MedicationItem key={m.prescriptionId + m.name} med={m} current last={i === s.medications.current.length - 1} />
               ))
             ) : (
-              <Empty text="No current medicines." />
+              <Empty text={t('healthSummary.noCurrentMedicines')} />
             )}
           </Section>
 
-          <Section title="Conditions" icon="medkit-outline">
+          <Section title={t('healthSummary.conditions')} icon="medkit-outline">
             {s.conditions.length ? (
               s.conditions.map((c, i) => (
                 <Item
                   key={c.condition}
                   title={c.condition}
                   lines={[
-                    [humanize(c.status), c.diagnosisDate ? `since ${formatDate(c.diagnosisDate, { utc: true })}` : null]
+                    [humanize(c.status), c.diagnosisDate ? t('healthSummary.since', { date: formatDate(c.diagnosisDate, { utc: true }) }) : null]
                       .filter(Boolean)
                       .join(' · '),
                     c.notes,
@@ -138,27 +141,27 @@ export default function HealthSummaryScreen() {
                 />
               ))
             ) : (
-              <Empty text="No conditions recorded." />
+              <Empty text={t('healthSummary.noConditions')} />
             )}
           </Section>
 
-          <Section title="Vaccinations" icon="shield-checkmark-outline">
+          <Section title={t('healthSummary.vaccinations')} icon="shield-checkmark-outline">
             {s.immunizations.length ? (
               s.immunizations.map((v, i) => (
                 <Item
                   key={`${v.name}-${v.date}`}
                   title={v.name}
-                  lines={[formatDate(v.date, { utc: true }), [v.clinic, v.batch ? `Batch ${v.batch}` : null].filter(Boolean).join(' · ')]}
+                  lines={[formatDate(v.date, { utc: true }), [v.clinic, v.batch ? t('healthSummary.batch', { batch: v.batch }) : null].filter(Boolean).join(' · ')]}
                   last={i === s.immunizations.length - 1}
                 />
               ))
             ) : (
-              <Empty text="No vaccinations recorded." />
+              <Empty text={t('healthSummary.noVaccinations')} />
             )}
           </Section>
 
           {s.medications.recent.length ? (
-            <Section title="Other Medicines This Year" icon="time-outline">
+            <Section title={t('healthSummary.otherMedicines')} icon="time-outline">
               {s.medications.recent.map((m, i) => (
                 <MedicationItem key={m.prescriptionId + m.name} med={m} last={i === s.medications.recent.length - 1} />
               ))}
@@ -167,9 +170,7 @@ export default function HealthSummaryScreen() {
 
           <View style={styles.note}>
             <Ionicons name="information-circle-outline" size={18} color={colors.slate} />
-            <Text style={styles.noteText}>
-              Each clinic keeps its own record. If something is missing or wrong, ask that clinic to update it.
-            </Text>
+            <Text style={styles.noteText}>{t('healthSummary.note')}</Text>
           </View>
         </>
       ) : null}
@@ -178,8 +179,12 @@ export default function HealthSummaryScreen() {
 }
 
 function MedicationItem({ med, current, last }: { med: SummaryMedication; current?: boolean; last?: boolean }) {
+  const t = useT();
   const dose = [med.strength, med.dose && med.dose !== med.strength ? med.dose : null, med.frequency].filter(Boolean).join(' · ');
-  const when = current && med.endsAt ? `Until ${formatDate(med.endsAt, { utc: true })}` : `Prescribed ${formatDate(med.issuedAt)}`;
+  const when =
+    current && med.endsAt
+      ? t('healthSummary.until', { date: formatDate(med.endsAt, { utc: true }) })
+      : t('healthSummary.prescribed', { date: formatDate(med.issuedAt) });
   return (
     <Item
       title={med.name}
@@ -219,6 +224,7 @@ function Item({
   onPress?: () => void;
   last?: boolean;
 }) {
+  const t = useT();
   const shown = lines.filter((l): l is string => !!l && l.trim() !== '');
   const body = (
     <>
@@ -240,7 +246,7 @@ function Item({
   );
   const style = [styles.item, !last && styles.divider];
   return onPress ? (
-    <TouchableOpacity onPress={onPress} accessibilityRole="button" accessibilityHint="Opens the prescription" style={style}>
+    <TouchableOpacity onPress={onPress} accessibilityRole="button" accessibilityHint={t('healthSummary.openPrescriptionHint')} style={style}>
       {body}
     </TouchableOpacity>
   ) : (

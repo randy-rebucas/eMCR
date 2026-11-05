@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { router, useNavigation } from 'expo-router';
+import { router, useNavigation, usePreventRemove } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { apiRequest, errorMessage } from '@/lib/api';
@@ -22,6 +22,7 @@ import { Banner, Button, IconName, LoadingView, useKeyboardVisible } from '@/com
 import { ErrorState } from '@/components/ErrorState';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { IconField } from '@/components/auth';
+import { t as translate, useT } from '@/lib/i18n';
 
 // Exactly the fields PATCH /api/patients/me accepts.
 interface Form {
@@ -36,7 +37,8 @@ interface Form {
   ecRelationship: string;
 }
 
-const RELATIONSHIPS = ['Parent', 'Spouse', 'Sibling', 'Child', 'Relative', 'Friend'];
+// Saved in English (the clinic reads it); only the chip label is translated.
+const RELATIONSHIPS = ['Parent', 'Spouse', 'Sibling', 'Child', 'Relative', 'Friend'] as const;
 
 function fromProfile(p: PatientProfile): Form {
   return {
@@ -54,6 +56,7 @@ function fromProfile(p: PatientProfile): Form {
 
 export default function EditProfileScreen() {
   const navigation = useNavigation();
+  const t = useT();
   const keyboardVisible = useKeyboardVisible();
   const { data, loading, error, refresh } = useApiData<PatientProfile>('/api/patients/me');
   const [form, setForm] = useState<Form | null>(null);
@@ -64,7 +67,7 @@ export default function EditProfileScreen() {
   // Guards a second tap before `isSaving` re-renders.
   const saving = useRef(false);
   // Set once a save succeeds (or the user chose to discard) so leaving isn't questioned.
-  const leaving = useRef(false);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     if (data && !form) {
@@ -78,32 +81,35 @@ export default function EditProfileScreen() {
     !!form && !!initial && (Object.keys(form) as (keyof Form)[]).some((k) => form[k].trim() !== initial[k].trim());
 
   // Ask before throwing away edits (back button, swipe, or the header chevron).
-  useEffect(() => {
-    return navigation.addListener('beforeRemove', (e) => {
-      if (!dirty || leaving.current) return;
-      e.preventDefault();
-      Alert.alert('Discard changes?', "Your edits haven't been saved.", [
-        { text: 'Keep editing', style: 'cancel' },
-        {
-          text: 'Discard',
-          style: 'destructive',
-          onPress: () => {
-            leaving.current = true;
-            navigation.dispatch(e.data.action);
-          },
+  const disablePrevention = usePreventRemove(dirty && !leaving, ({ repeat }) => {
+    Alert.alert(translate('profile.edit.discardTitle'), translate('profile.edit.discardBody'), [
+      { text: translate('profile.edit.keepEditing'), style: 'cancel' },
+      {
+        text: translate('profile.edit.discard'),
+        style: 'destructive',
+        onPress: () => {
+          setLeaving(true);
+          repeat();
         },
-      ]);
-    });
-  }, [navigation, dirty]);
+      },
+    ]);
+  });
 
-  // The native-stack swipe-back can't be cancelled by beforeRemove once it starts, so
+  /** Go back without the discard prompt: the edits are saved, or there were none to keep. */
+  function leave() {
+    setLeaving(true);
+    disablePrevention();
+    router.back();
+  }
+
+  // The native-stack swipe-back can't be cancelled by usePreventRemove once it starts, so
   // turn it off while there are unsaved edits; the back chevron / Android back still ask.
   useEffect(() => {
     navigation.setOptions({ gestureEnabled: !dirty });
   }, [navigation, dirty]);
 
   if (loading || (data && !form)) return <LoadingView />;
-  if (error || !form || !initial) return <ErrorState message={error ?? 'Profile not found.'} onRetry={refresh} />;
+  if (error || !form || !initial) return <ErrorState message={error ?? t('profile.edit.notFound')} onRetry={refresh} />;
 
   const set = (key: keyof Form) => (value: string) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -112,16 +118,16 @@ export default function EditProfileScreen() {
 
   function validate(f: Form): boolean {
     const next: Partial<Record<keyof Form, string>> = {};
-    if (f.contactEmail.trim() && !/^\S+@\S+\.\S+$/.test(f.contactEmail.trim())) next.contactEmail = 'Enter a valid email.';
+    if (f.contactEmail.trim() && !/^\S+@\S+\.\S+$/.test(f.contactEmail.trim())) next.contactEmail = t('profile.edit.invalidEmail');
     // PATCH /api/patients/me only accepts a valid address here, so it can be changed but not removed.
     if (initial!.contactEmail.trim() && !f.contactEmail.trim()) {
-      next.contactEmail = "Contact email can't be removed here. Enter a new one, or ask the front desk.";
+      next.contactEmail = t('profile.edit.emailRequired');
     }
-    if (f.ecPhone.trim() && !/^[+0-9 ()-]*$/.test(f.ecPhone.trim())) next.ecPhone = 'Use digits, spaces, + ( ) - only.';
+    if (f.ecPhone.trim() && !/^[+0-9 ()-]*$/.test(f.ecPhone.trim())) next.ecPhone = t('profile.edit.phoneChars');
     // The clinic record requires these; they can be edited but not blanked.
-    if (initial!.street && !f.street.trim()) next.street = "Street can't be blank.";
-    if (initial!.city && !f.city.trim()) next.city = "City can't be blank.";
-    if (initial!.zipCode && !f.zipCode.trim()) next.zipCode = "ZIP code can't be blank.";
+    if (initial!.street && !f.street.trim()) next.street = t('profile.edit.streetBlank');
+    if (initial!.city && !f.city.trim()) next.city = t('profile.edit.cityBlank');
+    if (initial!.zipCode && !f.zipCode.trim()) next.zipCode = t('profile.edit.zipBlank');
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -129,7 +135,7 @@ export default function EditProfileScreen() {
   async function save() {
     if (!form || !initial || saving.current) return;
     if (!validate(form)) {
-      setSaveError('Please fix the highlighted fields.');
+      setSaveError(t('profile.edit.fixFields'));
       return;
     }
     const changed = (key: keyof Form) => form[key].trim() !== initial[key].trim();
@@ -149,8 +155,7 @@ export default function EditProfileScreen() {
     if (Object.keys(ec).length) body.emergencyContact = ec;
 
     if (Object.keys(body).length === 0) {
-      leaving.current = true;
-      router.back();
+      leave();
       return;
     }
 
@@ -160,10 +165,9 @@ export default function EditProfileScreen() {
     try {
       await apiRequest('/api/patients/me', { method: 'PATCH', body });
       emitRefresh('profile');
-      leaving.current = true;
-      router.back();
+      leave();
     } catch (err) {
-      setSaveError(errorMessage(err, "Couldn't save your changes."));
+      setSaveError(errorMessage(err, t('profile.edit.saveFailed')));
     } finally {
       saving.current = false;
       setSaving(false);
@@ -176,9 +180,9 @@ export default function EditProfileScreen() {
         <SafeAreaView edges={['top']}>
           <AppHeader back />
           <Text style={styles.title} accessibilityRole="header">
-            Edit Contact Details
+            {t('profile.edit.title')}
           </Text>
-          <Text style={styles.subtitle}>Keep your contact information up to date so your clinic can reach you.</Text>
+          <Text style={styles.subtitle}>{t('profile.edit.subtitle')}</Text>
         </SafeAreaView>
 
         {saveError ? (
@@ -187,9 +191,9 @@ export default function EditProfileScreen() {
           </View>
         ) : null}
 
-        <Section icon="mail-outline" title="Contact">
+        <Section icon="mail-outline" title={t('profile.edit.contact')}>
           <Field
-            label="Contact email"
+            label={t('profile.edit.contactEmail')}
             icon="mail-outline"
             value={form.contactEmail}
             onChangeText={set('contactEmail')}
@@ -198,13 +202,13 @@ export default function EditProfileScreen() {
             keyboardType="email-address"
             autoComplete="email"
             error={errors.contactEmail}
-            hint="For messages from your clinic. Your sign-in email doesn't change."
+            hint={t('profile.edit.contactEmailHint')}
           />
         </Section>
 
-        <Section icon="home-outline" title="Home Address">
+        <Section icon="home-outline" title={t('profile.edit.homeAddress')}>
           <Field
-            label="Street"
+            label={t('profile.edit.street')}
             icon="location-outline"
             value={form.street}
             onChangeText={set('street')}
@@ -214,11 +218,11 @@ export default function EditProfileScreen() {
           />
           <View style={styles.pair}>
             <View style={styles.flex}>
-              <Field label="City" icon="business-outline" value={form.city} onChangeText={set('city')} error={errors.city} maxLength={100} />
+              <Field label={t('profile.edit.city')} icon="business-outline" value={form.city} onChangeText={set('city')} error={errors.city} maxLength={100} />
             </View>
             <View style={styles.zip}>
               <Field
-                label="ZIP code"
+                label={t('profile.edit.zip')}
                 icon="keypad-outline"
                 value={form.zipCode}
                 onChangeText={set('zipCode')}
@@ -229,22 +233,22 @@ export default function EditProfileScreen() {
               />
             </View>
           </View>
-          <Field label="Province" icon="map-outline" value={form.state} onChangeText={set('state')} maxLength={100} />
+          <Field label={t('profile.edit.province')} icon="map-outline" value={form.state} onChangeText={set('state')} maxLength={100} />
           <Field
-            label="Other address notes"
+            label={t('profile.edit.addressNotes')}
             icon="create-outline"
             value={form.contactAddress}
             onChangeText={set('contactAddress')}
             multiline
             maxLength={500}
-            placeholder="Landmarks, unit number, directions…"
+            placeholder={t('profile.edit.addressNotesPlaceholder')}
           />
         </Section>
 
-        <Section icon="medkit-outline" title="Emergency Contact">
-          <Field label="Full name" icon="person-outline" value={form.ecName} onChangeText={set('ecName')} maxLength={200} autoComplete="name" />
+        <Section icon="medkit-outline" title={t('profile.edit.emergencyContact')}>
+          <Field label={t('profile.edit.fullName')} icon="person-outline" value={form.ecName} onChangeText={set('ecName')} maxLength={200} autoComplete="name" />
           <Field
-            label="Phone number"
+            label={t('profile.edit.phone')}
             icon="call-outline"
             value={form.ecPhone}
             onChangeText={set('ecPhone')}
@@ -254,7 +258,7 @@ export default function EditProfileScreen() {
             autoComplete="tel"
           />
           <Field
-            label="Relationship"
+            label={t('profile.edit.relationship')}
             icon="people-outline"
             value={form.ecRelationship}
             onChangeText={set('ecRelationship')}
@@ -271,7 +275,7 @@ export default function EditProfileScreen() {
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
                 >
-                  <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{r}</Text>
+                  <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{t(`profile.edit.rel.${r}`)}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -281,17 +285,16 @@ export default function EditProfileScreen() {
         <View style={styles.note}>
           <Ionicons name="information-circle-outline" size={18} color={colors.slate} />
           <Text style={styles.noteText}>
-            Your name, date of birth, mobile number and sign-in email are managed by your clinic. Ask the front desk to
-            change them.
+            {t('profile.edit.clinicManaged')}
           </Text>
         </View>
       </ScrollView>
 
       {/* Above the keyboard the home-indicator inset is just a dead gap. */}
       <SafeAreaView edges={keyboardVisible ? [] : ['bottom']} style={styles.bar}>
-        <Button title="Cancel" variant="secondary" onPress={() => router.back()} style={styles.barButton} disabled={isSaving} />
+        <Button title={t('common.cancel')} variant="secondary" onPress={() => router.back()} style={styles.barButton} disabled={isSaving} />
         <Button
-          title="Save Changes"
+          title={t('profile.edit.save')}
           icon="checkmark"
           onPress={save}
           loading={isSaving}

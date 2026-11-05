@@ -21,13 +21,15 @@ import {
   TextLink,
 } from '@/components/auth';
 import { QrScanner } from '@/components/QrScanner';
+import { t as translate, useT } from '@/lib/i18n';
+import { rich } from '@/lib/i18n/rich';
 
 const RESEND_SECONDS = 30;
 
 /** "Maria D." · "Maria D. and Jose D." · "Maria D., Jose D. and Ana D." */
 function joinNames(names: string[]): string {
   if (names.length <= 1) return names[0] ?? '';
-  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return translate('auth.invite.and', { first: names.slice(0, -1).join(', '), last: names[names.length - 1] });
 }
 
 /**
@@ -37,6 +39,7 @@ function joinNames(names: string[]): string {
  */
 export default function InviteScreen() {
   const auth = useAuth();
+  const t = useT();
   const params = useLocalSearchParams<{ c?: string }>();
   const initial = parseInviteCode(params.c);
 
@@ -96,7 +99,7 @@ export default function InviteScreen() {
   function lookUp(input = typed) {
     const parsed = parseInviteCode(input);
     if (!parsed) {
-      setFailure({ kind: 'message', message: 'Enter the 8-character code from your invite, like ABCD-2345.', status: 0 });
+      setFailure({ kind: 'message', message: t('auth.invite.badCode'), status: 0 });
       return;
     }
     run(async () => {
@@ -129,7 +132,7 @@ export default function InviteScreen() {
   function verify(value = otp) {
     if (!code) return;
     if (!/^\d{6}$/.test(value)) {
-      setFailure({ kind: 'message', message: 'Enter the 6-digit code from the SMS.', status: 0 });
+      setFailure({ kind: 'message', message: t('auth.otp.enterSixDigits'), status: 0 });
       return;
     }
     run(async () => {
@@ -159,7 +162,7 @@ export default function InviteScreen() {
     setScanning(false);
     const parsed = parseInviteCode(data);
     if (!parsed) {
-      setFailure({ kind: 'message', message: "That isn't an eMCR invite. Scan the QR code on the slip from your clinic.", status: 0 });
+      setFailure({ kind: 'message', message: t('auth.invite.notInvite'), status: 0 });
       return;
     }
     lookUp(parsed);
@@ -176,10 +179,10 @@ export default function InviteScreen() {
     return (
       <AuthScreen back>
         <AuthHeader
-          title="You're Already Signed In"
-          subtitle="To use this invite, sign out first, then open the invite link again or enter the code on the welcome screen."
+          title={t('auth.invite.signedInTitle')}
+          subtitle={t('auth.invite.signedInSubtitle')}
         />
-        <Button title="Back" variant="secondary" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
+        <Button title={t('common.back')} variant="secondary" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
       </AuthScreen>
     );
   }
@@ -192,27 +195,17 @@ export default function InviteScreen() {
           <IconBadge icon="mail-open-outline" badge={{ icon: 'checkmark', tone: 'primary' }} />
         </View>
         <AuthHeader
-          title={`Invite From ${preview.clinicName}`}
+          title={t('auth.invite.from', { clinic: preview.clinicName })}
           subtitle={
-            forOthers ? (
-              <>
-                For the person who looks after{'\n'}
-                <Text style={styles.strong}>{joinNames(preview.people)}</Text>
-              </>
-            ) : (
-              <>
-                Health records for <Text style={styles.strong}>{joinNames(preview.people)}</Text>
-              </>
-            )
+            forOthers
+              ? rich(t('auth.invite.forCarer', { names: joinNames(preview.people) }), styles.strong)
+              : rich(t('auth.invite.forPeople', { names: joinNames(preview.people) }), styles.strong)
           }
           align="center"
         />
         {errorText ? <Banner message={errorText} /> : null}
-        <Text style={styles.note}>
-          We'll text a 6-digit code to <Text style={styles.strong}>{preview.phoneHint}</Text>, the number your clinic confirmed. If that's not your
-          number, ask the clinic for a new invite.
-        </Text>
-        <Button title="Send Code" onPress={sendCode} loading={submitting} />
+        <Text style={styles.note}>{rich(t('auth.invite.willText', { phone: preview.phoneHint }), styles.strong)}</Text>
+        <Button title={t('auth.sendCode')} onPress={sendCode} loading={submitting} />
       </AuthScreen>
     );
   }
@@ -221,24 +214,19 @@ export default function InviteScreen() {
     return (
       <AuthScreen back={goBack}>
         <AuthHeader
-          title="Enter Your Code"
-          subtitle={
-            <>
-              We sent a 6-digit code to{'\n'}
-              <Text style={styles.strong}>{sentTo || preview?.phoneHint}</Text>
-            </>
-          }
+          title={t('auth.otp.enterTitle')}
+          subtitle={rich(t('auth.otp.sentTo', { phone: sentTo || preview?.phoneHint || '' }), styles.strong)}
         />
         <View style={styles.art}>
           <IconBadge icon="phone-portrait-outline" badge={{ icon: 'chatbubble-ellipses', tone: 'primary' }} />
         </View>
         <OtpInput value={otp} onChange={onOtpChange} error={!!errorText} />
         {errorText ? <InlineError message={errorText} style={styles.error} /> : null}
-        <Button title="Verify" onPress={() => verify()} loading={submitting} />
+        <Button title={t('auth.verify')} onPress={() => verify()} loading={submitting} />
         <View style={styles.resend}>
-          <Text style={styles.muted}>Didn't receive the code?</Text>
+          <Text style={styles.muted}>{t('auth.otp.didntReceive')}</Text>
           <View style={styles.row}>
-            <TextLink title="Resend Code" onPress={sendCode} disabled={resendIn > 0 || submitting} />
+            <TextLink title={t('auth.otp.resendTitle')} onPress={sendCode} disabled={resendIn > 0 || submitting} />
             {resendIn > 0 ? <Text style={styles.muted}> (00:{String(resendIn).padStart(2, '0')})</Text> : null}
           </View>
         </View>
@@ -248,12 +236,12 @@ export default function InviteScreen() {
 
   return (
     <AuthScreen back>
-      <AuthHeader title="Your Clinic Invite" subtitle="Scan the QR code on the slip from your clinic, or type the code under it." />
+      <AuthHeader title={t('auth.invite.title')} subtitle={t('auth.invite.subtitle')} />
       {errorText ? <Banner message={errorText} /> : null}
-      <Button title="Scan Invite QR" icon="qr-code-outline" onPress={() => setScanning(true)} disabled={submitting} />
+      <Button title={t('auth.invite.scan')} icon="qr-code-outline" onPress={() => setScanning(true)} disabled={submitting} />
       <IconField
         icon="ticket-outline"
-        label="Invite code"
+        label={t('auth.invite.codeLabel')}
         value={typed}
         onChangeText={(v) => {
           setTyped(v);
@@ -265,13 +253,18 @@ export default function InviteScreen() {
         returnKeyType="go"
         onSubmitEditing={() => lookUp()}
       />
-      <Button title="Continue" variant="secondary" onPress={() => lookUp()} loading={submitting && !scanning} />
+      <Button title={t('auth.continue')} variant="secondary" onPress={() => lookUp()} loading={submitting && !scanning} />
       <View style={styles.footer}>
-        <Text style={styles.muted}>No invite? </Text>
-        <TextLink title="Sign in with your phone" onPress={() => router.replace('/phone?purpose=signin')} disabled={submitting} />
+        <Text style={styles.muted}>{t('auth.invite.noInvite')}</Text>
+        <TextLink title={t('auth.invite.signInWithPhone')} onPress={() => router.replace('/phone?purpose=signin')} disabled={submitting} />
       </View>
       <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
-        <QrScanner onScanned={onScanned} onCancel={() => setScanning(false)} />
+        <QrScanner
+          onScanned={onScanned}
+          onCancel={() => setScanning(false)}
+          prompt={t('auth.invite.qrPrompt')}
+          purpose={t('auth.invite.qrPurpose')}
+        />
       </Modal>
     </AuthScreen>
   );

@@ -20,9 +20,11 @@ import { Badge, Banner, Button, DetailRow, LoadingView, useBottomPadding } from 
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorState } from '@/components/ErrorState';
 import { softShadow } from '@/components/AppHeader';
+import { useT } from '@/lib/i18n';
 
 /** One referral: who to, why, where it stands, the appointment booked from it and the letter. */
 export default function ReferralDetailScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, loading, refreshing, error, refresh } = useApiData<Referral>(
@@ -41,7 +43,7 @@ export default function ReferralDetailScreen() {
       await openReferralLetter(data);
     } catch (err) {
       if (err instanceof ApiError && err.code === 'NO_LETTER') refresh();
-      setPdfError(errorMessage(err, "Couldn't open the referral letter. Please try again."));
+      setPdfError(errorMessage(err, t('referrals.openFailed')));
     } finally {
       setOpening(false);
     }
@@ -49,14 +51,16 @@ export default function ReferralDetailScreen() {
 
   if (loading) return <LoadingView />;
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data) return <ErrorState message="Referral not found." onRetry={refresh} />;
+  if (!data) return <ErrorState message={t('referrals.notFound')} onRetry={refresh} />;
 
   const urgency = URGENCY_LABEL[data.urgency];
   const appt = data.appointment;
+  const apptDate = appt?.appointmentDate ? formatDate(appt.appointmentDate) : null;
+  const apptTime = appt?.appointmentTime ? formatTime(appt.appointmentTime) : null;
   const apptWhen = appt
-    ? [appt.appointmentDate ? formatDate(appt.appointmentDate) : null, appt.appointmentTime ? formatTime(appt.appointmentTime) : null]
-        .filter(Boolean)
-        .join(' at ')
+    ? apptDate && apptTime
+      ? t('referrals.dateAtTime', { date: apptDate, time: apptTime })
+      : apptDate ?? apptTime ?? ''
     : null;
 
   return (
@@ -72,7 +76,7 @@ export default function ReferralDetailScreen() {
           </View>
           <View style={styles.flex}>
             <Text style={styles.title}>{referredToText(data)}</Text>
-            {data.referralCode ? <Text style={styles.meta}>Referral {data.referralCode}</Text> : null}
+            {data.referralCode ? <Text style={styles.meta}>{t('referrals.code', { code: data.referralCode })}</Text> : null}
           </View>
         </View>
         <View style={styles.badges}>
@@ -83,40 +87,40 @@ export default function ReferralDetailScreen() {
       </View>
 
       <Text style={styles.section} accessibilityRole="header">
-        Details
+        {t('referrals.details')}
       </Text>
       <View style={styles.card}>
-        <DetailRow label="Referred to" value={referredToText(data)} />
-        <DetailRow label="Specialty" value={data.specialty} />
-        <DetailRow label="Referred by" value={referredByText(data)} />
-        <DetailRow label="Reason" value={data.reason} />
+        <DetailRow label={t('referrals.referredTo')} value={referredToText(data)} />
+        <DetailRow label={t('referrals.specialty')} value={data.specialty} />
+        <DetailRow label={t('referrals.referredBy')} value={referredByText(data)} />
+        <DetailRow label={t('referrals.reason')} value={data.reason} />
       </View>
 
       <Text style={styles.section} accessibilityRole="header">
-        Progress
+        {t('referrals.progress')}
       </Text>
       <View style={styles.card}>
-        <DetailRow label="Referred" value={data.referredDate ? formatDate(data.referredDate) : null} />
-        <DetailRow label="Accepted" value={data.acceptedDate ? formatDate(data.acceptedDate) : null} />
-        <DetailRow label="Completed" value={data.completedDate ? formatDate(data.completedDate) : null} />
-        <DetailRow label="Declined" value={data.declinedDate ? formatDate(data.declinedDate) : null} />
-        <DetailRow label="Follow-up" value={data.followUpDate ? formatDate(data.followUpDate) : null} />
+        <DetailRow label={t('referrals.referred')} value={data.referredDate ? formatDate(data.referredDate) : null} />
+        <DetailRow label={t('referrals.accepted')} value={data.acceptedDate ? formatDate(data.acceptedDate) : null} />
+        <DetailRow label={t('referrals.completed')} value={data.completedDate ? formatDate(data.completedDate) : null} />
+        <DetailRow label={t('referrals.declined')} value={data.declinedDate ? formatDate(data.declinedDate) : null} />
+        <DetailRow label={t('referrals.followUp')} value={data.followUpDate ? formatDate(data.followUpDate) : null} />
       </View>
 
       {appt ? (
         <>
           <Text style={styles.section} accessibilityRole="header">
-            Appointment
+            {t('referrals.appointment')}
           </Text>
           <TouchableOpacity
             style={[styles.card, styles.apptRow]}
             onPress={() => router.push(`/patient/appointments/${appt._id}`)}
             accessibilityRole="button"
-            accessibilityLabel={`Appointment ${apptWhen ?? ''}, ${appt.status ?? ''}. Open`}
+            accessibilityLabel={t('referrals.apptA11y', { when: apptWhen ?? '', status: appt.status ?? '' })}
           >
             <Ionicons name="calendar-outline" size={22} color={colors.primary} />
             <View style={styles.flex}>
-              <Text style={styles.body}>{apptWhen || 'Appointment'}</Text>
+              <Text style={styles.body}>{apptWhen || t('referrals.appointment')}</Text>
               {appt.appointmentCode ? <Text style={styles.meta}>{appt.appointmentCode}</Text> : null}
             </View>
             <StatusBadge status={appt.status} />
@@ -127,13 +131,15 @@ export default function ReferralDetailScreen() {
 
       {data.letterAvailable ? (
         <View style={styles.pdf}>
-          <Button title="Open referral letter (PDF)" icon="download-outline" variant="secondary" onPress={openLetter} loading={opening} />
-          <Text style={styles.footnote}>Bring it to your appointment. The receiving doctor can check it is genuine with its QR code.</Text>
+          <Button title={t('referrals.openLetter')} icon="download-outline" variant="secondary" onPress={openLetter} loading={opening} />
+          <Text style={styles.footnote}>{t('referrals.letterNote')}</Text>
           {pdfError ? <Banner message={pdfError} /> : null}
         </View>
       ) : null}
 
-      <Text style={styles.footnote}>Questions about this referral? Contact {data.clinic.name ?? 'your clinic'}.</Text>
+      <Text style={styles.footnote}>
+        {t('referrals.questions', { clinic: data.clinic.name ?? t('referrals.yourClinic') })}
+      </Text>
     </ScrollView>
   );
 }

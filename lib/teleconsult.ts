@@ -1,6 +1,7 @@
 import { Alert, Linking } from 'react-native';
 import { Appointment } from './types';
 import { formatDate, formatTime } from './format';
+import { t as translate } from './i18n';
 
 /** Video visits. The server sends a join link only while the call can be joined. */
 
@@ -14,7 +15,7 @@ export async function openVideoCall(url: string): Promise<void> {
   try {
     await Linking.openURL(url);
   } catch {
-    Alert.alert("Couldn't open the call", 'Check that a web browser is installed, then try again.');
+    Alert.alert(translate('appointments.call.failedTitle'), translate('appointments.call.failedBody'));
   }
 }
 
@@ -24,5 +25,8 @@ export function opensLabel(a: Appointment, now = Date.now()): string | null {
   if (!t || t.joinable || !t.opensAt) return null;
   const opens = new Date(t.opensAt);
   if (isNaN(opens.getTime()) || opens.getTime() <= now) return null;
-  return `The call opens ${formatDate(opens, { weekday: 'short', month: 'short', day: 'numeric' })} at ${formatTime(opens)}`;
+  return translate('appointments.call.opens', {
+    date: formatDate(opens, { weekday: 'short', month: 'short', day: 'numeric' }),
+    time: formatTime(opens),
+  });
 }

@@ -23,6 +23,7 @@ import {
   toPhE164,
 } from '@/components/auth';
 import { QrScanner } from '@/components/QrScanner';
+import { t as translate, useT } from '@/lib/i18n';
 import {
   isEmcrLoginId,
   noteAccountCredentials,
@@ -36,6 +37,7 @@ type Failure = AuthFailure | { kind: 'credentials' };
 
 export default function LoginScreen() {
   const auth = useAuth();
+  const t = useT();
   // A mobile number or eMCR login ID (qc01.jdc.19900425@myclinicsoft.solutions), or for older
   // sign-ins an email address.
   const [email, setEmail] = useState('');
@@ -79,7 +81,7 @@ export default function LoginScreen() {
   function submitPassword() {
     const id = email.trim();
     if (!id || !password) {
-      setFailure({ kind: 'message', message: 'Enter your mobile number or login ID, and your password.', status: 0 });
+      setFailure({ kind: 'message', message: t('auth.login.missingFields'), status: 0 });
       return;
     }
     if (id.includes('@') && !isEmcrLoginId(id)) {
@@ -100,7 +102,7 @@ export default function LoginScreen() {
 
   function submitPhone() {
     if (!isPhMobile(phone)) {
-      setFailure({ kind: 'message', message: 'Enter a PH mobile number, like 917 123 4567.', status: 0 });
+      setFailure({ kind: 'message', message: t('auth.enterPhMobile'), status: 0 });
       return;
     }
     const e164 = toPhE164(phone);
@@ -129,7 +131,7 @@ export default function LoginScreen() {
       clear();
       setFailure({
         kind: 'message',
-        message: "That's the clinic's patient ID code, not a sign-in code. Ask the front desk to show your eMCR sign-in QR.",
+        message: t('auth.login.patientIdQr'),
         status: 0,
       });
       return;
@@ -149,16 +151,16 @@ export default function LoginScreen() {
       <StatusScreen
         onBack={clear}
         art={<IconBadge icon="warning" tone="danger" />}
-        title="Unable to Sign In"
-        message="The login or password you entered is incorrect."
+        title={t('auth.login.wrongTitle')}
+        message={t('auth.login.wrongMessage')}
         action={{
-          title: 'Try Again',
+          title: t('common.tryAgainTitle'),
           onPress: () => {
             setPassword('');
             clear();
           },
         }}
-        link={{ title: 'Forgot Password?', onPress: () => router.push('/phone?purpose=forgot') }}
+        link={{ title: t('auth.login.forgotTitle'), onPress: () => router.push('/phone?purpose=forgot') }}
       />
     );
   }
@@ -170,13 +172,13 @@ export default function LoginScreen() {
       <View style={styles.logo}>
         <BrandLogo />
       </View>
-      <AuthHeader title="Welcome" subtitle="Sign in to see your health records from every clinic." align="center" />
+      <AuthHeader title={t('auth.login.title')} subtitle={t('auth.login.subtitle')} align="center" />
 
       {auth.notice ? <Banner message={auth.notice} tone="warning" /> : null}
       {inlineError ? <Banner message={inlineError} /> : null}
 
       <View style={styles.primary}>
-        <Text style={styles.primaryLabel}>Sign in with your mobile number</Text>
+        <Text style={styles.primaryLabel}>{t('auth.login.withPhone')}</Text>
         <PhPhoneField
           value={phone}
           onChange={(v) => {
@@ -187,21 +189,21 @@ export default function LoginScreen() {
           onSubmitEditing={submitPhone}
         />
         <Button
-          title="Send Code"
+          title={t('auth.sendCode')}
           icon="chatbubble-ellipses-outline"
           onPress={submitPhone}
           loading={sendingCode}
           disabled={submitting}
         />
-        <Text style={styles.primaryHint}>Use the number your clinic has on file. We'll text you a 6-digit code.</Text>
+        <Text style={styles.primaryHint}>{t('auth.login.phoneHint')}</Text>
       </View>
 
-      <Divider label="or sign in with" />
+      <Divider label={t('auth.login.orSignInWith')} />
 
       <View style={styles.grid}>
         <MethodTile
           icon="mail-outline"
-          label="Email"
+          label={t('auth.login.email')}
           active={showPassword}
           disabled={submitting}
           onPress={() => {
@@ -211,7 +213,7 @@ export default function LoginScreen() {
         />
         <MethodTile
           icon="qr-code-outline"
-          label="QR code"
+          label={t('auth.login.qr')}
           disabled={submitting}
           onPress={() => {
             clear();
@@ -224,7 +226,7 @@ export default function LoginScreen() {
         <View style={styles.passwordForm}>
           <IconField
             icon="person-outline"
-            label="Email, mobile number or login ID"
+            label={t('auth.login.idLabel')}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -236,7 +238,7 @@ export default function LoginScreen() {
           />
           <IconField
             icon="lock-closed-outline"
-            label="Password"
+            label={t('auth.login.password')}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -246,16 +248,16 @@ export default function LoginScreen() {
             onSubmitEditing={submitPassword}
           />
           <TextLink
-            title="Forgot password?"
+            title={t('auth.login.forgot')}
             onPress={() => router.push('/phone?purpose=forgot')}
             style={styles.forgot}
           />
-          <Button title="Sign In" onPress={submitPassword} loading={submitting && !scanning && !sendingCode} />
+          <Button title={t('auth.login.signIn')} onPress={submitPassword} loading={submitting && !scanning && !sendingCode} />
         </View>
       ) : null}
 
       <Button
-        title="I have an invite from my clinic"
+        title={t('auth.login.haveInvite')}
         icon="mail-open-outline"
         variant="secondary"
         style={styles.invite}
@@ -267,8 +269,8 @@ export default function LoginScreen() {
       />
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Clinic doesn't have your number? </Text>
-        <TextLink title="Request access" onPress={() => router.push('/request-access')} disabled={submitting} />
+        <Text style={styles.footerText}>{t('auth.login.noNumber')}</Text>
+        <TextLink title={t('auth.requestAccess')} onPress={() => router.push('/request-access')} disabled={submitting} />
       </View>
 
       <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
@@ -297,7 +299,7 @@ function MethodTile({
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      accessibilityLabel={`Sign in with ${label}`}
+      accessibilityLabel={translate('auth.login.methodA11y', { method: label })}
       accessibilityState={{ disabled, expanded: active }}
     >
       <Ionicons name={icon} size={26} color={active ? colors.primaryOnSoft : colors.primary} />

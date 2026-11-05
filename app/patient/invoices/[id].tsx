@@ -15,6 +15,7 @@ import { OfflineBanner } from '@/components/OfflineBanner';
 import { ErrorState } from '@/components/ErrorState';
 import { InvoiceStatusPill } from '@/components/InvoiceStatusPill';
 import { softShadow } from '@/components/AppHeader';
+import { t as translate, useT } from '@/lib/i18n';
 
 /**
  * One invoice. When the clinic takes payments online, "Pay online" opens its pay page (the same
@@ -22,6 +23,7 @@ import { softShadow } from '@/components/AppHeader';
  */
 export default function InvoiceDetailScreen() {
   const bottomPad = useBottomPadding();
+  const t = useT();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<InvoiceDetailEnvelope>(
     id ? `/api/patients/me/invoices/${encodeURIComponent(id)}` : null,
@@ -62,7 +64,7 @@ export default function InvoiceDetailScreen() {
       if (result.type !== 'opened') backFromPayPage();
     } catch (err) {
       awaitingReturn.current = false;
-      setPayError(errorMessage(err, 'The payment page couldn’t be opened. Please try again.'));
+      setPayError(errorMessage(err, translate('invoices.payPageFailed')));
       // e.g. paid meanwhile (NOTHING_OWED): show the current state.
       emitRefresh('invoices');
     } finally {
@@ -72,7 +74,7 @@ export default function InvoiceDetailScreen() {
 
   if (loading) return <LoadingView />;
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data?.data) return <ErrorState message="Invoice not found." onRetry={refresh} />;
+  if (!data?.data) return <ErrorState message={t('invoices.notFound')} onRetry={refresh} />;
 
   const invoice = data.data;
   const paid = data.summary?.paid ?? amountPaid(invoice);
@@ -96,7 +98,7 @@ export default function InvoiceDetailScreen() {
             <Ionicons name={look.icon} size={26} color={look.fg} />
           </View>
           <View style={styles.flex}>
-            <Text style={styles.title}>{invoice.invoiceNumber ?? 'Invoice'}</Text>
+            <Text style={styles.title}>{invoice.invoiceNumber ?? t('invoices.invoice')}</Text>
             <Text style={styles.meta}>
               {look.label} · {formatDate(invoice.createdAt)}
             </Text>
@@ -104,9 +106,9 @@ export default function InvoiceDetailScreen() {
           <InvoiceStatusPill status={invoice.status} />
         </View>
         <View style={styles.totals}>
-          <Total label="Total" value={formatMoney(invoice.total)} />
-          <Total label="Paid" value={formatMoney(paid)} />
-          <Total label="Balance" value={formatMoney(balance)} tone={balance > 0 ? 'danger' : 'default'} />
+          <Total label={t('invoices.total')} value={formatMoney(invoice.total)} />
+          <Total label={t('invoices.paid')} value={formatMoney(paid)} />
+          <Total label={t('invoices.balance')} value={formatMoney(balance)} tone={balance > 0 ? 'danger' : 'default'} />
         </View>
       </View>
 
@@ -116,20 +118,20 @@ export default function InvoiceDetailScreen() {
             <PayNote
               icon="time-outline"
               inline
-              text="You sent a payment for the clinic to check. The balance updates once they confirm it, so you don’t need to pay again."
+              text={t('invoices.pendingClaim')}
             />
           ) : offer.recentCheckoutAt || returned ? (
             <PayNote
               icon="time-outline"
               inline
-              text="If you just paid, it can take a few minutes to show here. Pull down to refresh, and check before paying again."
+              text={t('invoices.justPaid')}
             />
           ) : null}
-          <Button title="Pay online" icon="card-outline" onPress={payOnline} loading={paying} />
+          <Button title={t('invoices.payOnline')} icon="card-outline" onPress={payOnline} loading={paying} />
           <Text style={styles.payHint}>
             {offer.methods.includes('online')
-              ? 'Opens the clinic’s secure payment page.'
-              : 'Opens the clinic’s payment page: pay by QR code or bank transfer, then send your reference number. The clinic confirms it before the balance updates.'}
+              ? t('invoices.payHintOnline')
+              : t('invoices.payHintManual')}
           </Text>
           {payError ? <Banner message={payError} /> : null}
         </View>
@@ -138,8 +140,8 @@ export default function InvoiceDetailScreen() {
           icon="business-outline"
           text={
             offer?.code === 'BELOW_MINIMUM'
-              ? `Online payments start at ${formatMoney(offer.minimum)}. Pay the balance at the clinic's front desk.`
-              : "Pay the balance at the clinic's front desk."
+              ? t('invoices.belowMinimum', { minimum: formatMoney(offer.minimum) })
+              : t('invoices.payAtDesk')
           }
         />
       ) : null}
@@ -148,7 +150,7 @@ export default function InvoiceDetailScreen() {
       {invoice.items?.length ? (
         <>
           <Text style={styles.section} accessibilityRole="header">
-            Items
+            {t('invoices.items')}
           </Text>
           <View style={styles.card}>
             {invoice.items.map((item, index) => (
@@ -157,7 +159,7 @@ export default function InvoiceDetailScreen() {
                 style={[styles.line, index < invoice.items!.length - 1 && styles.divider]}
               >
                 <View style={styles.flex}>
-                  <Text style={styles.lineName}>{item.description || item.code || 'Item'}</Text>
+                  <Text style={styles.lineName}>{item.description || item.code || t('invoices.item')}</Text>
                   <Text style={styles.meta}>
                     {item.quantity} × {formatMoney(item.unitPrice)}
                   </Text>
@@ -167,16 +169,16 @@ export default function InvoiceDetailScreen() {
             ))}
 
             <View style={styles.breakdown}>
-              {invoice.subtotal !== undefined ? <Row label="Subtotal" value={formatMoney(invoice.subtotal)} /> : null}
+              {invoice.subtotal !== undefined ? <Row label={t('invoices.subtotal')} value={formatMoney(invoice.subtotal)} /> : null}
               {invoice.discounts?.map((d, index) => (
                 <Row
                   key={`discount-${index}`}
-                  label={`Discount (${d.reason || humanize(d.type)})`}
+                  label={t('invoices.discount', { reason: d.reason || humanize(d.type) })}
                   value={typeof d.amount === 'number' ? formatMoney(-Math.abs(d.amount)) : formatMoney(d.amount)}
                 />
               ))}
-              {invoice.tax ? <Row label="Tax" value={formatMoney(invoice.tax)} /> : null}
-              <Row label="Total" value={formatMoney(invoice.total)} strong />
+              {invoice.tax ? <Row label={t('invoices.tax')} value={formatMoney(invoice.tax)} /> : null}
+              <Row label={t('invoices.total')} value={formatMoney(invoice.total)} strong />
             </View>
           </View>
         </>
@@ -184,7 +186,7 @@ export default function InvoiceDetailScreen() {
 
       {/* Payments */}
       <Text style={styles.section} accessibilityRole="header">
-        Payment History
+        {t('invoices.paymentHistory')}
       </Text>
       <View style={styles.card}>
         {invoice.payments?.length ? (
@@ -197,14 +199,14 @@ export default function InvoiceDetailScreen() {
                 <Text style={styles.lineName}>{humanize(p.method)}</Text>
                 <Text style={styles.meta}>
                   {formatDate(p.date)}
-                  {p.receiptNo ? ` · Receipt ${p.receiptNo}` : ''}
+                  {p.receiptNo ? t('invoices.receipt', { number: p.receiptNo }) : ''}
                 </Text>
               </View>
               <Text style={styles.lineTotal}>{formatMoney(p.amount)}</Text>
             </View>
           ))
         ) : (
-          <Text style={styles.emptyPayments}>No payments recorded yet.</Text>
+          <Text style={styles.emptyPayments}>{t('invoices.noPayments')}</Text>
         )}
       </View>
     </ScrollView>

@@ -8,6 +8,7 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, IconName } from '@/components/ui';
 import { AuthHeader, AuthScreen, IconBadge, TextLink } from '@/components/auth';
 import { ClaimExpiredScreen } from '@/components/emcr';
+import { useT } from '@/lib/i18n';
 
 /**
  * "Is this your record?" after the phone code, when the account has no profile yet (or the
@@ -16,18 +17,14 @@ import { ClaimExpiredScreen } from '@/components/emcr';
  */
 export default function VerifyOwnerScreen() {
   const { signedIn } = useAuth();
+  const t = useT();
   // Read once: the context only changes on the steps after this one.
   const [context] = useState(getClaimContext);
 
   if (!context) return <ClaimExpiredScreen signedIn={signedIn} />;
 
   const people = context.peopleOnNumber;
-  const subtitle =
-    people > 1
-      ? `We found ${people} people on this number. Tell us whose records you want to see.`
-      : people === 1
-        ? 'We found 1 person on this number. Tell us whose records you want to see.'
-        : 'Tell us whose records you want to see.';
+  const subtitle = people > 0 ? t('auth.owner.found', { count: people }) : t('auth.owner.foundNone');
 
   function finish() {
     setClaimContext(null);
@@ -37,33 +34,33 @@ export default function VerifyOwnerScreen() {
 
   return (
     <AuthScreen back={signedIn ? false : () => router.dismissTo('/login')}>
-      <AuthHeader title="Is This Your Record?" subtitle={subtitle} />
+      <AuthHeader title={t('auth.owner.title')} subtitle={subtitle} />
       <View style={styles.art}>
         <IconBadge icon="people-outline" size={96} />
       </View>
 
       {context.hasOwnRecord ? (
-        <Banner message="Your own record is already linked to this number. You can add someone you look after." tone="primary" />
+        <Banner message={t('auth.owner.ownLinked')} tone="primary" />
       ) : (
         <Choice
           icon="person-outline"
-          title="Yes, it's me"
-          detail="My own records at the clinic"
+          title={t('auth.owner.me')}
+          detail={t('auth.owner.meDetail')}
           onPress={() => router.push('/claim-details?relation=self')}
         />
       )}
       <Choice
         icon="people-outline"
-        title="No, it's someone I look after"
-        detail="A child, parent or other family member"
+        title={t('auth.owner.other')}
+        detail={t('auth.owner.otherDetail')}
         onPress={() => router.push('/claim-details?relation=other')}
       />
 
-      {signedIn ? <TextLink title="Continue" onPress={finish} style={styles.continue} /> : null}
+      {signedIn ? <TextLink title={t('auth.continue')} onPress={finish} style={styles.continue} /> : null}
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Not on this number? </Text>
-        <TextLink title="Request access" onPress={() => router.push('/request-access')} />
+        <Text style={styles.footerText}>{t('auth.owner.notOnNumber')}</Text>
+        <TextLink title={t('auth.requestAccess')} onPress={() => router.push('/request-access')} />
       </View>
     </AuthScreen>
   );

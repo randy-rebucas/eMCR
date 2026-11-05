@@ -5,6 +5,7 @@ import Svg, { Circle, Rect } from 'react-native-svg';
 import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/theme';
 import { StatusScreen, useBlockHardwareBack } from '@/components/auth';
+import { useT } from '@/lib/i18n';
 
 // Confetti pieces around the check: [x, y, color, kind].
 const CONFETTI: [number, number, string, 'dot' | 'dash'][] = [
@@ -23,6 +24,7 @@ const CONFETTI: [number, number, string, 'dot' | 'dash'][] = [
 /** Shown once activation has saved the patient's email + password. */
 export default function AllSetScreen() {
   const { signedIn } = useAuth();
+  const t = useT();
   useBlockHardwareBack();
   if (!signedIn) return <Redirect href="/login" />;
 
@@ -44,9 +46,9 @@ export default function AllSetScreen() {
           </View>
         </View>
       }
-      title="You're All Set!"
-      message="Your eMCR account is ready. Next time, sign in with your email and password."
-      action={{ title: 'Continue', onPress: () => router.replace('/enable-notifications') }}
+      title={t('auth.allSet.title')}
+      message={t('auth.allSet.message')}
+      action={{ title: t('auth.continue'), onPress: () => router.replace('/enable-notifications') }}
     />
   );
 }

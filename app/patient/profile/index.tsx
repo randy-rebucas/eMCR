@@ -12,6 +12,15 @@ import { formatDate, humanize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Button, IconName, LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
+import { t as translate, useT } from '@/lib/i18n';
+
+/** "Male" / "Female" in the app's language; any other value as the clinic wrote it. */
+function sexLabel(sex: string): string {
+  const key = sex.toLowerCase();
+  if (key === 'male') return translate('profile.sex.male');
+  if (key === 'female') return translate('profile.sex.female');
+  return humanize(sex);
+}
 
 function joinAddress(a: PatientProfile['address']): string | null {
   if (!a) return null;
@@ -37,6 +46,7 @@ function allergyText(a: NonNullable<PatientProfile['allergies']>[number]): strin
 
 export default function ProfileScreen() {
   const bottomPad = useBottomPadding();
+  const t = useT();
   const { signOut } = useAuth();
   const { viewing } = useProfile();
   const self = viewing?.self !== false;
@@ -47,12 +57,12 @@ export default function ProfileScreen() {
 
   function confirmSignOutEverywhere() {
     Alert.alert(
-      'Sign out on all devices?',
-      'Every phone and browser signed in to your account will be signed out, including this one.',
+      t('profile.signOutAll.title'),
+      t('profile.signOutAll.body'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Sign out everywhere',
+          text: t('profile.signOutAll.confirm'),
           style: 'destructive',
           onPress: async () => {
             setSigningOutAll(true);
@@ -64,7 +74,7 @@ export default function ProfileScreen() {
               // signed out it sets the auth notice (shown on the sign-in screen this one is
               // about to be replaced by), so only unexpected errors need an alert here.
               if (!(err instanceof ApiError && err.code === 'SIGN_OUT_EVERYWHERE_FAILED')) {
-                Alert.alert("Couldn't sign out", errorMessage(err, 'Check your connection and try again.'));
+                Alert.alert(t('profile.signOutAll.failed'), errorMessage(err, t('profile.signOutAll.failedFallback')));
               }
             }
           },
@@ -77,10 +87,10 @@ export default function ProfileScreen() {
     <SafeAreaView edges={['top']}>
       <AppHeader back />
       <Text style={styles.title} accessibilityRole="header">
-        {self ? 'My Profile' : `${viewing?.firstName}'s Profile`}
+        {self ? t('profile.myProfile') : t('profile.memberProfile', { name: `${viewing?.firstName}` })}
       </Text>
       <Text style={styles.subtitle}>
-        {self ? 'View and manage your personal information.' : 'A family member whose records you manage.'}
+        {self ? t('profile.selfSubtitle') : t('profile.memberSubtitle')}
       </Text>
     </SafeAreaView>
   );
@@ -114,7 +124,7 @@ export default function ProfileScreen() {
       {error && !p ? (
         <View style={[styles.card, styles.errorCard]}>
           <Text style={styles.muted}>{error}</Text>
-          <Button title="Try Again" variant="secondary" onPress={refresh} style={styles.stretch} />
+          <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={refresh} style={styles.stretch} />
         </View>
       ) : p ? (
         <>
@@ -125,80 +135,80 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.flex}>
               <Text style={styles.name}>{fullName}</Text>
-              {p.patientCode ? <Text style={styles.meta}>Patient ID: {p.patientCode}</Text> : null}
+              {p.patientCode ? <Text style={styles.meta}>{t('profile.patientId', { id: p.patientCode })}</Text> : null}
               <View style={styles.facts}>
                 {age !== null ? (
                   <View style={styles.fact}>
                     <Ionicons name="calendar-outline" size={15} color={colors.textMuted} />
-                    <Text style={styles.factText}>{age} years old</Text>
+                    <Text style={styles.factText}>{t('profile.yearsOld', { count: age })}</Text>
                   </View>
                 ) : null}
                 {p.sex ? (
                   <View style={styles.fact}>
                     <Ionicons name="person-outline" size={15} color={colors.textMuted} />
-                    <Text style={styles.factText}>{humanize(p.sex)}</Text>
+                    <Text style={styles.factText}>{sexLabel(p.sex)}</Text>
                   </View>
                 ) : null}
               </View>
             </View>
           </View>
 
-          <Section title="Personal Information" note="Managed by your clinic">
-            <InfoRow icon="person-outline" label="Full Name" value={fullName} />
+          <Section title={t('profile.personalInfo')} note={t('profile.managedByClinic')}>
+            <InfoRow icon="person-outline" label={t('profile.fullName')} value={fullName} />
             <InfoRow
               icon="calendar-outline"
-              label="Date of Birth"
+              label={t('profile.dateOfBirth')}
               value={p.dateOfBirth ? formatDate(p.dateOfBirth, { utc: true }) : null}
             />
-            <InfoRow icon="male-female-outline" label="Sex" value={p.sex ? humanize(p.sex) : null} />
-            <InfoRow icon="call-outline" label="Mobile Number" value={p.phone} />
-            <InfoRow icon="mail-outline" label="Sign-in Email" value={p.email} last />
+            <InfoRow icon="male-female-outline" label={t('profile.sex')} value={p.sex ? sexLabel(p.sex) : null} />
+            <InfoRow icon="call-outline" label={t('profile.mobileNumber')} value={p.phone} />
+            <InfoRow icon="mail-outline" label={t('profile.signInEmail')} value={p.email} last />
           </Section>
-          <Text style={styles.hint}>To change these, ask the front desk at your clinic.</Text>
+          <Text style={styles.hint}>{t('profile.askFrontDesk')}</Text>
 
-          <Section title="Contact & Address" onEdit={editContacts}>
-            <InfoRow icon="mail-outline" label="Contact Email" value={p.contacts?.email} />
+          <Section title={t('profile.contactAddress')} onEdit={editContacts}>
+            <InfoRow icon="mail-outline" label={t('profile.contactEmail')} value={p.contacts?.email} />
             <InfoRow
               icon="location-outline"
-              label="Home Address"
+              label={t('profile.homeAddress')}
               value={joinAddress(p.address) ?? p.contacts?.address}
               last
             />
           </Section>
 
-          <Section title="Emergency Contact" onEdit={editContacts}>
-            <InfoRow icon="person-outline" label="Contact Name" value={p.emergencyContact?.name} />
-            <InfoRow icon="call-outline" label="Phone Number" value={p.emergencyContact?.phone} />
-            <InfoRow icon="people-outline" label="Relationship" value={p.emergencyContact?.relationship} last />
+          <Section title={t('profile.emergencyContact')} onEdit={editContacts}>
+            <InfoRow icon="person-outline" label={t('profile.contactName')} value={p.emergencyContact?.name} />
+            <InfoRow icon="call-outline" label={t('profile.phoneNumber')} value={p.emergencyContact?.phone} />
+            <InfoRow icon="people-outline" label={t('profile.relationship')} value={p.emergencyContact?.relationship} last />
           </Section>
 
-          <Section title="Medical Information" note="Recorded by your clinic">
+          <Section title={t('profile.medicalInfo')} note={t('profile.recordedByClinic')}>
             <InfoRow
               icon="alert-circle-outline"
-              label="Allergies"
-              value={allergies.length ? allergies.join(', ') : 'None reported'}
+              label={t('profile.allergies')}
+              value={allergies.length ? allergies.join(', ') : t('profile.noneReported')}
               highlight={allergies.length > 0}
             />
             <InfoRow
               icon="medkit-outline"
-              label="Conditions"
-              value={conditions.length ? conditions.map((c) => c.condition).join(', ') : 'None reported'}
+              label={t('profile.conditions')}
+              value={conditions.length ? conditions.map((c) => c.condition).join(', ') : t('profile.noneReported')}
               last
             />
           </Section>
 
           {self ? (
-          <Section title="Account & Security">
+          <Section title={t('profile.accountSecurity')}>
             <ActionRow
               icon="lock-closed-outline"
-              label="Password"
-              detail={p.hasPassword === false ? 'Not set — add one to sign in with email' : '••••••••'}
+              label={t('profile.password')}
+              detail={p.hasPassword === false ? t('profile.passwordNotSet') : '••••••••'}
               onPress={() => router.push('/patient/profile/password')}
             />
             <ActionRow
               icon="phone-portrait-outline"
-              label="Sign out on all devices"
-              detail="Use this if you lost a phone"
+              label={t('profile.signOutAllDevices')}
+              detail={t('profile.signOutAllDetail')}
               danger
               busy={signingOutAll}
               onPress={confirmSignOutEverywhere}
@@ -207,7 +217,7 @@ export default function ProfileScreen() {
           </Section>
           ) : (
             <Text style={styles.hint}>
-              {viewing?.firstName} signs in with their own account, if they have one. Manage family access from Family.
+              {t('profile.memberSignsIn', { name: `${viewing?.firstName}` })}
             </Text>
           )}
         </>
@@ -227,6 +237,7 @@ function Section({
   onEdit?: () => void;
   children: ReactNode;
 }) {
+  const t = useT();
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
@@ -234,8 +245,8 @@ function Section({
           {title}
         </Text>
         {onEdit ? (
-          <TouchableOpacity onPress={onEdit} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Edit ${title}`}>
-            <Text style={styles.edit}>Edit</Text>
+          <TouchableOpacity onPress={onEdit} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('profile.editA11y', { section: title })}>
+            <Text style={styles.edit}>{t('profile.edit')}</Text>
           </TouchableOpacity>
         ) : note ? (
           <Text style={styles.note}>{note}</Text>
@@ -259,11 +270,16 @@ function InfoRow({
   last?: boolean;
   highlight?: boolean;
 }) {
+  const t = useT();
   return (
-    <View style={[styles.row, !last && styles.divider]} accessible accessibilityLabel={`${label}: ${value || 'not set'}`}>
+    <View
+      style={[styles.row, !last && styles.divider]}
+      accessible
+      accessibilityLabel={t('profile.rowA11y', { label, value: value || t('profile.notSetLower') })}
+    >
       <Ionicons name={icon} size={20} color={colors.primary} />
       <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={[styles.rowValue, !value && styles.rowEmpty, highlight && styles.rowHighlight]}>{value || 'Not set'}</Text>
+      <Text style={[styles.rowValue, !value && styles.rowEmpty, highlight && styles.rowHighlight]}>{value || t('profile.notSet')}</Text>
     </View>
   );
 }

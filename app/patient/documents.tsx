@@ -20,29 +20,41 @@ import { formatDate, formatFileSize, humanize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName, ListFooter, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
+import { PlainKey, t as translate, useT } from '@/lib/i18n';
 
 type Category = 'all' | 'laboratory_result' | 'medical_certificate' | 'referral' | 'imaging' | 'prescription' | 'other';
 
-const CATEGORIES: { value: Category; label: string; icon: IconName }[] = [
-  { value: 'all', label: 'All', icon: 'documents-outline' },
-  { value: 'laboratory_result', label: 'Lab Results', icon: 'flask-outline' },
-  { value: 'medical_certificate', label: 'Certificates', icon: 'ribbon-outline' },
-  { value: 'referral', label: 'Referrals', icon: 'arrow-redo-outline' },
-  { value: 'imaging', label: 'Imaging', icon: 'image-outline' },
-  { value: 'prescription', label: 'Prescriptions', icon: 'medical-outline' },
-  { value: 'other', label: 'Others', icon: 'ellipsis-horizontal' },
+const CATEGORIES: { value: Category; label: PlainKey; icon: IconName }[] = [
+  { value: 'all', label: 'documents.tab.all', icon: 'documents-outline' },
+  { value: 'laboratory_result', label: 'documents.tab.laboratory_result', icon: 'flask-outline' },
+  { value: 'medical_certificate', label: 'documents.tab.medical_certificate', icon: 'ribbon-outline' },
+  { value: 'referral', label: 'documents.tab.referral', icon: 'arrow-redo-outline' },
+  { value: 'imaging', label: 'documents.tab.imaging', icon: 'image-outline' },
+  { value: 'prescription', label: 'documents.tab.prescription', icon: 'medical-outline' },
+  { value: 'other', label: 'documents.tab.other', icon: 'ellipsis-horizontal' },
 ];
 
-const CATEGORY_LOOK: Record<string, { label: string; bg: string; fg: string }> = {
-  laboratory_result: { label: 'Lab Result', bg: '#E3F5EC', fg: '#1F7A4A' },
-  medical_certificate: { label: 'Certificate', bg: '#E3F6F5', fg: '#0A7F7E' },
-  referral: { label: 'Referral', bg: '#FDF1DC', fg: '#A15C00' },
-  imaging: { label: 'Imaging', bg: '#EEEAFB', fg: '#5B47B0' },
-  prescription: { label: 'Prescription', bg: '#E6EEFB', fg: '#2F5FB3' },
-  invoice: { label: 'Invoice', bg: '#E6EEFB', fg: '#2F5FB3' },
-  insurance: { label: 'Insurance', bg: '#E3F6F5', fg: '#0A7F7E' },
-  id: { label: 'ID', bg: colors.slateSoft, fg: colors.slate },
-  other: { label: 'Other', bg: colors.slateSoft, fg: colors.slate },
+/** `label` is a getter so it reads in the current language. */
+function look(label: PlainKey, bg: string, fg: string): { readonly label: string; bg: string; fg: string } {
+  return {
+    get label() {
+      return translate(label);
+    },
+    bg,
+    fg,
+  };
+}
+
+const CATEGORY_LOOK: Record<string, { readonly label: string; bg: string; fg: string }> = {
+  laboratory_result: look('documents.cat.laboratory_result', '#E3F5EC', '#1F7A4A'),
+  medical_certificate: look('documents.cat.medical_certificate', '#E3F6F5', '#0A7F7E'),
+  referral: look('documents.cat.referral', '#FDF1DC', '#A15C00'),
+  imaging: look('documents.cat.imaging', '#EEEAFB', '#5B47B0'),
+  prescription: look('documents.cat.prescription', '#E6EEFB', '#2F5FB3'),
+  invoice: look('documents.cat.invoice', '#E6EEFB', '#2F5FB3'),
+  insurance: look('documents.cat.insurance', '#E3F6F5', '#0A7F7E'),
+  id: look('documents.cat.id', colors.slateSoft, colors.slate),
+  other: look('documents.cat.other', colors.slateSoft, colors.slate),
 };
 
 function fileIcon(type: PatientDocument['documentType']): IconName {
@@ -53,7 +65,7 @@ function fileIcon(type: PatientDocument['documentType']): IconName {
 
 function fileKind(doc: PatientDocument): string | null {
   if (doc.documentType === 'pdf') return 'PDF';
-  if (doc.documentType === 'image') return 'Image';
+  if (doc.documentType === 'image') return translate('documents.image');
   if (doc.documentType === 'word') return 'Word';
   if (doc.documentType === 'excel') return 'Excel';
   const ext = /\.([a-z0-9]{2,5})$/i.exec(doc.filename ?? '');
@@ -61,6 +73,7 @@ function fileKind(doc: PatientDocument): string | null {
 }
 
 export default function DocumentsScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const [category, setCategory] = useState<Category>('all');
   const [search, setSearch] = useState('');
@@ -93,7 +106,7 @@ export default function DocumentsScreen() {
     try {
       await openDocument(doc);
     } catch (err) {
-      setOpenError(errorMessage(err, "Couldn't open the document."));
+      setOpenError(errorMessage(err, t('documents.openFailed')));
     } finally {
       setOpeningId(null);
     }
@@ -103,9 +116,9 @@ export default function DocumentsScreen() {
     <SafeAreaView edges={['top']}>
       <AppHeader back />
       <Text style={styles.title} accessibilityRole="header">
-        Documents
+        {t('documents.title')}
       </Text>
-      <Text style={styles.subtitle}>Certificates, referrals, reports and other files from your clinic.</Text>
+      <Text style={styles.subtitle}>{t('documents.subtitle')}</Text>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categories}>
         {CATEGORIES.map((c) => {
@@ -120,7 +133,7 @@ export default function DocumentsScreen() {
             >
               <Ionicons name={c.icon} size={20} color={selected ? colors.primaryText : colors.primary} />
               <Text style={[styles.categoryText, selected && styles.categoryTextSelected]}>
-                {c.label}
+                {t(c.label)}
                 {selected && total !== undefined && !list.loading ? ` (${total})` : ''}
               </Text>
             </TouchableOpacity>
@@ -134,14 +147,14 @@ export default function DocumentsScreen() {
           style={styles.searchInput}
           value={search}
           onChangeText={setSearch}
-          placeholder="Search documents…"
+          placeholder={t('documents.searchPlaceholder')}
           placeholderTextColor={colors.textMuted}
           returnKeyType="search"
           autoCorrect={false}
-          accessibilityLabel="Search documents"
+          accessibilityLabel={t('documents.searchA11y')}
         />
         {search ? (
-          <TouchableOpacity onPress={() => setSearch('')} hitSlop={13} accessibilityRole="button" accessibilityLabel="Clear search">
+          <TouchableOpacity onPress={() => setSearch('')} hitSlop={13} accessibilityRole="button" accessibilityLabel={t('documents.clearSearch')}>
             <Ionicons name="close-circle" size={18} color={colors.textMuted} />
           </TouchableOpacity>
         ) : null}
@@ -159,7 +172,7 @@ export default function DocumentsScreen() {
     empty = (
       <View style={styles.empty}>
         <Text style={styles.emptyText}>{list.error}</Text>
-        <Button title="Try Again" variant="secondary" onPress={list.reload} style={styles.stretch} />
+        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={list.reload} style={styles.stretch} />
       </View>
     );
   } else {
@@ -168,9 +181,9 @@ export default function DocumentsScreen() {
         <View style={styles.emptyIcon}>
           <Ionicons name="folder-open-outline" size={32} color={colors.primary} />
         </View>
-        <Text style={styles.emptyTitle}>{q ? 'No matches' : 'No documents yet'}</Text>
+        <Text style={styles.emptyTitle}>{q ? t('documents.noMatches') : t('documents.empty')}</Text>
         <Text style={styles.emptyText}>
-          {q ? 'Try a different search.' : 'Files your clinic shares with you will show up here.'}
+          {q ? t('documents.tryDifferent') : t('documents.emptyText')}
         </Text>
       </View>
     );
@@ -198,8 +211,9 @@ export default function DocumentsScreen() {
 }
 
 function DocumentRow({ doc, opening, onPress }: { doc: PatientDocument; opening: boolean; onPress: () => void }) {
+  const t = useT();
   const look = CATEGORY_LOOK[doc.category ?? ''] ?? {
-    label: doc.category ? humanize(doc.category) : 'Document',
+    label: doc.category ? humanize(doc.category) : t('documents.document'),
     bg: colors.slateSoft,
     fg: colors.slate,
   };
@@ -211,7 +225,7 @@ function DocumentRow({ doc, opening, onPress }: { doc: PatientDocument; opening:
       onPress={onPress}
       disabled={opening}
       accessibilityRole="button"
-      accessibilityLabel={`Open ${doc.title}, ${look.label}`}
+      accessibilityLabel={t('documents.openA11y', { title: doc.title, category: look.label })}
     >
       <View style={[styles.tile, { backgroundColor: look.bg }]}>
         <Ionicons name={fileIcon(doc.documentType)} size={26} color={look.fg} />

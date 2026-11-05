@@ -4,6 +4,7 @@ import { Medication, Prescription } from '@/lib/types';
 import { courseRange, frequencyLabel } from '@/lib/prescriptions';
 import { colors, radius, spacing } from '@/lib/theme';
 import { StatusBadge } from './StatusBadge';
+import { useT } from '@/lib/i18n';
 
 type McIcon = keyof typeof MaterialCommunityIcons.glyphMap;
 
@@ -28,6 +29,7 @@ export function MedicationCard({
   med: Medication;
   showStatus?: boolean;
 }) {
+  const t = useT();
   const look = formIcon(med.form);
   const title = [med.name, med.strength].filter(Boolean).join(' ');
   const dosage = [med.dose, frequencyLabel(med.frequency)].filter(Boolean).join(' · ');
@@ -54,16 +56,16 @@ export function MedicationCard({
           <View style={styles.fact}>
             <Ionicons name="medical-outline" size={18} color={colors.primary} />
             <View style={styles.flex}>
-              <Text style={styles.factLabel}>Dosage</Text>
+              <Text style={styles.factLabel}>{t('prescriptions.dosage')}</Text>
               <Text style={styles.factValue}>{dosage || '—'}</Text>
             </View>
           </View>
           <View style={styles.fact}>
             <Ionicons name="calendar-outline" size={18} color={colors.primary} />
             <View style={styles.flex}>
-              <Text style={styles.factLabel}>{med.durationDays ? 'Duration' : 'Quantity'}</Text>
+              <Text style={styles.factLabel}>{med.durationDays ? t('prescriptions.duration') : t('prescriptions.quantity')}</Text>
               <Text style={styles.factValue}>
-                {med.durationDays ? `${med.durationDays} day${med.durationDays === 1 ? '' : 's'}` : med.quantity ?? '—'}
+                {med.durationDays ? t('prescriptions.days', { count: med.durationDays }) : med.quantity ?? '—'}
               </Text>
               {range ? <Text style={styles.factSub}>{range}</Text> : null}
             </View>

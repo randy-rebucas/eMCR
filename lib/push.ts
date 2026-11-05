@@ -3,6 +3,7 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { ApiError, apiRequest, AUTH_ENDPOINTS } from './api';
 import { RefreshTopic } from './events';
+import { t } from './i18n';
 import { Notifications } from './notifications';
 import { getOrCreateDeviceId } from './storage';
 
@@ -41,7 +42,7 @@ export async function registerForPushNotifications({ prompt = true }: { prompt?:
 
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
-      name: 'Default',
+      name: t('patient.notifSettings.channelDefault'),
       importance: Notifications.AndroidImportance.DEFAULT,
     });
   }

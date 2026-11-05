@@ -1,31 +1,32 @@
 import { formatDate } from './format';
 import { Medication, Prescription, PrescriptionVisit } from './types';
+import { PlainKey, t } from './i18n';
 
 const CLOSED = new Set(['completed', 'cancelled']);
 const DAY = 24 * 60 * 60 * 1000;
 
-const FREQUENCIES: Record<string, string> = {
-  od: 'Once a day',
-  qd: 'Once a day',
-  once: 'Once',
-  daily: 'Once a day',
-  bid: 'Twice a day',
-  tid: 'Three times a day',
-  qid: 'Four times a day',
-  prn: 'As needed',
-  hs: 'At bedtime',
-  qam: 'Every morning',
-  qpm: 'Every evening',
-  stat: 'Right away',
+const FREQUENCIES: Record<string, PlainKey> = {
+  od: 'prescriptions.freq.onceADay',
+  qd: 'prescriptions.freq.onceADay',
+  once: 'prescriptions.freq.once',
+  daily: 'prescriptions.freq.onceADay',
+  bid: 'prescriptions.freq.twiceADay',
+  tid: 'prescriptions.freq.threeTimesADay',
+  qid: 'prescriptions.freq.fourTimesADay',
+  prn: 'prescriptions.freq.asNeeded',
+  hs: 'prescriptions.freq.atBedtime',
+  qam: 'prescriptions.freq.everyMorning',
+  qpm: 'prescriptions.freq.everyEvening',
+  stat: 'prescriptions.freq.rightAway',
 };
 
 /** "BID" → "Twice a day", "q6h" → "Every 6 hours"; anything else as written. */
 export function frequencyLabel(freq: string | undefined): string | null {
   if (!freq?.trim()) return null;
   const key = freq.trim().toLowerCase().replace(/\./g, '');
-  if (FREQUENCIES[key]) return FREQUENCIES[key];
+  if (FREQUENCIES[key]) return t(FREQUENCIES[key]);
   const everyHours = /^q\s*(\d+)\s*h(rs?)?$/.exec(key);
-  if (everyHours) return `Every ${everyHours[1]} hours`;
+  if (everyHours) return t('prescriptions.freq.everyHours', { hours: everyHours[1] });
   return freq.trim();
 }
 

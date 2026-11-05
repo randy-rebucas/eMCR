@@ -12,8 +12,10 @@ import { Banner, Button, Card, DetailRow, LoadingView, screenStyles, useBottomPa
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorState } from '@/components/ErrorState';
+import { useT } from '@/lib/i18n';
 
 export default function AppointmentDetailScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, loading, refreshing, error, refresh, poll, offline, updatedAt } = useApiData<Appointment>(
@@ -35,7 +37,7 @@ export default function AppointmentDetailScreen() {
 
   if (loading) return <LoadingView />;
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data) return <ErrorState message="Appointment not found." onRetry={refresh} />;
+  if (!data) return <ErrorState message={t('appointments.notFound')} onRetry={refresh} />;
 
   const appointment = data;
   const cancellable = canCancel(appointment);
@@ -45,9 +47,9 @@ export default function AppointmentDetailScreen() {
   const opens = video ? opensLabel(appointment) : null;
 
   function confirmCancel() {
-    Alert.alert('Cancel appointment?', 'The clinic will be notified. This cannot be undone.', [
-      { text: 'Keep it', style: 'cancel' },
-      { text: 'Cancel appointment', style: 'destructive', onPress: cancel },
+    Alert.alert(t('appointments.cancel.title'), t('appointments.cancel.body'), [
+      { text: t('appointments.cancel.keep'), style: 'cancel' },
+      { text: t('appointments.cancel.confirm'), style: 'destructive', onPress: cancel },
     ]);
   }
 
@@ -58,7 +60,7 @@ export default function AppointmentDetailScreen() {
       await cancelAppointment(appointment._id);
       poll();
     } catch (err) {
-      setActionError(errorMessage(err, "Couldn't cancel the appointment. Please try again."));
+      setActionError(errorMessage(err, t('appointments.cancel.failedLong')));
     } finally {
       setCancelling(false);
     }
@@ -81,32 +83,32 @@ export default function AppointmentDetailScreen() {
           <StatusBadge status={appointment.status} />
         </View>
         <View style={{ height: 8 }} />
-        <DetailRow label="Doctor" value={doctorName(appointment.doctor)} />
-        <DetailRow label="Specialization" value={appointment.doctor?.specialization} />
-        <DetailRow label="Reason" value={appointment.reason} />
-        {video ? <DetailRow label="Visit type" value="Video call" /> : <DetailRow label="Room" value={appointment.room} />}
-        <DetailRow label="Duration" value={appointment.duration ? `${appointment.duration} min` : null} />
-        <DetailRow label="Reference" value={appointment.appointmentCode} />
+        <DetailRow label={t('appointments.detail.doctor')} value={doctorName(appointment.doctor)} />
+        <DetailRow label={t('appointments.detail.specialization')} value={appointment.doctor?.specialization} />
+        <DetailRow label={t('appointments.detail.reason')} value={appointment.reason} />
+        {video ? <DetailRow label={t('appointments.detail.visitType')} value={t('appointments.videoCall')} /> : <DetailRow label={t('appointments.detail.room')} value={appointment.room} />}
+        <DetailRow label={t('appointments.detail.duration')} value={appointment.duration ? t('appointments.detail.minutes', { minutes: appointment.duration }) : null} />
+        <DetailRow label={t('appointments.detail.reference')} value={appointment.appointmentCode} />
       </Card>
 
       {joinUrl ? (
         <>
-          <Button title="Join video call" icon="videocam-outline" onPress={() => openVideoCall(joinUrl)} />
+          <Button title={t('appointments.detail.joinVideo')} icon="videocam-outline" onPress={() => openVideoCall(joinUrl)} />
           <Text style={screenStyles.muted}>
-            Find a quiet, well-lit spot and allow camera and microphone access when asked. The doctor joins at your appointment time.
+            {t('appointments.detail.videoTips')}
           </Text>
         </>
       ) : opens ? (
-        <Text style={screenStyles.muted}>{opens}. The Join button appears here then.</Text>
+        <Text style={screenStyles.muted}>{t('appointments.detail.opensJoin', { opens })}</Text>
       ) : null}
 
       {appointment.status === 'pending' ? (
-        <Text style={screenStyles.muted}>The clinic will confirm this request. You'll get a notification once it does.</Text>
+        <Text style={screenStyles.muted}>{t('appointments.detail.pending')}</Text>
       ) : null}
 
       {movable ? (
         <Button
-          title="Reschedule"
+          title={t('appointments.reschedule')}
           icon="calendar-outline"
           variant="secondary"
           onPress={() => router.push({ pathname: '/patient/appointments/reschedule', params: { id: appointment._id } })}
@@ -114,7 +116,7 @@ export default function AppointmentDetailScreen() {
         />
       ) : null}
       {cancellable ? (
-        <Button title="Cancel appointment" variant="dangerOutline" onPress={confirmCancel} loading={cancelling} />
+        <Button title={t('appointments.cancel.confirm')} variant="dangerOutline" onPress={confirmCancel} loading={cancelling} />
       ) : null}
     </ScrollView>
   );

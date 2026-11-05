@@ -23,20 +23,21 @@ import { Banner, Button, IconName, ListFooter } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ResultStatusPill } from '@/components/ResultStatusPill';
+import { PlainKey, useT } from '@/lib/i18n';
 
 type Segment = 'lab' | 'imaging' | 'reports';
 type LabFilter = 'all' | 'ready' | 'processing';
 
-const SEGMENTS: { value: Segment; label: string; icon: IconName }[] = [
-  { value: 'lab', label: 'Laboratory', icon: 'flask-outline' },
-  { value: 'imaging', label: 'Imaging', icon: 'image-outline' },
-  { value: 'reports', label: 'Reports', icon: 'document-text-outline' },
+const SEGMENTS: { value: Segment; label: PlainKey; icon: IconName }[] = [
+  { value: 'lab', label: 'results.segment.lab', icon: 'flask-outline' },
+  { value: 'imaging', label: 'results.segment.imaging', icon: 'image-outline' },
+  { value: 'reports', label: 'results.segment.reports', icon: 'document-text-outline' },
 ];
 
-const LAB_FILTERS: { value: LabFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'ready', label: 'Ready' },
-  { value: 'processing', label: 'Processing' },
+const LAB_FILTERS: { value: LabFilter; label: PlainKey }[] = [
+  { value: 'all', label: 'results.filter.all' },
+  { value: 'ready', label: 'results.filter.ready' },
+  { value: 'processing', label: 'results.filter.processing' },
 ];
 
 // Imaging studies and uploaded lab reports are clinic documents, filtered by category.
@@ -46,6 +47,7 @@ const DOC_CATEGORY: Record<Exclude<Segment, 'lab'>, string> = {
 };
 
 export default function ResultsScreen() {
+  const t = useT();
   const [segment, setSegment] = useState<Segment>('lab');
   const [visited, setVisited] = useState<Set<Segment>>(() => new Set(['lab']));
   const [search, setSearch] = useState('');
@@ -110,7 +112,7 @@ export default function ResultsScreen() {
     try {
       await openDocument(doc);
     } catch (err) {
-      setOpenError(errorMessage(err, "Couldn't open the file."));
+      setOpenError(errorMessage(err, t('results.openFailed')));
     } finally {
       setOpeningId(null);
     }
@@ -122,9 +124,9 @@ export default function ResultsScreen() {
     <SafeAreaView edges={['top']}>
       <AppHeader />
       <Text style={styles.title} accessibilityRole="header">
-        Results
+        {t('results.title')}
       </Text>
-      <Text style={styles.subtitle}>View your laboratory and diagnostic results.</Text>
+      <Text style={styles.subtitle}>{t('results.subtitle')}</Text>
 
       <View style={styles.segments} accessibilityRole="tablist">
         {SEGMENTS.map((s) => {
@@ -138,7 +140,7 @@ export default function ResultsScreen() {
               accessibilityState={{ selected }}
             >
               <Ionicons name={s.icon} size={18} color={selected ? colors.primaryText : colors.textMuted} />
-              <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{s.label}</Text>
+              <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{t(s.label)}</Text>
             </TouchableOpacity>
           );
         })}
@@ -150,14 +152,14 @@ export default function ResultsScreen() {
           style={styles.searchInput}
           value={search}
           onChangeText={setSearch}
-          placeholder={segment === 'lab' ? 'Search test name or date…' : 'Search file name or date…'}
+          placeholder={segment === 'lab' ? t('results.search.lab') : t('results.search.docs')}
           placeholderTextColor={colors.textMuted}
           returnKeyType="search"
           autoCorrect={false}
-          accessibilityLabel="Search results"
+          accessibilityLabel={t('results.search.a11y')}
         />
         {search ? (
-          <TouchableOpacity onPress={() => setSearch('')} hitSlop={13} accessibilityRole="button" accessibilityLabel="Clear search">
+          <TouchableOpacity onPress={() => setSearch('')} hitSlop={13} accessibilityRole="button" accessibilityLabel={t('results.search.clear')}>
             <Ionicons name="close-circle" size={18} color={colors.textMuted} />
           </TouchableOpacity>
         ) : null}
@@ -175,7 +177,7 @@ export default function ResultsScreen() {
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
               >
-                <Text style={[styles.filterText, selected && styles.filterTextSelected]}>{f.label}</Text>
+                <Text style={[styles.filterText, selected && styles.filterTextSelected]}>{t(f.label)}</Text>
               </TouchableOpacity>
             );
           })}
@@ -195,7 +197,7 @@ export default function ResultsScreen() {
     empty = (
       <View style={styles.empty}>
         <Text style={styles.emptyText}>{active.error}</Text>
-        <Button title="Try Again" variant="secondary" onPress={active.reload} style={styles.stretch} />
+        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={active.reload} style={styles.stretch} />
       </View>
     );
   } else {
@@ -205,15 +207,15 @@ export default function ResultsScreen() {
         <View style={styles.emptyIcon}>
           <Ionicons name={SEGMENTS.find((s) => s.value === segment)!.icon} size={32} color={colors.primary} />
         </View>
-        <Text style={styles.emptyTitle}>{filtered ? 'No matches' : 'Nothing here yet'}</Text>
+        <Text style={styles.emptyTitle}>{filtered ? t('results.empty.noMatches') : t('results.empty.nothing')}</Text>
         <Text style={styles.emptyText}>
           {filtered
-            ? 'Try a different search or filter.'
+            ? t('results.empty.tryDifferent')
             : segment === 'lab'
-              ? "Lab tests your clinic orders will show up here, and we'll notify you when results are ready."
+              ? t('results.empty.lab')
               : segment === 'imaging'
-                ? 'X-rays, ultrasounds and other imaging your clinic shares will show up here.'
-                : 'Lab report files your clinic uploads will show up here.'}
+                ? t('results.empty.imaging')
+                : t('results.empty.reports')}
         </Text>
       </View>
     );
@@ -270,6 +272,7 @@ export default function ResultsScreen() {
 }
 
 function LabRow({ item }: { item: LabResult }) {
+  const t = useT();
   const ready = isReady(item.status);
   const summary = ready ? summarize(item) : null;
   const flagged = summary?.outOfRange ?? 0;
@@ -284,15 +287,15 @@ function LabRow({ item }: { item: LabResult }) {
       </View>
       <View style={styles.flex}>
         <Text style={styles.rowTitle} numberOfLines={2}>
-          {item.request?.testType ?? 'Lab test'}
+          {item.request?.testType ?? t('results.labTest')}
         </Text>
         <Text style={styles.rowMeta}>{formatDate(item.resultDate ?? item.orderDate ?? item.createdAt)}</Text>
         {flagged > 0 ? (
           <Text style={styles.rowFlag}>
-            {flagged} value{flagged === 1 ? '' : 's'} outside range
+            {t('results.outsideRange', { count: flagged })}
           </Text>
         ) : item.requestCode ? (
-          <Text style={styles.rowMeta}>Ref: {item.requestCode}</Text>
+          <Text style={styles.rowMeta}>{t('results.ref', { code: item.requestCode })}</Text>
         ) : null}
       </View>
       <ResultStatusPill status={item.status} />
@@ -312,8 +315,9 @@ function DocRow({
   opening: boolean;
   onPress: () => void;
 }) {
+  const t = useT();
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress} accessibilityRole="button" accessibilityLabel={`Open ${item.title}`}>
+    <TouchableOpacity style={styles.row} onPress={onPress} accessibilityRole="button" accessibilityLabel={t('results.openDoc', { title: item.title })}>
       <View style={[styles.tile, imaging && styles.tileImaging]}>
         <Ionicons
           name={imaging ? 'scan-outline' : 'document-text-outline'}

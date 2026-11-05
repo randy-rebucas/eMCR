@@ -5,13 +5,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { errorMessage } from '@/lib/api';
 import { useApiData } from '@/lib/useApiData';
-import { possessive, useProfile } from '@/lib/profile';
+import { useProfile } from '@/lib/profile';
 import { doctorName, formatDate } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
-import { leaveWaitlist, WAITLIST_EXPLAINER, WAITLIST_PATH, WaitlistEntry, WaitlistList } from '@/lib/waitlist';
+import { leaveWaitlist, WAITLIST_PATH, waitlistExplainer, WaitlistEntry, WaitlistList } from '@/lib/waitlist';
 import { Badge, Button, LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
+import { useT } from '@/lib/i18n';
 
 /** "Thu, Nov 5, 2026" for a clinic day ("yyyy-MM-dd"). */
 function dayText(ymd: string): string {
@@ -23,6 +24,7 @@ function dayText(ymd: string): string {
  * times booked from the waitlist in the last 30 days. Each waiting entry can be left.
  */
 export default function WaitlistScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const { viewing } = useProfile();
   const { data, setData, loading, refreshing, error, refresh } = useApiData<WaitlistList>(WAITLIST_PATH, {
@@ -31,19 +33,25 @@ export default function WaitlistScreen() {
   });
   const [leaving, setLeaving] = useState<string | null>(null);
 
-  const whose = possessive(viewing);
+  // possessive(viewing) === 'Your'
+  const self = !viewing || viewing.self;
+  const explainer = waitlistExplainer();
   const entries = data?.entries ?? [];
   const waiting = entries.filter((e) => e.status === 'waiting');
   const filled = entries.filter((e) => e.status === 'filled');
 
   function confirmLeave(entry: WaitlistEntry) {
     Alert.alert(
-      'Leave the waitlist?',
-      `You won’t get a time with ${doctorName(entry.doctor) ?? 'this doctor'} if one opens up. You can join again later, but you’ll be at the back of the line.`,
+      t('waitlist.leave.title'),
+      t('waitlist.leave.body', {
+        who: doctorName(entry.doctor)
+          ? t('waitlist.leave.who', { doctor: doctorName(entry.doctor) ?? '' })
+          : t('waitlist.leave.whoThisDoctor'),
+      }),
       [
-        { text: 'Stay', style: 'cancel' },
+        { text: t('waitlist.leave.stay'), style: 'cancel' },
         {
-          text: 'Leave',
+          text: t('waitlist.leave.leave'),
           style: 'destructive',
           onPress: async () => {
             setLeaving(entry._id);
@@ -51,7 +59,7 @@ export default function WaitlistScreen() {
               await leaveWaitlist(entry._id);
               setData((prev) => (prev ? { ...prev, entries: prev.entries.filter((e) => e._id !== entry._id) } : prev));
             } catch (err) {
-              Alert.alert('Couldn’t leave the waitlist', errorMessage(err, 'Please try again.'));
+              Alert.alert(t('waitlist.leave.failed'), errorMessage(err, t('waitlist.pleaseTryAgain')));
               refresh();
             } finally {
               setLeaving(null);
@@ -66,10 +74,10 @@ export default function WaitlistScreen() {
     <SafeAreaView edges={['top']}>
       <AppHeader back />
       <Text style={styles.title} accessibilityRole="header">
-        Waitlist
+        {t('waitlist.title')}
       </Text>
       <Text style={styles.subtitle}>
-        {whose === 'Your' ? 'Doctors you’re' : `Doctors ${viewing?.firstName ?? 'they'} is`} waiting on for an earlier time.
+        {self ? t('waitlist.subtitleSelf') : t('waitlist.subtitleOther', { name: viewing?.firstName ?? '' })}
       </Text>
     </SafeAreaView>
   );
@@ -92,9 +100,9 @@ export default function WaitlistScreen() {
     >
       {header}
 
-      <View style={styles.explain} accessible accessibilityLabel={`How the waitlist works. ${WAITLIST_EXPLAINER.join(' ')}`}>
-        <Text style={styles.explainTitle}>What happens when a time opens</Text>
-        {WAITLIST_EXPLAINER.map((line) => (
+      <View style={styles.explain} accessible accessibilityLabel={t('waitlist.explain.a11y', { lines: explainer.join(' ') })}>
+        <Text style={styles.explainTitle}>{t('waitlist.explain.title')}</Text>
+        {explainer.map((line) => (
           <View key={line} style={styles.infoRow}>
             <Ionicons name="ellipse" size={6} color={colors.slate} style={styles.bullet} />
             <Text style={styles.infoText}>{line}</Text>
@@ -107,7 +115,7 @@ export default function WaitlistScreen() {
       ) : (
         <>
           <Text style={styles.sectionTitle} accessibilityRole="header">
-            Waiting
+            {t('waitlist.waiting')}
           </Text>
           {waiting.length ? (
             <View style={[styles.card, styles.list]}>
@@ -124,10 +132,10 @@ export default function WaitlistScreen() {
           ) : (
             <View style={styles.empty}>
               <Text style={styles.emptyText}>
-                Not waiting for any doctor. When a doctor has no free times, choose “Join the waitlist” while booking.
+                {t('waitlist.empty')}
               </Text>
               <Button
-                title="Book an appointment"
+                title={t('waitlist.book')}
                 icon="calendar-outline"
                 variant="secondary"
                 onPress={() => router.push('/patient/appointments/book')}
@@ -135,13 +143,13 @@ export default function WaitlistScreen() {
             </View>
           )}
           {data && waiting.length >= data.maxActive ? (
-            <Text style={styles.hint}>You can wait for up to {data.maxActive} doctors at once.</Text>
+            <Text style={styles.hint}>{t('waitlist.max', { max: data.maxActive })}</Text>
           ) : null}
 
           {filled.length ? (
             <>
               <Text style={styles.sectionTitle} accessibilityRole="header">
-                Booked from the waitlist
+                {t('waitlist.filledTitle')}
               </Text>
               <View style={[styles.card, styles.list]}>
                 {filled.map((entry, i) => (
@@ -167,8 +175,9 @@ function EntryRow({
   leaving?: boolean;
   onLeave?: () => void;
 }) {
-  const who = doctorName(entry.doctor) ?? 'Any doctor';
-  const when = entry.preferredDate ? `Around ${dayText(entry.preferredDate)}` : 'Any day';
+  const t = useT();
+  const who = doctorName(entry.doctor) ?? t('waitlist.entry.anyDoctor');
+  const when = entry.preferredDate ? t('waitlist.entry.around', { date: dayText(entry.preferredDate) }) : t('waitlist.entry.anyDay');
   return (
     <View style={[styles.row, !last && styles.divider]}>
       <View style={styles.rowTop}>
@@ -176,23 +185,23 @@ function EntryRow({
           {who}
         </Text>
         {entry.status === 'filled' ? (
-          <Badge label="Booked" tone="primary" />
+          <Badge label={t('waitlist.entry.booked')} tone="primary" />
         ) : entry.lapsed ? (
-          <Badge label="Day passed" tone="neutral" />
+          <Badge label={t('waitlist.entry.dayPassed')} tone="neutral" />
         ) : (
-          <Badge label="Waiting" tone="warning" />
+          <Badge label={t('waitlist.waiting')} tone="warning" />
         )}
       </View>
       {entry.doctor?.specialization ? <Text style={styles.rowLine}>{entry.doctor.specialization}</Text> : null}
       {entry.clinic.name ? <Text style={styles.rowLine}>{entry.clinic.name}</Text> : null}
       <Text style={styles.rowLine}>{when}</Text>
-      {entry.joinedAt ? <Text style={styles.rowMeta}>Joined {formatDate(entry.joinedAt)}</Text> : null}
+      {entry.joinedAt ? <Text style={styles.rowMeta}>{t('waitlist.entry.joined', { date: formatDate(entry.joinedAt) })}</Text> : null}
       {entry.lapsed ? (
-        <Text style={styles.rowMeta}>This day has passed, so no time will be booked from this entry. Leave it and join again for a new day.</Text>
+        <Text style={styles.rowMeta}>{t('waitlist.entry.lapsed')}</Text>
       ) : null}
       {entry.status === 'filled' && entry.appointmentId ? (
         <Button
-          title="View appointment"
+          title={t('waitlist.entry.viewAppointment')}
           icon="calendar-outline"
           variant="secondary"
           onPress={() => router.push(`/patient/appointments/${entry.appointmentId}`)}
@@ -201,7 +210,7 @@ function EntryRow({
       ) : null}
       {entry.status === 'waiting' && onLeave ? (
         <Button
-          title="Leave waitlist"
+          title={t('waitlist.entry.leave')}
           variant="dangerOutline"
           icon="exit-outline"
           onPress={onLeave}

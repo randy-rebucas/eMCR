@@ -27,6 +27,7 @@ import { Banner, Button, IconName } from '@/components/ui';
 import { OfflineBanner, savedAtLabel } from '@/components/OfflineBanner';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { BrandMark } from '@/components/BrandLogo';
+import { PlainKey, useT } from '@/lib/i18n';
 
 /**
  * The backend has no realtime channel, so the queue position is polled while
@@ -36,17 +37,18 @@ import { BrandMark } from '@/components/BrandLogo';
  * Self check-in: at clinics that allow it, the patient scans the clinic's check-in QR on arrival
  * (`POST /api/patients/me/check-in`). Opened directly with `?scan=1` from Home.
  */
-const POLL_INTERVAL_MS = 15000;
+const POLL_INTERVAL_MS = 30000;
 
-const QUEUE_TYPE_LABEL: Record<string, string> = {
-  appointment: 'Appointment',
-  'walk-in': 'Walk-in',
-  'follow-up': 'Follow-up Visit',
+const QUEUE_TYPE_LABEL: Record<string, PlainKey> = {
+  appointment: 'queue.type.appointment',
+  'walk-in': 'queue.type.walk-in',
+  'follow-up': 'queue.type.follow-up',
 };
 
 type StepState = 'done' | 'current' | 'todo';
 
 export default function QueueScreen() {
+  const t = useT();
   const { data: entry, loading, refreshing, error, updatedAt, offline, stale, refresh, poll } = useApiData<QueueEntry | null>(
     '/api/patients/me/queue',
     { refreshOn: ['queue'], offline: true }
@@ -72,22 +74,26 @@ export default function QueueScreen() {
       const result = await apiRequest<CheckInResult>('/api/patients/me/check-in', { method: 'POST', body: { qrCode } });
       emitRefresh('queue', 'appointments');
       const q = result.queue;
-      const where = q.clinic?.name ? ` at ${q.clinic.name}` : '';
+      const where = q.clinic?.name ? t('queue.checkIn.atClinic', { clinic: q.clinic.name }) : '';
       const line =
         q.status === 'in-progress'
-          ? "It's your turn now."
-          : q.position && q.position > 1
-            ? `${q.position - 1} ${q.position - 1 === 1 ? 'patient is' : 'patients are'} ahead of you. We'll notify you as your turn gets close.`
-            : "You're next. Please stay close.";
+          ? t('queue.checkIn.turnNow')
+          : q.status === 'away'
+            ? q.awayReason === 'missed'
+              ? t('queue.status.missedText')
+              : t('queue.status.atLabText')
+            : q.position && q.position > 1
+            ? t('queue.checkIn.ahead', { count: q.position - 1 })
+            : t('queue.checkIn.next');
       Alert.alert(
-        result.status === 'already-checked-in' ? "You're already checked in" : "You're checked in",
-        `Queue number ${q.queueNumber}${where}. ${line}`
+        result.status === 'already-checked-in' ? t('queue.checkIn.already') : t('queue.checkIn.done'),
+        t('queue.checkIn.body', { number: q.queueNumber, where, line })
       );
     } catch (err) {
       const retryable = err instanceof ApiError && (err.code === 'QR_EXPIRED' || err.code === 'INVALID_QR');
-      Alert.alert("Couldn't check you in", errorMessage(err, 'Please try again or check in at the front desk.'), [
-        ...(retryable ? [{ text: 'Scan again', onPress: () => setScanning(true) }] : []),
-        { text: 'OK', style: 'cancel' as const },
+      Alert.alert(t('queue.checkIn.failed'), errorMessage(err, t('queue.checkIn.failedFallback')), [
+        ...(retryable ? [{ text: t('queue.checkIn.scanAgain'), onPress: () => setScanning(true) }] : []),
+        { text: t('common.ok'), style: 'cancel' as const },
       ]);
     } finally {
       setCheckingIn(false);
@@ -113,9 +119,12 @@ export default function QueueScreen() {
     }, [poll])
   );
 
-  const active = entry && (entry.status === 'waiting' || entry.status === 'in-progress') ? entry : null;
+  const active = entry && (entry.status === 'waiting' || entry.status === 'in-progress' || entry.status === 'away') ? entry : null;
   const serving = active?.status === 'in-progress';
-  const checkedIn = !!active && (active.checkedIn || serving);
+  const away = active?.status === 'away';
+  const missed = away && active?.awayReason === 'missed';
+  const atLab = away && !missed;
+  const checkedIn = !!active && (active.checkedIn || serving || away);
   const canShowQr = !!active?.qrCode && !checkedIn;
   const canSelfCheckIn = !checkedIn;
 
@@ -131,21 +140,21 @@ export default function QueueScreen() {
           <View style={styles.titleRow}>
             <View style={styles.flex}>
               <Text style={styles.title} accessibilityRole="header">
-                Queue
+                {t('queue.title')}
               </Text>
-              <Text style={styles.subtitle}>Track your queue number with live updates from the clinic.</Text>
+              <Text style={styles.subtitle}>{t('queue.subtitle')}</Text>
             </View>
             {canShowQr ? (
               <TouchableOpacity
                 style={styles.qrButton}
                 onPress={() => setShowQr(true)}
                 accessibilityRole="button"
-                accessibilityLabel="Show check-in QR code"
+                accessibilityLabel={t('queue.qr.showA11y')}
               >
                 <Ionicons name="qr-code-outline" size={24} color={colors.primary} />
                 <View>
-                  <Text style={styles.qrButtonTitle}>Check-in QR</Text>
-                  <Text style={styles.qrButtonText}>Show at the clinic</Text>
+                  <Text style={styles.qrButtonTitle}>{t('queue.qr.title')}</Text>
+                  <Text style={styles.qrButtonText}>{t('queue.qr.hint')}</Text>
                 </View>
               </TouchableOpacity>
             ) : null}
@@ -159,7 +168,7 @@ export default function QueueScreen() {
         ) : error && !entry ? (
           <View style={[styles.card, styles.emptyCard]}>
             <Text style={styles.muted}>{error}</Text>
-            <Button title="Try Again" variant="secondary" onPress={refresh} style={styles.stretch} />
+            <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={refresh} style={styles.stretch} />
           </View>
         ) : !active ? (
           <NotInQueue onScan={() => setScanning(true)} checkingIn={checkingIn} />
@@ -169,19 +178,19 @@ export default function QueueScreen() {
             {stale && !offline ? (
               <Banner
                 tone="warning"
-                message={`Checking for updates. Showing your last queue position${updatedAt ? ` from ${savedAtLabel(updatedAt)}` : ''}, which may be out of date.`}
+                message={updatedAt ? t('queue.staleWhen', { when: savedAtLabel(updatedAt) }) : t('queue.stale')}
               />
             ) : null}
             <OfflineBanner
               offline={offline}
               updatedAt={updatedAt}
-              subject="your last queue position, which may be out of date"
+              subject={t('queue.offlineSubject')}
             />
             {/* A failed poll keeps the last position on screen; say it may be out of date. */}
             {error && !offline ? (
               <Banner
                 tone="warning"
-                message={`Couldn't update${updatedAt ? `. Last updated ${formatTime(updatedAt)}` : ''}. Pull down to try again.`}
+                message={updatedAt ? t('queue.updateFailedAt', { time: formatTime(updatedAt) }) : t('queue.updateFailed')}
               />
             ) : null}
             {/* Hero */}
@@ -203,12 +212,12 @@ export default function QueueScreen() {
               <View style={styles.heroLeft}>
                 <View style={styles.pill}>
                   <View style={[styles.pillDot, { backgroundColor: serving ? '#22C55E' : checkedIn ? '#38BDF8' : '#F59E0B' }]} />
-                  <Text style={styles.pillText}>{serving ? 'Now Serving' : checkedIn ? 'Waiting' : 'Not checked in'}</Text>
+                  <Text style={styles.pillText}>{serving ? t('queue.pill.serving') : missed ? t('queue.pill.missed') : atLab ? t('queue.pill.atLab') : checkedIn ? t('common.status.waiting') : t('queue.pill.notCheckedIn')}</Text>
                 </View>
-                <Text style={styles.number} adjustsFontSizeToFit numberOfLines={1} accessibilityLabel={`Queue number ${active.queueNumber}`}>
+                <Text style={styles.number} adjustsFontSizeToFit numberOfLines={1} accessibilityLabel={t('queue.numberA11y', { number: active.queueNumber })}>
                   {active.queueNumber}
                 </Text>
-                <Text style={styles.heroType}>{QUEUE_TYPE_LABEL[active.queueType ?? ''] ?? 'Consultation'}</Text>
+                <Text style={styles.heroType}>{t(QUEUE_TYPE_LABEL[active.queueType ?? ''] ?? 'queue.type.consultation')}</Text>
                 {active.doctor ? <Text style={styles.heroSub}>{doctorName(active.doctor)}</Text> : null}
               </View>
 
@@ -216,17 +225,17 @@ export default function QueueScreen() {
 
               <View style={styles.heroRight}>
                 {serving ? (
-                  <HeroStat icon="location-outline" label="Proceed to" value={active.room?.name ?? 'Your room'} />
+                  <HeroStat icon="location-outline" label={t('queue.hero.proceedTo')} value={active.room?.name ?? t('queue.hero.yourRoom')} />
                 ) : (
                   <>
                     <HeroStat
                       icon="time-outline"
-                      label="Estimated Wait"
-                      value={active.estimatedWaitTime ? `~${active.estimatedWaitTime} min` : '—'}
+                      label={t('queue.hero.estimatedWait')}
+                      value={active.estimatedWaitTime ? t('queue.hero.minutes', { minutes: active.estimatedWaitTime }) : '—'}
                     />
                     <HeroStat
                       icon="people-outline"
-                      label="Patients Ahead"
+                      label={t('queue.hero.patientsAhead')}
                       value={active.position !== null ? String(Math.max(0, active.position - 1)) : '—'}
                     />
                   </>
@@ -238,21 +247,25 @@ export default function QueueScreen() {
             <View style={[styles.card, styles.statusCard]}>
               <View style={styles.statusIcon}>
                 <Ionicons
-                  name={serving ? 'walk-outline' : checkedIn ? 'hourglass-outline' : 'qr-code-outline'}
+                  name={serving ? 'walk-outline' : missed ? 'alert-circle-outline' : atLab ? 'flask-outline' : checkedIn ? 'hourglass-outline' : 'qr-code-outline'}
                   size={28}
                   color={colors.primary}
                 />
               </View>
               <View style={styles.flex}>
                 <Text style={styles.statusTitle}>
-                  {serving ? "It's your turn!" : checkedIn ? "You're in the queue!" : 'Check in when you arrive'}
+                  {serving ? t('queue.status.turn') : missed ? t('queue.status.missed') : atLab ? t('queue.status.atLab') : checkedIn ? t('queue.status.inQueue') : t('queue.status.checkIn')}
                 </Text>
                 <Text style={styles.statusText}>
                   {serving
-                    ? `Please proceed to ${active.room?.name ?? 'your assigned room'}.`
-                    : checkedIn
-                      ? "Wait for your number to be called on the clinic's display or through this app."
-                      : 'Scan the check-in QR at the clinic, or show your own QR at the front desk, so your number appears on the clinic display.'}
+                    ? t('queue.status.proceed', { room: active.room?.name ?? t('queue.status.assignedRoom') })
+                    : missed
+                      ? t('queue.status.missedText')
+                      : atLab
+                        ? t('queue.status.atLabText')
+                        : checkedIn
+                          ? t('queue.status.waitText')
+                          : t('queue.status.checkInText')}
                 </Text>
                 {canSelfCheckIn ? (
                   <TouchableOpacity
@@ -263,13 +276,13 @@ export default function QueueScreen() {
                     accessibilityState={{ busy: checkingIn }}
                   >
                     <Ionicons name="scan-outline" size={16} color={colors.primaryOnSoft} />
-                    <Text style={styles.inlineActionText}>{checkingIn ? 'Checking in…' : "I'm here — scan to check in"}</Text>
+                    <Text style={styles.inlineActionText}>{checkingIn ? t('queue.checkingIn') : t('queue.imHere')}</Text>
                   </TouchableOpacity>
                 ) : null}
                 {canShowQr ? (
                   <TouchableOpacity style={styles.inlineAction} onPress={() => setShowQr(true)} accessibilityRole="button">
                     <Ionicons name="qr-code-outline" size={16} color={colors.primaryOnSoft} />
-                    <Text style={styles.inlineActionText}>Show QR Code</Text>
+                    <Text style={styles.inlineActionText}>{t('queue.qr.show')}</Text>
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -277,20 +290,20 @@ export default function QueueScreen() {
 
             {/* Progress */}
             <Text style={styles.sectionTitle} accessibilityRole="header">
-              Queue Progress
+              {t('queue.progress')}
             </Text>
             <View style={[styles.card, styles.progress]}>
-              <Step n={1} label="Check-in" state={checkedIn ? 'done' : 'current'} />
+              <Step n={1} label={t('queue.step.checkIn')} state={checkedIn ? 'done' : 'current'} />
               <Connector done={checkedIn} />
-              <Step n={2} label="Waiting" state={serving ? 'done' : checkedIn ? 'current' : 'todo'} />
+              <Step n={2} label={t('queue.step.waiting')} state={serving ? 'done' : checkedIn ? 'current' : 'todo'} />
               <Connector done={serving} />
-              <Step n={3} label="Consultation" state={serving ? 'current' : 'todo'} />
+              <Step n={3} label={t('queue.step.consultation')} state={serving ? 'current' : 'todo'} />
             </View>
 
             <View style={styles.note}>
               <Ionicons name="information-circle-outline" size={18} color={colors.slate} />
               <Text style={styles.noteText}>
-                Times are estimates and refresh about every 15 seconds. Keep your phone nearby and listen for your number.
+                {t('queue.note')}
               </Text>
             </View>
           </>
@@ -301,8 +314,8 @@ export default function QueueScreen() {
         <QrScanner
           onScanned={checkIn}
           onCancel={() => setScanning(false)}
-          prompt="Point the camera at the check-in QR code at the clinic's front desk or waiting-room screen."
-          purpose="To check in with the clinic's QR code"
+          prompt={t('queue.scanner.prompt')}
+          purpose={t('queue.scanner.purpose')}
         />
       </Modal>
 
@@ -310,14 +323,14 @@ export default function QueueScreen() {
         <View style={styles.backdrop}>
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle} accessibilityRole="header">
-              Check-in QR
+              {t('queue.qr.title')}
             </Text>
-            <Text style={styles.sheetText}>Show this at the front desk or scan it at the clinic kiosk.</Text>
+            <Text style={styles.sheetText}>{t('queue.qr.sheetText')}</Text>
             <View style={styles.qrFrame}>
               {active?.qrCode ? <QRCode value={active.qrCode} size={220} color={colors.text} /> : null}
             </View>
             <Text style={styles.sheetNumber}>{active?.queueNumber}</Text>
-            <Button title="Done" onPress={() => setShowQr(false)} style={styles.stretch} />
+            <Button title={t('common.done')} onPress={() => setShowQr(false)} style={styles.stretch} />
           </View>
         </View>
       </Modal>
@@ -326,19 +339,19 @@ export default function QueueScreen() {
 }
 
 function NotInQueue({ onScan, checkingIn }: { onScan: () => void; checkingIn: boolean }) {
+  const t = useT();
   return (
     <View style={[styles.card, styles.emptyCard]}>
       <View style={styles.emptyIcon}>
         <Ionicons name="people-outline" size={36} color={colors.primary} />
       </View>
-      <Text style={styles.statusTitle}>You're not in the queue</Text>
+      <Text style={styles.statusTitle}>{t('queue.notIn.title')}</Text>
       <Text style={[styles.statusText, styles.centerText]}>
-        Have an appointment today? When you arrive, scan the clinic's check-in QR, or let the front desk add you. Your
-        number and live position will show up here.
+        {t('queue.notIn.text')}
       </Text>
-      <Button title="Scan to Check In" icon="scan-outline" onPress={onScan} loading={checkingIn} style={styles.stretch} />
+      <Button title={t('queue.notIn.scan')} icon="scan-outline" onPress={onScan} loading={checkingIn} style={styles.stretch} />
       <Button
-        title="View Appointments"
+        title={t('queue.notIn.viewAppointments')}
         variant="secondary"
         icon="calendar-outline"
         onPress={() => router.push('/patient/appointments')}
@@ -363,9 +376,10 @@ function HeroStat({ icon, label, value }: { icon: IconName; label: string; value
 }
 
 function Step({ n, label, state }: { n: number; label: string; state: StepState }) {
-  const caption = state === 'done' ? 'Done' : state === 'current' ? 'Now' : 'Next';
+  const t = useT();
+  const caption = state === 'done' ? t('queue.step.done') : state === 'current' ? t('queue.step.now') : t('queue.step.next');
   return (
-    <View style={styles.step} accessible accessibilityLabel={`Step ${n}, ${label}, ${caption}`}>
+    <View style={styles.step} accessible accessibilityLabel={t('queue.step.a11y', { n, label, caption })}>
       <View style={[styles.stepCircle, state !== 'todo' && styles.stepCircleOn]}>
         {state === 'done' ? (
           <Ionicons name="checkmark" size={18} color={colors.primaryText} />

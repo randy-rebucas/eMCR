@@ -20,6 +20,7 @@ import {
   TextLink,
   useBlockHardwareBack,
 } from '@/components/auth';
+import { useT } from '@/lib/i18n';
 
 /**
  * Step right after an SMS code signed the patient in.
@@ -34,6 +35,7 @@ import {
  */
 export default function SetPasswordScreen() {
   const { signedIn, applyRotatedTokens, requestOtp } = useAuth();
+  const t = useT();
   const params = useLocalSearchParams<{ mode?: string }>();
   const reset = params.mode === 'reset';
   const { data: profile, loading } = useApiData<PatientProfile>(signedIn ? '/api/patients/me' : null);
@@ -66,9 +68,9 @@ export default function SetPasswordScreen() {
     return (
       <StatusScreen
         art={<IconBadge icon="checkmark-circle" />}
-        title="Password Updated"
-        message="Next time, sign in with your email and new password. Your other devices have been signed out."
-        action={{ title: 'Continue', onPress: skip }}
+        title={t('auth.setPw.updatedTitle')}
+        message={t('auth.setPw.updatedMessage')}
+        action={{ title: t('auth.continue'), onPress: skip }}
       />
     );
   }
@@ -77,9 +79,9 @@ export default function SetPasswordScreen() {
     return (
       <StatusScreen
         art={<IconBadge icon="time-outline" tone="slate" />}
-        title="Code Sign-in Expired"
-        message="For your security, a new password can only be set within 15 minutes of signing in with a code. You're still signed in — sign out and use Forgot Password again to reset it."
-        action={{ title: 'Continue', onPress: skip }}
+        title={t('auth.setPw.expiredTitle')}
+        message={t('auth.setPw.expiredMessage')}
+        action={{ title: t('auth.continue'), onPress: skip }}
       />
     );
   }
@@ -88,9 +90,9 @@ export default function SetPasswordScreen() {
     return (
       <StatusScreen
         art={<IconBadge icon="checkmark-circle" />}
-        title="You're Already Set Up"
-        message="This account already has a password. Next time, sign in with your email and password."
-        action={{ title: 'Continue', onPress: skip }}
+        title={t('auth.setPw.alreadyTitle')}
+        message={t('auth.setPw.alreadyMessage')}
+        action={{ title: t('auth.continue'), onPress: skip }}
       />
     );
   }
@@ -102,9 +104,9 @@ export default function SetPasswordScreen() {
 
   function save() {
     if (inFlight.current) return;
-    if (!reset && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setError('Enter a valid email address.');
-    if (!rulesMet) return setError('Your password needs at least 8 characters, an uppercase letter and a number.');
-    if (!matches) return setError("The passwords don't match.");
+    if (!reset && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setError(t('auth.invalidEmail'));
+    if (!rulesMet) return setError(t('auth.pw.rulesError'));
+    if (!matches) return setError(t('auth.pw.mismatch'));
     send();
   }
 
@@ -139,28 +141,28 @@ export default function SetPasswordScreen() {
       }
       if (err instanceof ApiError && err.code === 'OTP_REQUIRED' && !otp) {
         if (!phone) {
-          setError("We couldn't find a mobile number to text a confirmation code to. Ask the front desk.");
+          setError(t('auth.setPw.noPhone'));
           return;
         }
         try {
           await sendCode();
           setOtpStep(true);
         } catch (sendErr) {
-          setError(errorMessage(sendErr, "Couldn't send a confirmation code. Please try again."));
+          setError(errorMessage(sendErr, t('auth.setPw.sendFailed')));
         }
         return;
       }
       // A wrong/expired code keeps the code step open; anything else (e.g. 409
       // EMAIL_IN_USE, whose message says so) goes back to the form.
       if (otpStep && err instanceof ApiError && err.status === 400 && err.code !== 'EMAIL_IN_USE') {
-        setOtpError(errorMessage(err, "That code didn't work. Please try again."));
+        setOtpError(errorMessage(err, t('auth.setPw.codeFailed')));
         return;
       }
       setOtpStep(false);
       setError(
         err instanceof ApiError && err.code === 'NETWORK'
-          ? "Can't reach the server. Check your connection and try again."
-          : errorMessage(err, "Couldn't save your password. Please try again.")
+          ? t('common.network')
+          : errorMessage(err, t('auth.pw.saveFailed'))
       );
     } finally {
       inFlight.current = false;
@@ -171,7 +173,7 @@ export default function SetPasswordScreen() {
   if (otpStep) {
     return (
       <AuthScreen>
-        <AuthHeader title="Confirm It's You" />
+        <AuthHeader title={t('auth.setPw.confirmTitle')} />
         <OtpConfirm
           phone={phone}
           sendCode={sendCode}
@@ -190,19 +192,15 @@ export default function SetPasswordScreen() {
   return (
     <AuthScreen>
       <AuthHeader
-        title={reset ? 'Choose a New Password' : 'Create Your Password'}
-        subtitle={
-          reset
-            ? "You're signed in with your code. Set a new password to use with your email next time."
-            : 'Set an email and password so you can sign in quickly next time.'
-        }
+        title={reset ? t('auth.createPw.reset.title') : t('auth.createPw.create.title')}
+        subtitle={reset ? t('auth.setPw.resetSubtitle') : t('auth.setPw.createSubtitle')}
       />
       {error ? <Banner message={error} /> : null}
 
       {reset ? null : (
         <IconField
           icon="mail-outline"
-          label="Email address"
+          label={t('auth.setPw.email')}
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
@@ -215,7 +213,7 @@ export default function SetPasswordScreen() {
       )}
       <IconField
         icon="lock-closed-outline"
-        label={reset ? 'New password' : 'Create password'}
+        label={reset ? t('auth.pw.new') : t('auth.pw.create')}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -225,7 +223,7 @@ export default function SetPasswordScreen() {
       />
       <IconField
         icon="lock-closed-outline"
-        label="Confirm password"
+        label={t('auth.pw.confirm')}
         value={confirm}
         onChangeText={setConfirm}
         secureTextEntry
@@ -237,15 +235,15 @@ export default function SetPasswordScreen() {
       />
 
       <View style={styles.rules}>
-        <Text style={styles.rulesTitle}>Password must have:</Text>
+        <Text style={styles.rulesTitle}>{t('auth.pw.mustHave')}</Text>
         {PASSWORD_RULES.map((rule) => (
           <ChecklistItem key={rule.label} label={rule.label} met={rule.test(password)} />
         ))}
-        <ChecklistItem label="Passwords match" met={matches} />
+        <ChecklistItem label={t('auth.pw.match')} met={matches} />
       </View>
 
-      <Button title={reset ? 'Save New Password' : 'Save and Continue'} onPress={save} loading={saving} />
-      <TextLink title="Skip for now" onPress={skip} disabled={saving} style={styles.skip} />
+      <Button title={reset ? t('auth.setPw.saveNew') : t('auth.pw.saveAndContinue')} onPress={save} loading={saving} />
+      <TextLink title={t('auth.setPw.skip')} onPress={skip} disabled={saving} style={styles.skip} />
     </AuthScreen>
   );
 }

@@ -24,6 +24,8 @@ import {
   toPhE164,
   toPhLocal,
 } from '@/components/auth';
+import { useT } from '@/lib/i18n';
+import { rich } from '@/lib/i18n/rich';
 
 /**
  * - signin: eMCR phone sign-in (emcr/auth/otp/*). A returning account is signed in at once; a
@@ -33,24 +35,6 @@ import {
  */
 type Purpose = 'signin' | 'forgot' | 'add';
 
-const COPY: Record<Purpose, { title: string; subtitle: string; verifyTitle: string }> = {
-  signin: {
-    title: 'Sign In With Your Phone',
-    subtitle: "Enter the mobile number your clinic has on file and we'll text you a 6-digit code.",
-    verifyTitle: 'Enter Your Code',
-  },
-  forgot: {
-    title: 'Forgot Password',
-    subtitle: "Enter the mobile number you sign in with and we'll text you a code, then you can choose a new password.",
-    verifyTitle: 'Enter Your Code',
-  },
-  add: {
-    title: 'Confirm Your Phone',
-    subtitle:
-      "To add someone you look after, confirm your mobile number. It must be the number their clinic has on file. We'll text you a 6-digit code.",
-    verifyTitle: 'Enter Your Code',
-  },
-};
 
 const RESEND_SECONDS = 30;
 
@@ -71,7 +55,12 @@ export default function PhoneScreen() {
   const params = useLocalSearchParams<{ purpose?: string; phone?: string; sent?: string }>();
   // 'activate' was the old first-time path; it is the phone sign-in now.
   const purpose: Purpose = params.purpose === 'forgot' || params.purpose === 'add' ? params.purpose : 'signin';
-  const copy = COPY[purpose];
+  const t = useT();
+  const copy = {
+    title: t(`auth.phone.${purpose}.title`),
+    subtitle: t(`auth.phone.${purpose}.subtitle`),
+    verifyTitle: t('auth.otp.enterTitle'),
+  };
 
   const alreadySent = params.sent === '1' && isPhMobile(toPhLocal(params.phone ?? ''));
   const [step, setStep] = useState<'phone' | 'code'>(alreadySent ? 'code' : 'phone');
@@ -119,7 +108,7 @@ export default function PhoneScreen() {
   async function sendCode() {
     if (inFlight.current) return;
     if (!isPhMobile(local)) {
-      setFailure({ kind: 'message', message: 'Enter a PH mobile number, like 917 123 4567.', status: 0 });
+      setFailure({ kind: 'message', message: t('auth.enterPhMobile'), status: 0 });
       return;
     }
     inFlight.current = true;
@@ -142,7 +131,7 @@ export default function PhoneScreen() {
   async function verify(value = code) {
     if (inFlight.current) return;
     if (!/^\d{6}$/.test(value)) {
-      setFailure({ kind: 'message', message: 'Enter the 6-digit code from the SMS.', status: 0 });
+      setFailure({ kind: 'message', message: t('auth.otp.enterSixDigits'), status: 0 });
       return;
     }
     inFlight.current = true;
@@ -156,7 +145,7 @@ export default function PhoneScreen() {
           setCode('');
           setFailure({
             kind: 'message',
-            message: 'No records are linked to this number yet, so there is no password to reset. Sign in with your phone instead.',
+            message: t('auth.phone.noRecords'),
             status: 0,
           });
           return;
@@ -177,8 +166,7 @@ export default function PhoneScreen() {
         setCode('');
         setFailure({
           kind: 'message',
-          message:
-            'This number belongs to a different eMCR account. Use the number you signed in with, or sign out and sign in with this one.',
+          message: t('auth.phone.otherAccount'),
           status: 0,
         });
         return;
@@ -222,7 +210,7 @@ export default function PhoneScreen() {
           onSubmitEditing={sendCode}
           autoFocus
         />
-        <Button title="Send Code" onPress={sendCode} loading={submitting} />
+        <Button title={t('auth.sendCode')} onPress={sendCode} loading={submitting} />
       </AuthScreen>
     );
   }
@@ -231,12 +219,7 @@ export default function PhoneScreen() {
     <AuthScreen back={backToPhone}>
       <AuthHeader
         title={copy.verifyTitle}
-        subtitle={
-          <>
-            We sent a 6-digit code to{'\n'}
-            <Text style={styles.phone}>{formatPhone(phone)}</Text>
-          </>
-        }
+        subtitle={rich(t('auth.otp.sentTo', { phone: formatPhone(phone) }), styles.phone)}
       />
       <View style={styles.art}>
         <IconBadge icon="phone-portrait-outline" badge={{ icon: 'chatbubble-ellipses', tone: 'primary' }} />
@@ -245,19 +228,19 @@ export default function PhoneScreen() {
       <OtpInput value={code} onChange={onCodeChange} error={!!errorText} />
       {errorText ? <InlineError message={errorText} style={styles.error} /> : null}
 
-      <Button title="Verify" onPress={() => verify()} loading={submitting} />
+      <Button title={t('auth.verify')} onPress={() => verify()} loading={submitting} />
 
       <View style={styles.resend}>
-        <Text style={styles.resendText}>Didn't receive the code?</Text>
+        <Text style={styles.resendText}>{t('auth.otp.didntReceive')}</Text>
         <View style={styles.resendRow}>
-          <TextLink title="Resend Code" onPress={sendCode} disabled={resendIn > 0 || submitting} />
+          <TextLink title={t('auth.otp.resendTitle')} onPress={sendCode} disabled={resendIn > 0 || submitting} />
           {resendIn > 0 ? <Text style={styles.resendText}> (00:{String(resendIn).padStart(2, '0')})</Text> : null}
         </View>
-        <TextLink title="Use a different number" onPress={backToPhone} disabled={submitting} style={styles.change} />
+        <TextLink title={t('auth.phone.differentNumber')} onPress={backToPhone} disabled={submitting} style={styles.change} />
         {purpose === 'signin' ? (
           <View style={styles.inviteHint}>
-            <Text style={styles.resendText}>Still nothing? Your clinic may have a different number. Ask them for an app invite.</Text>
-            <TextLink title="I have an invite" onPress={() => router.replace('/invite')} disabled={submitting} />
+            <Text style={styles.resendText}>{t('auth.phone.stillNothing')}</Text>
+            <TextLink title={t('auth.phone.haveInvite')} onPress={() => router.replace('/invite')} disabled={submitting} />
           </View>
         ) : null}
       </View>

@@ -11,9 +11,11 @@ import { Visit, visitProvider, visitReason, visitTypeLabel } from '@/lib/visits'
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
+import { useT } from '@/lib/i18n';
 
 /** Every clinic visit, newest first; tap one for the doctor's findings. */
 export default function VisitsScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const list = usePaginatedList<Visit>('/api/patients/me/visits', { limit: 20 });
   // Visits carry only the clinic's id; name it from the patient's clinic list.
@@ -33,23 +35,23 @@ export default function VisitsScreen() {
     <SafeAreaView edges={['top']}>
       <AppHeader back />
       <Text style={styles.title} accessibilityRole="header">
-        Visit History
+        {t('visits.title')}
       </Text>
-      <Text style={styles.subtitle}>Your clinic visits, newest first. Tap a visit to see what the doctor found.</Text>
+      <Text style={styles.subtitle}>{t('visits.subtitle')}</Text>
       {list.error && list.items.length > 0 ? <Banner message={list.error} /> : null}
     </SafeAreaView>
   );
 
   let empty;
   if (list.loading) {
-    empty = <ActivityIndicator color={colors.primary} style={styles.loading} accessibilityLabel="Loading visits" />;
+    empty = <ActivityIndicator color={colors.primary} style={styles.loading} accessibilityLabel={t('visits.loading')} />;
   } else if (list.error) {
     empty = (
       <View style={styles.empty}>
         <Text style={styles.emptyText} accessibilityRole="alert">
           {list.error}
         </Text>
-        <Button title="Try Again" variant="secondary" onPress={list.reload} style={styles.stretch} />
+        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={list.reload} style={styles.stretch} />
       </View>
     );
   } else {
@@ -58,8 +60,8 @@ export default function VisitsScreen() {
         <View style={styles.emptyIcon}>
           <Ionicons name="medkit-outline" size={32} color={colors.primary} />
         </View>
-        <Text style={styles.emptyTitle}>No visits yet</Text>
-        <Text style={styles.emptyText}>Your clinic visits will show up here after you see a doctor.</Text>
+        <Text style={styles.emptyTitle}>{t('visits.empty.title')}</Text>
+        <Text style={styles.emptyText}>{t('visits.empty.text')}</Text>
       </View>
     );
   }
@@ -85,6 +87,7 @@ export default function VisitsScreen() {
 }
 
 function VisitRow({ visit, clinic }: { visit: Visit; clinic: string | null }) {
+  const t = useT();
   const type = visitTypeLabel(visit.visitType);
   const doctor = visitProvider(visit);
   const reason = visitReason(visit);
@@ -97,10 +100,10 @@ function VisitRow({ visit, clinic }: { visit: Visit; clinic: string | null }) {
       style={styles.card}
       onPress={() => router.push(`/patient/visits/${visit._id}`)}
       accessibilityRole="button"
-      accessibilityLabel={[`${type}, ${date}`, cancelled ? 'Cancelled' : null, doctor, clinic, reason]
+      accessibilityLabel={[`${type}, ${date}`, cancelled ? t('visits.cancelled') : null, doctor, clinic, reason]
         .filter(Boolean)
         .join('. ')}
-      accessibilityHint="Opens the visit details"
+      accessibilityHint={t('visits.openHint')}
     >
       <View style={styles.dateTile}>
         <Text style={styles.dateMonth}>{formatDate(visit.date, { month: 'short' })}</Text>
@@ -114,7 +117,7 @@ function VisitRow({ visit, clinic }: { visit: Visit; clinic: string | null }) {
           </Text>
           {cancelled ? (
             <View style={styles.pill}>
-              <Text style={styles.pillText}>Cancelled</Text>
+              <Text style={styles.pillText}>{t('visits.cancelled')}</Text>
             </View>
           ) : null}
         </View>

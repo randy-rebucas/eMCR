@@ -12,7 +12,6 @@ import {
   setClaimContext,
   updateClaimContext,
 } from '@/lib/emcr';
-import { humanize } from '@/lib/format';
 import { FAMILY_RELATIONSHIPS, FamilyRelationship } from '@/lib/types';
 import { spacing } from '@/lib/theme';
 import { Banner, Button } from '@/components/ui';
@@ -28,6 +27,7 @@ import {
   StatusScreen,
 } from '@/components/auth';
 import { BirthDateField, ChipPicker, ClaimExpiredScreen } from '@/components/emcr';
+import { useT } from '@/lib/i18n';
 
 type Done = { status: 'linked' | 'already_linked'; firstName: string; signedIn: boolean };
 
@@ -37,6 +37,7 @@ type Done = { status: 'linked' | 'already_linked'; firstName: string; signedIn: 
  */
 export default function ClaimDetailsScreen() {
   const auth = useAuth();
+  const t = useT();
   const params = useLocalSearchParams<{ relation?: string }>();
   const relation: 'self' | 'other' = params.relation === 'self' ? 'self' : 'other';
   const [context] = useState(getClaimContext);
@@ -71,14 +72,16 @@ export default function ClaimDetailsScreen() {
     return (
       <StatusScreen
         art={<IconBadge icon="checkmark-circle" />}
-        title={done.status === 'already_linked' ? 'Already Linked' : someoneElse ? 'Added to Your eMCR' : 'Your Records Are Linked'}
-        message={
-          someoneElse
-            ? `${done.firstName}'s clinic records are in your eMCR. Switch to them from Family to see their records.`
-            : 'Your clinic records are now in eMCR.'
+        title={
+          done.status === 'already_linked'
+            ? t('auth.claim.alreadyLinked')
+            : someoneElse
+              ? t('auth.claim.addedTitle')
+              : t('auth.claim.linkedTitle')
         }
-        action={{ title: done.signedIn ? 'Continue' : 'Back to Sign In', onPress: finish }}
-        link={{ title: 'Add another person', onPress: addAnother }}
+        message={someoneElse ? t('auth.claim.addedMessage', { name: done.firstName }) : t('auth.claim.linkedMessage')}
+        action={{ title: done.signedIn ? t('auth.continue') : t('auth.backToSignIn'), onPress: finish }}
+        link={{ title: t('auth.addAnother'), onPress: addAnother }}
       />
     );
   }
@@ -86,9 +89,9 @@ export default function ClaimDetailsScreen() {
   async function submit() {
     if (inFlight.current) return;
     const name = firstName.trim();
-    if (!name) return setFailure({ kind: 'message', message: 'Enter the first name on the clinic record.', status: 0 });
+    if (!name) return setFailure({ kind: 'message', message: t('auth.claim.enterFirstName'), status: 0 });
     if (!isValidBirthDate(dob)) {
-      return setFailure({ kind: 'message', message: 'Enter the birth date as YYYY-MM-DD, for example 1990-04-25.', status: 0 });
+      return setFailure({ kind: 'message', message: t('auth.claim.enterBirthDate'), status: 0 });
     }
     const ctx = getClaimContext();
     if (!ctx) {
@@ -144,18 +147,14 @@ export default function ClaimDetailsScreen() {
   return (
     <AuthScreen back>
       <AuthHeader
-        title={relation === 'self' ? 'Confirm Your Record' : 'Who Do You Look After?'}
-        subtitle={
-          relation === 'self'
-            ? 'Enter your first name and birth date exactly as your clinic has them.'
-            : 'Enter their first name and birth date exactly as the clinic has them. Children are added right away; adults need the clinic to confirm.'
-        }
+        title={relation === 'self' ? t('auth.claim.selfTitle') : t('auth.claim.otherTitle')}
+        subtitle={relation === 'self' ? t('auth.claim.selfSubtitle') : t('auth.claim.otherSubtitle')}
       />
       {errorText ? <Banner message={errorText} /> : null}
 
       <IconField
         icon="person-outline"
-        label={relation === 'self' ? 'Your first name' : 'Their first name'}
+        label={relation === 'self' ? t('auth.claim.yourFirstName') : t('auth.claim.theirFirstName')}
         value={firstName}
         onChangeText={setFirstName}
         autoCapitalize="words"
@@ -167,23 +166,23 @@ export default function ClaimDetailsScreen() {
       <BirthDateField
         value={dob}
         onChange={setDob}
-        label={relation === 'self' ? 'Your birth date (YYYY-MM-DD)' : 'Their birth date (YYYY-MM-DD)'}
+        label={relation === 'self' ? t('auth.claim.yourBirthDate') : t('auth.claim.theirBirthDate')}
         onSubmitEditing={relation === 'self' ? submit : undefined}
       />
 
       {relation === 'other' ? (
         <View style={styles.picker}>
           <ChipPicker
-            label="They are my…"
+            label={t('auth.claim.theyAreMy')}
             options={FAMILY_RELATIONSHIPS}
             value={relationship}
             onChange={setRelationship}
-            format={humanize}
+            format={(r) => t(`common.relationship.${r}`)}
           />
         </View>
       ) : null}
 
-      <Button title={relation === 'self' ? 'Link My Records' : 'Add Them'} onPress={submit} loading={submitting} />
+      <Button title={relation === 'self' ? t('auth.claim.linkMine') : t('auth.claim.addThem')} onPress={submit} loading={submitting} />
     </AuthScreen>
   );
 }

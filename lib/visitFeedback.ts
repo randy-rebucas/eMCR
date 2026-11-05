@@ -2,6 +2,7 @@
 // link), `GET /api/patients/me/feedback/pending` and `POST /api/patients/me/visits/[id]/feedback`.
 
 import { apiRequest } from './api';
+import { t } from './i18n';
 
 /** A recent visit the clinic asked for feedback on, as the pending list returns it. */
 export interface PendingFeedback {
@@ -30,12 +31,32 @@ export const PENDING_FEEDBACK_PATH = '/api/patients/me/feedback/pending';
 /** Matches the server's cap. */
 export const COMMENTS_MAX = 2000;
 
-/** The optional ratings, in the order the form asks them. */
-export const DETAIL_RATINGS: { key: keyof Pick<FeedbackAnswers, 'doctorRating' | 'staffRating' | 'facilityRating' | 'waitTimeRating'>; label: string }[] = [
-  { key: 'doctorRating', label: 'Doctor' },
-  { key: 'staffRating', label: 'Staff' },
-  { key: 'facilityRating', label: 'Clinic' },
-  { key: 'waitTimeRating', label: 'Waiting time' },
+/** The optional ratings, in the order the form asks them. `label` is translated when read. */
+export const DETAIL_RATINGS: { key: keyof Pick<FeedbackAnswers, 'doctorRating' | 'staffRating' | 'facilityRating' | 'waitTimeRating'>; readonly label: string }[] = [
+  {
+    key: 'doctorRating',
+    get label() {
+      return t('patient.feedback.doctor');
+    },
+  },
+  {
+    key: 'staffRating',
+    get label() {
+      return t('patient.feedback.staff');
+    },
+  },
+  {
+    key: 'facilityRating',
+    get label() {
+      return t('patient.feedback.clinic');
+    },
+  },
+  {
+    key: 'waitTimeRating',
+    get label() {
+      return t('patient.feedback.waitTime');
+    },
+  },
 ];
 
 /** Send the answers. Sending twice is harmless: `alreadySubmitted` is true the second time. */

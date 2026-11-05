@@ -3,6 +3,7 @@
 // automation (lib/automations/waitlist-management.ts) fills cancelled slots from it.
 
 import { apiRequest } from './api';
+import { t } from './i18n';
 
 export const WAITLIST_PATH = '/api/patients/me/waitlist';
 
@@ -52,10 +53,12 @@ export function leaveWaitlist(id: string): Promise<{ entry: WaitlistEntry }> {
  * doctor goes to the first person waiting whose day is within a week of it (or who chose any day),
  * and it is booked for them straight away.
  */
-export const WAITLIST_EXPLAINER = [
-  'If someone cancels a time with this doctor, it goes to the people waiting, in the order they joined (the clinic may put urgent cases first).',
-  'If you chose a day, a time up to a week before or after it counts. If you chose any day, any time counts. Times starting within the hour aren’t offered.',
-  'The time is booked for you straight away. You’ll get a notification here, and a text or email if the clinic has your number or address.',
-  'Check the new appointment. If it doesn’t suit you, cancel it so someone else can have it.',
-  'You stay on the list until a time is booked for you or you leave it.',
-] as const;
+export function waitlistExplainer(): string[] {
+  return [
+    t('waitlist.explain.1'),
+    t('waitlist.explain.2'),
+    t('waitlist.explain.3'),
+    t('waitlist.explain.4'),
+    t('waitlist.explain.5'),
+  ];
+}

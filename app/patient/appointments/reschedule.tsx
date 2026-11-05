@@ -8,6 +8,7 @@ import { colors, spacing } from '@/lib/theme';
 import { BookedSummary, BookingForm, BookingSuccess } from '@/components/BookingForm';
 import { LoadingView, useBottomPadding } from '@/components/ui';
 import { ErrorState } from '@/components/ErrorState';
+import { useT } from '@/lib/i18n';
 
 /** The detail route also returns the appointment's clinic, which the booking form needs. */
 type AppointmentAtClinic = Appointment & { tenantId?: string };
@@ -15,6 +16,7 @@ type AppointmentAtClinic = Appointment & { tenantId?: string };
 /** Move an appointment to another time with the same doctor (from the appointment's detail screen). */
 export default function RescheduleAppointmentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const t = useT();
   const navigation = useNavigation();
   const bottomPad = useBottomPadding();
   const { data, loading, error, refresh } = useApiData<AppointmentAtClinic>(
@@ -23,14 +25,14 @@ export default function RescheduleAppointmentScreen() {
   const [moved, setMoved] = useState<BookedSummary | null>(null);
 
   useLayoutEffect(() => {
-    navigation.setOptions({ title: 'Reschedule' });
-  }, [navigation]);
+    navigation.setOptions({ title: t('appointments.reschedule') });
+  }, [navigation, t]);
 
   if (loading) return <LoadingView />;
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data) return <ErrorState message="Appointment not found." onRetry={refresh} />;
+  if (!data) return <ErrorState message={t('appointments.notFound')} onRetry={refresh} />;
   if (!moved && !canReschedule(data)) {
-    return <ErrorState message="This appointment can no longer be moved in the app. Please contact the clinic." onRetry={refresh} />;
+    return <ErrorState message={t('appointments.reschedule.cantMove')} onRetry={refresh} />;
   }
 
   return (

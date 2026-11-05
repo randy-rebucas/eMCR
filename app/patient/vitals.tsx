@@ -21,12 +21,14 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
+import { t as translate, useT } from '@/lib/i18n';
 
 /** Second line colour (diastolic): a slate that reads apart from the teal. */
 const SECOND = colors.slate;
 
 /** Vitals recorded at clinic visits, one measure at a time, as a chart and a list. */
 export default function VitalsScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const { data, loading, refreshing, error, refresh } = useApiData<VitalsEntry[]>('/api/patients/me/vitals?limit=100');
   const entries = useMemo(() => data ?? [], [data]);
@@ -41,9 +43,9 @@ export default function VitalsScreen() {
     <SafeAreaView edges={['top']}>
       <AppHeader back />
       <Text style={styles.title} accessibilityRole="header">
-        Vitals
+        {t('vitals.title')}
       </Text>
-      <Text style={styles.subtitle}>Measurements taken at your clinic visits, over time.</Text>
+      <Text style={styles.subtitle}>{t('vitals.subtitle')}</Text>
     </SafeAreaView>
   );
 
@@ -105,12 +107,12 @@ export default function VitalsScreen() {
             <View
               style={styles.latest}
               accessible
-              accessibilityLabel={`Latest ${measure.label}: ${spoken(measure, latest.values)}, on ${formatDate(latest.date)}`}
+              accessibilityLabel={t('vitals.latestA11y', { measure: measure.label, value: spoken(measure, latest.values), date: formatDate(latest.date) })}
             >
-              <Text style={styles.latestLabel}>Latest {measure.label}</Text>
+              <Text style={styles.latestLabel}>{t('vitals.latest', { measure: measure.label })}</Text>
               <Text style={styles.latestValue}>{formatReading(measure, latest.values)}</Text>
               <Text style={styles.latestDate}>{formatDate(latest.date)}</Text>
-              {measure.key === 'bp' ? <Text style={styles.latestHint}>Top number (systolic) / bottom number (diastolic)</Text> : null}
+              {measure.key === 'bp' ? <Text style={styles.latestHint}>{t('vitals.bpHint')}</Text> : null}
             </View>
           ) : null}
 
@@ -118,17 +120,17 @@ export default function VitalsScreen() {
             {readings.length >= 2 ? (
               <TrendChart measure={measure} readings={readings} />
             ) : (
-              <View style={styles.single} accessible accessibilityLabel={`Only one ${measure.label} reading so far. A chart appears once there are two.`}>
+              <View style={styles.single} accessible accessibilityLabel={t('vitals.singleA11y', { measure: measure.label })}>
                 <Ionicons name="analytics-outline" size={28} color={colors.textMuted} />
-                <Text style={styles.singleText}>Only one reading so far. A chart appears once there are two.</Text>
+                <Text style={styles.singleText}>{t('vitals.single')}</Text>
               </View>
             )}
           </View>
 
-          {error ? <Text style={styles.stale}>Couldn't refresh. Showing what was loaded before.</Text> : null}
+          {error ? <Text style={styles.stale}>{t('vitals.stale')}</Text> : null}
 
           <Text style={styles.listTitle} accessibilityRole="header">
-            Readings ({readings.length})
+            {t('vitals.readings', { count: readings.length })}
           </Text>
         </>
       ) : null}
@@ -158,10 +160,8 @@ export default function VitalsScreen() {
           <View style={styles.emptyIcon}>
             <Ionicons name="pulse-outline" size={32} color={colors.primary} />
           </View>
-          <Text style={styles.emptyTitle}>No vitals yet</Text>
-          <Text style={styles.emptyText}>
-            Blood pressure, weight and other measurements taken at your clinic visits will show up here.
-          </Text>
+          <Text style={styles.emptyTitle}>{t('vitals.empty.title')}</Text>
+          <Text style={styles.emptyText}>{t('vitals.empty.text')}</Text>
         </View>
       }
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
@@ -172,7 +172,7 @@ export default function VitalsScreen() {
 function spoken(measure: Measure, values: number[]): string {
   const text =
     measure.key === 'bp'
-      ? `${formatNumber(values[0], 0)} over ${formatNumber(values[1], 0)}`
+      ? translate('vitals.over', { top: formatNumber(values[0], 0), bottom: formatNumber(values[1], 0) })
       : formatNumber(values[0], measure.decimals);
   return measure.unitSpoken ? `${text} ${measure.unitSpoken}` : text;
 }
@@ -181,18 +181,28 @@ function spoken(measure: Measure, values: number[]): string {
 function chartSummary(measure: Measure, readings: Reading[]): string {
   const first = readings[0];
   const last = readings[readings.length - 1];
-  const parts = [`${measure.label} chart, ${readings.length} readings from ${formatDate(first.date)} to ${formatDate(last.date)}.`];
-  const series = measure.key === 'bp' ? ['Systolic', 'Diastolic'] : [null];
+  const parts = [
+    translate('vitals.chartIntro', {
+      measure: measure.label,
+      count: readings.length,
+      from: formatDate(first.date),
+      to: formatDate(last.date),
+    }),
+  ];
+  const series = measure.key === 'bp' ? [translate('vitals.systolic'), translate('vitals.diastolic')] : [null];
   series.forEach((name, i) => {
     const vals = readings.map((r) => r.values[i]);
     const low = Math.min(...vals);
     const high = Math.max(...vals);
     const fmt = (v: number) => formatNumber(v, measure.decimals);
-    parts.push(
-      `${name ? `${name}: ` : ''}lowest ${fmt(low)}, highest ${fmt(high)}, first ${fmt(vals[0])}, latest ${fmt(vals[vals.length - 1])}${
-        measure.unitSpoken ? ` ${measure.unitSpoken}` : ''
-      }.`
-    );
+    const stats = {
+      low: fmt(low),
+      high: fmt(high),
+      first: fmt(vals[0]),
+      latest: fmt(vals[vals.length - 1]),
+      unit: measure.unitSpoken ? ` ${measure.unitSpoken}` : '',
+    };
+    parts.push(name ? translate('vitals.seriesStatsNamed', { name, ...stats }) : translate('vitals.seriesStats', stats));
   });
   return parts.join(' ');
 }
@@ -201,6 +211,7 @@ const CHART_HEIGHT = 190;
 const PAD = { left: 40, right: 12, top: 12, bottom: 26 };
 
 function TrendChart({ measure, readings }: { measure: Measure; readings: Reading[] }) {
+  const tr = useT();
   const [width, setWidth] = useState(0);
   const onLayout = (e: LayoutChangeEvent) => setWidth(Math.round(e.nativeEvent.layout.width));
 
@@ -285,8 +296,8 @@ function TrendChart({ measure, readings }: { measure: Measure; readings: Reading
       <View style={styles.legend} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
         {measure.key === 'bp' ? (
           <>
-            <LegendItem color={lineColors[0]} label="Systolic (top)" />
-            <LegendItem color={lineColors[1]} label="Diastolic (bottom)" />
+            <LegendItem color={lineColors[0]} label={tr('vitals.legendSystolic')} />
+            <LegendItem color={lineColors[1]} label={tr('vitals.legendDiastolic')} />
           </>
         ) : (
           <LegendItem color={lineColors[0]} label={measure.unit ? `${measure.label} (${measure.unit})` : measure.label} />
@@ -318,6 +329,7 @@ function ReadingRow({
   first: boolean;
   last: boolean;
 }) {
+  const t = useT();
   const type = visitTypeLabel(visitType);
   return (
     <TouchableOpacity
@@ -325,7 +337,7 @@ function ReadingRow({
       onPress={() => router.push(`/patient/visits/${reading.visitId}`)}
       accessibilityRole="button"
       accessibilityLabel={`${formatDate(reading.date)}, ${spoken(measure, reading.values)}. ${type}`}
-      accessibilityHint="Opens the visit"
+      accessibilityHint={t('vitals.openVisitHint')}
     >
       <View style={styles.flex}>
         <Text style={styles.rowDate}>{formatDate(reading.date)}</Text>

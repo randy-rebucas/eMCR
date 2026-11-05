@@ -3,6 +3,7 @@
 // `/api/patients/me/share-links` (create, list) and `/share-links/[id]` (revoke).
 
 import { apiRequest } from './api';
+import { t } from './i18n';
 
 export type ShareLinkDuration = '24h' | '7d' | '30d';
 export type ShareLinkStatus = 'active' | 'expired' | 'revoked';
@@ -29,10 +30,26 @@ export interface ShareLinkList {
 
 export const SHARE_LINKS_PATH = '/api/patients/me/share-links';
 
-export const DURATIONS: { value: ShareLinkDuration; label: string }[] = [
-  { value: '24h', label: '24 hours' },
-  { value: '7d', label: '7 days' },
-  { value: '30d', label: '30 days' },
+// Labels are getters so they read in the current language.
+export const DURATIONS: { value: ShareLinkDuration; readonly label: string }[] = [
+  {
+    value: '24h',
+    get label() {
+      return t('share.duration.24h');
+    },
+  },
+  {
+    value: '7d',
+    get label() {
+      return t('share.duration.7d');
+    },
+  },
+  {
+    value: '30d',
+    get label() {
+      return t('share.duration.30d');
+    },
+  },
 ];
 
 export const LABEL_MAX = 80;
@@ -48,8 +65,14 @@ export function revokeShareLink(id: string): Promise<{ link: ShareLink }> {
   return apiRequest(`${SHARE_LINKS_PATH}/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
-export const STATUS_LABEL: Record<ShareLinkStatus, string> = {
-  active: 'Active',
-  expired: 'Expired',
-  revoked: 'Revoked',
+export const STATUS_LABEL: Readonly<Record<ShareLinkStatus, string>> = {
+  get active() {
+    return t('share.status.active');
+  },
+  get expired() {
+    return t('share.status.expired');
+  },
+  get revoked() {
+    return t('share.status.revoked');
+  },
 };

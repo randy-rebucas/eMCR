@@ -5,6 +5,7 @@
 import { apiRequest } from './api';
 import { openPdfLink } from './documents';
 import { doctorName } from './format';
+import { t } from './i18n';
 
 export const REFERRALS_PATH = '/api/patients/me/referrals';
 
@@ -49,27 +50,52 @@ export interface Referral {
   letterAvailable: boolean;
 }
 
-export const STATUS_LABEL: Record<ReferralStatus, string> = {
-  pending: 'Sent',
-  accepted: 'Accepted',
-  completed: 'Completed',
-  declined: 'Declined',
-  cancelled: 'Cancelled',
+// Labels are getters so they read in the current language.
+export const STATUS_LABEL: Readonly<Record<ReferralStatus, string>> = {
+  get pending() {
+    return t('referrals.status.pending');
+  },
+  get accepted() {
+    return t('referrals.status.accepted');
+  },
+  get completed() {
+    return t('referrals.status.completed');
+  },
+  get declined() {
+    return t('referrals.status.declined');
+  },
+  get cancelled() {
+    return t('referrals.status.cancelled');
+  },
 };
 
 /** What the status means for the patient, in plain words. */
-export const STATUS_HINT: Record<ReferralStatus, string> = {
-  pending: 'Your referral was sent. The doctor or clinic you were referred to hasn’t answered yet.',
-  accepted: 'The doctor or clinic accepted your referral. Book or attend the appointment to be seen.',
-  completed: 'You were seen. Your doctor may follow up on the results.',
-  declined: 'The referral was not accepted. Please ask your clinic about other options.',
-  cancelled: 'This referral was cancelled.',
+export const STATUS_HINT: Readonly<Record<ReferralStatus, string>> = {
+  get pending() {
+    return t('referrals.hint.pending');
+  },
+  get accepted() {
+    return t('referrals.hint.accepted');
+  },
+  get completed() {
+    return t('referrals.hint.completed');
+  },
+  get declined() {
+    return t('referrals.hint.declined');
+  },
+  get cancelled() {
+    return t('referrals.hint.cancelled');
+  },
 };
 
-export const URGENCY_LABEL: Record<Referral['urgency'], string | null> = {
+export const URGENCY_LABEL: Readonly<Record<Referral['urgency'], string | null>> = {
   routine: null,
-  urgent: 'Urgent',
-  stat: 'As soon as possible',
+  get urgent() {
+    return t('referrals.urgency.urgent');
+  },
+  get stat() {
+    return t('referrals.urgency.stat');
+  },
 };
 
 function personName(doctor: ReferralDoctor | null): string | null {
@@ -86,7 +112,7 @@ export function referredToText(r: Referral): string {
   const parts = [who, specialty].filter(Boolean).join(' · ');
   const clinic = r.referredTo.clinic;
   if (parts && clinic) return `${parts}, ${clinic}`;
-  return parts || clinic || 'A specialist';
+  return parts || clinic || t('referrals.aSpecialist');
 }
 
 export function referredByText(r: Referral): string | null {
@@ -97,5 +123,5 @@ export function referredByText(r: Referral): string | null {
 /** Download the letter into the app cache and open the share sheet (never the browser). */
 export async function openReferralLetter(r: Referral): Promise<void> {
   const link = await apiRequest<{ url: string }>(`${REFERRALS_PATH}/${encodeURIComponent(r._id)}/pdf-link`, { method: 'POST' });
-  await openPdfLink(link.url, `Referral-Letter-${r.referralCode ?? r._id}`, 'Referral letter');
+  await openPdfLink(link.url, `Referral-Letter-${r.referralCode ?? r._id}`, t('referrals.letterTitle'));
 }

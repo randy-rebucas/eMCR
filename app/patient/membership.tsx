@@ -10,8 +10,9 @@ import { MEMBERSHIP_PATH, PatientMembership, STATE_LABEL, tierColors } from '@/l
 import { Badge, LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
+import { t as translate, useT } from '@/lib/i18n';
 
-const points = (n: number) => `${n.toLocaleString('en-PH')} pt${Math.abs(n) === 1 ? '' : 's'}`;
+const points = (n: number) => translate('membership.points', { amount: n.toLocaleString('en-PH'), count: Math.abs(n) });
 
 /**
  * The patient's loyalty memberships, one card per clinic: tier, points, discount, expiry, the
@@ -19,6 +20,7 @@ const points = (n: number) => `${n.toLocaleString('en-PH')} pt${Math.abs(n) === 
  */
 export default function MembershipScreen() {
   const bottomPad = useBottomPadding();
+  const t = useT();
   const { data, loading, refreshing, error, refresh } = useApiData<PatientMembership[]>(MEMBERSHIP_PATH);
 
   if (loading && !data) return <LoadingView />;
@@ -36,9 +38,9 @@ export default function MembershipScreen() {
         <SafeAreaView edges={['top']}>
           <AppHeader back />
           <Text style={styles.title} accessibilityRole="header">
-            Membership
+            {t('membership.title')}
           </Text>
-          <Text style={styles.subtitle}>Your clinic membership cards, points and discounts.</Text>
+          <Text style={styles.subtitle}>{t('membership.subtitle')}</Text>
         </SafeAreaView>
       }
       ListEmptyComponent={
@@ -47,9 +49,9 @@ export default function MembershipScreen() {
         ) : (
           <View style={styles.empty}>
             <Ionicons name="card-outline" size={36} color={colors.textMuted} />
-            <Text style={styles.emptyTitle}>No membership yet</Text>
+            <Text style={styles.emptyTitle}>{t('membership.emptyTitle')}</Text>
             <Text style={styles.emptyText}>
-              Ask at your clinic's front desk about joining. Members earn points and get a discount on their bills.
+              {t('membership.emptyBody')}
             </Text>
           </View>
         )
@@ -60,6 +62,7 @@ export default function MembershipScreen() {
 }
 
 function MembershipCard({ membership: m }: { membership: PatientMembership }) {
+  const t = useT();
   const [showHistory, setShowHistory] = useState(false);
   const tone = tierColors(m.tier);
   const stateTone = m.state === 'active' ? 'primary' : m.state === 'due' ? 'warning' : m.state === 'expired' || m.state === 'suspended' ? 'danger' : 'neutral';
@@ -71,20 +74,20 @@ function MembershipCard({ membership: m }: { membership: PatientMembership }) {
         <View style={styles.cardTop}>
           <View style={styles.flex}>
             <Text style={[styles.clinic, { color: tone.accent }]} numberOfLines={1}>
-              {m.clinicName ?? 'Clinic'}
+              {m.clinicName ?? t('membership.clinic')}
             </Text>
-            <Text style={[styles.tier, { color: tone.fg }]}>{m.tierLabel} member</Text>
+            <Text style={[styles.tier, { color: tone.fg }]}>{t('membership.tierMember', { tier: m.tierLabel })}</Text>
           </View>
           <Ionicons name="ribbon" size={30} color={tone.accent} />
         </View>
 
         <View style={styles.cardMiddle}>
           <View style={styles.flex}>
-            <Text style={[styles.cardLabel, { color: tone.accent }]}>Points</Text>
+            <Text style={[styles.cardLabel, { color: tone.accent }]}>{t('membership.pointsLabel')}</Text>
             <Text style={[styles.points, { color: tone.fg }]}>{m.points.toLocaleString('en-PH')}</Text>
           </View>
           {m.membershipNumber ? (
-            <View style={styles.qr} accessible accessibilityLabel={`Membership QR code for ${m.membershipNumber}`}>
+            <View style={styles.qr} accessible accessibilityLabel={t('membership.qrA11y', { number: m.membershipNumber })}>
               <QRCode value={m.membershipNumber} size={84} color={colors.text} backgroundColor="#FFFFFF" />
             </View>
           ) : null}
@@ -96,7 +99,9 @@ function MembershipCard({ membership: m }: { membership: PatientMembership }) {
           </Text>
           {m.expiryDate ? (
             <Text style={[styles.cardLabel, { color: tone.accent }]}>
-              {m.state === 'expired' ? 'Expired' : 'Valid until'} {formatDate(m.expiryDate)}
+              {m.state === 'expired'
+                ? t('membership.expiredOn', { date: formatDate(m.expiryDate) })
+                : t('membership.validUntil', { date: formatDate(m.expiryDate) })}
             </Text>
           ) : null}
         </View>
@@ -105,19 +110,19 @@ function MembershipCard({ membership: m }: { membership: PatientMembership }) {
       {/* Details */}
       <View style={styles.details}>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Status</Text>
-          <Badge label={STATE_LABEL[m.state] ?? m.state} tone={stateTone} />
+          <Text style={styles.detailLabel}>{t('membership.status')}</Text>
+          <Badge label={STATE_LABEL[m.state] ? t(STATE_LABEL[m.state]) : m.state} tone={stateTone} />
         </View>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Discount on bills</Text>
+          <Text style={styles.detailLabel}>{t('membership.discountOnBills')}</Text>
           <Text style={styles.detailValue}>
-            {m.discountActive && m.discountPercentage > 0 ? `${m.discountPercentage}%` : 'None right now'}
+            {m.discountActive && m.discountPercentage > 0 ? `${m.discountPercentage}%` : t('membership.noDiscount')}
           </Text>
         </View>
         {m.state === 'due' ? (
-          <Text style={styles.note}>Your membership ends soon. Renew it at the clinic to keep your discount.</Text>
+          <Text style={styles.note}>{t('membership.dueNote')}</Text>
         ) : m.state === 'expired' ? (
-          <Text style={styles.note}>Renew at the clinic to use your discount again. Your points are kept.</Text>
+          <Text style={styles.note}>{t('membership.expiredNote')}</Text>
         ) : null}
         {m.benefits.length ? (
           <View style={styles.benefits}>
@@ -130,8 +135,8 @@ function MembershipCard({ membership: m }: { membership: PatientMembership }) {
           </View>
         ) : null}
         <Text style={styles.meta}>
-          Earned {points(m.totalPointsEarned)} · Used {points(m.totalPointsRedeemed)}
-          {m.joinDate ? ` · Member since ${formatDate(m.joinDate)}` : ''}
+          {t('membership.earnedUsed', { earned: points(m.totalPointsEarned), used: points(m.totalPointsRedeemed) })}
+          {m.joinDate ? t('membership.memberSince', { date: formatDate(m.joinDate) }) : ''}
         </Text>
 
         {m.history.length ? (
@@ -142,7 +147,7 @@ function MembershipCard({ membership: m }: { membership: PatientMembership }) {
               accessibilityRole="button"
               accessibilityState={{ expanded: showHistory }}
             >
-              <Text style={styles.historyToggleText}>Recent points</Text>
+              <Text style={styles.historyToggleText}>{t('membership.recentPoints')}</Text>
               <Ionicons name={showHistory ? 'chevron-up' : 'chevron-down'} size={18} color={colors.primary} />
             </TouchableOpacity>
             {showHistory

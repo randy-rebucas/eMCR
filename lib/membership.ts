@@ -1,5 +1,6 @@
 // Clinic loyalty memberships (tier, points, discount). Read-only in the app; the clinic's desk
 // enrols, renews and records points. Backend: `GET /api/patients/me/membership`.
+import type { PlainKey } from './i18n';
 
 export type MembershipTier = 'bronze' | 'silver' | 'gold' | 'platinum';
 /** `due` = active but inside the 30-day renewal window. */
@@ -39,12 +40,13 @@ export interface PatientMembership {
 
 export const MEMBERSHIP_PATH = '/api/patients/me/membership';
 
-export const STATE_LABEL: Record<MembershipState, string> = {
-  active: 'Active',
-  due: 'Renewal due',
-  expired: 'Expired',
-  suspended: 'Suspended',
-  inactive: 'Inactive',
+/** String keys: show with `t(STATE_LABEL[state])`. */
+export const STATE_LABEL: Record<MembershipState, PlainKey> = {
+  active: 'membership.state.active',
+  due: 'membership.state.due',
+  expired: 'membership.state.expired',
+  suspended: 'membership.state.suspended',
+  inactive: 'membership.state.inactive',
 };
 
 /** Card colours per tier (background, text on it). */

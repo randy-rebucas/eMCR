@@ -15,8 +15,10 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorState } from '@/components/ErrorState';
 import { MedicationCard } from '@/components/MedicationCard';
 import { softShadow } from '@/components/AppHeader';
+import { useT } from '@/lib/i18n';
 
 export default function PrescriptionDetailScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<Prescription>(
@@ -33,9 +35,9 @@ export default function PrescriptionDetailScreen() {
     setPdfError(null);
     try {
       const link = await apiRequest<{ url: string }>(`/api/patients/me/prescriptions/${encodeURIComponent(data._id)}/pdf-link`, { method: 'POST' });
-      await openPdfLink(link.url, `Prescription-${data.prescriptionCode ?? data._id}`, 'Prescription');
+      await openPdfLink(link.url, `Prescription-${data.prescriptionCode ?? data._id}`, t('prescriptions.prescription'));
     } catch (err) {
-      setPdfError(errorMessage(err, "Couldn't open the prescription. Please try again."));
+      setPdfError(errorMessage(err, t('prescriptions.openFailed')));
     } finally {
       setOpening(false);
     }
@@ -43,7 +45,7 @@ export default function PrescriptionDetailScreen() {
 
   if (loading) return <LoadingView />;
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data) return <ErrorState message="Prescription not found." onRetry={refresh} />;
+  if (!data) return <ErrorState message={t('prescriptions.notFound')} onRetry={refresh} />;
 
   const visit = visitOf(data);
   const dispenses = (data.pharmacyDispenses ?? []).filter((d) => d.pharmacyName || d.dispensedAt);
@@ -62,45 +64,45 @@ export default function PrescriptionDetailScreen() {
           </View>
           <View style={styles.flex}>
             <Text style={styles.title}>{formatDate(data.issuedAt ?? data.createdAt)}</Text>
-            {data.prescriptionCode ? <Text style={styles.meta}>Rx {data.prescriptionCode}</Text> : null}
+            {data.prescriptionCode ? <Text style={styles.meta}>{t('prescriptions.rx', { code: data.prescriptionCode })}</Text> : null}
           </View>
           <StatusBadge status={data.status} />
         </View>
-        <DetailRow label="Prescribed by" value={prescriberName(data)} />
+        <DetailRow label={t('prescriptions.prescribedBy')} value={prescriberName(data)} />
         <DetailRow
-          label="Visit"
+          label={t('prescriptions.visit')}
           value={
             visit?.date
-              ? `${visit.visitType ? humanize(visit.visitType) : 'Visit'} · ${formatDate(visit.date)}`
+              ? `${visit.visitType ? humanize(visit.visitType) : t('prescriptions.visit')} · ${formatDate(visit.date)}`
               : null
           }
         />
-        <DetailRow label="Visit reference" value={visit?.visitCode} />
+        <DetailRow label={t('prescriptions.visitReference')} value={visit?.visitCode} />
       </View>
 
       {data.status !== 'cancelled' ? (
         <View style={styles.pdf}>
-          <Button title="Open e-prescription (PDF)" icon="download-outline" variant="secondary" onPress={openPdf} loading={opening} />
-          <Text style={styles.footnote}>The sealed copy pharmacies can verify by scanning its QR code.</Text>
+          <Button title={t('prescriptions.openPdf')} icon="download-outline" variant="secondary" onPress={openPdf} loading={opening} />
+          <Text style={styles.footnote}>{t('prescriptions.pdfNote')}</Text>
           {pdfError ? <Banner message={pdfError} /> : null}
         </View>
       ) : null}
 
       <Text style={styles.section} accessibilityRole="header">
-        Medications
+        {t('prescriptions.medications')}
       </Text>
       {data.medications?.length ? (
         data.medications.map((med, index) => (
           <MedicationCard key={`${med.name}-${index}`} prescription={data} med={med} showStatus={false} />
         ))
       ) : (
-        <Text style={styles.muted}>No medications listed.</Text>
+        <Text style={styles.muted}>{t('prescriptions.noMeds')}</Text>
       )}
 
       {data.notes ? (
         <>
           <Text style={styles.section} accessibilityRole="header">
-            Doctor's Notes
+            {t('prescriptions.doctorNotes')}
           </Text>
           <View style={styles.card}>
             <Text style={styles.body}>{data.notes}</Text>
@@ -111,14 +113,14 @@ export default function PrescriptionDetailScreen() {
       {dispenses.length ? (
         <>
           <Text style={styles.section} accessibilityRole="header">
-            Dispensing
+            {t('prescriptions.dispensing')}
           </Text>
           <View style={styles.card}>
             {dispenses.map((d, i) => (
               <View key={i} style={[styles.dispense, i < dispenses.length - 1 && styles.divider]}>
                 <Ionicons name="storefront-outline" size={18} color={colors.primary} />
                 <View style={styles.flex}>
-                  <Text style={styles.body}>{d.pharmacyName ?? 'Pharmacy'}</Text>
+                  <Text style={styles.body}>{d.pharmacyName ?? t('prescriptions.pharmacy')}</Text>
                   {d.dispensedAt ? <Text style={styles.meta}>{formatDateTime(d.dispensedAt)}</Text> : null}
                 </View>
               </View>
@@ -127,7 +129,7 @@ export default function PrescriptionDetailScreen() {
         </>
       ) : null}
 
-      <Text style={styles.footnote}>Questions about your medication? Contact your clinic.</Text>
+      <Text style={styles.footnote}>{t('prescriptions.footnote')}</Text>
     </ScrollView>
   );
 }

@@ -119,7 +119,10 @@ export interface QueueEntry {
   _id: string;
   queueNumber: string;
   queueType?: 'appointment' | 'walk-in' | 'follow-up';
-  status: 'waiting' | 'in-progress' | 'completed' | 'cancelled' | 'no-show';
+  /** 'away': out of the line with no position; their place is kept. awayReason says why. */
+  status: 'waiting' | 'in-progress' | 'away' | 'completed' | 'cancelled' | 'no-show';
+  /** 'missed': didn't answer when called, and should see the front desk. Anything else is the lab. */
+  awayReason?: 'lab' | 'missed' | null;
   /** Only checked-in patients appear on the clinic's queue display. */
   checkedIn?: boolean;
   /** JSON the clinic kiosk/front desk scans to check the patient in. */

@@ -2,6 +2,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { ApiError, authHeaders, getAccessToken, recoverFromUnauthorized, reportActivationRequired } from './api';
 import { API_BASE_URL } from './config';
+import { t } from './i18n';
 import { PatientDocument } from './types';
 
 /**
@@ -95,7 +96,7 @@ export async function openPdfLink(url: string, fileName: string, title: string):
 
 async function share(file: File, type: { mimeType?: string; UTI?: string }, title?: string): Promise<void> {
   if (!(await Sharing.isAvailableAsync())) {
-    throw new ApiError("Opening files isn't supported on this device.", 0);
+    throw new ApiError(t('documents.notSupported'), 0);
   }
   await Sharing.shareAsync(file.uri, { ...type, dialogTitle: title });
 }
@@ -104,10 +105,10 @@ function toApiError(error: unknown): ApiError {
   const status = statusOf(error);
   if (status === 402) {
     reportActivationRequired();
-    return new ApiError('Activate eMCR with a voucher code from your clinic to open documents.', 402, 'ACTIVATION_REQUIRED');
+    return new ApiError(t('documents.activationRequired'), 402, 'ACTIVATION_REQUIRED');
   }
-  if (status === 404) return new ApiError('This document is no longer available.', 404);
-  if (status === 401) return new ApiError('Your session has expired. Please sign in again.', 401);
-  if (status === 429) return new ApiError('Too many requests. Please wait a moment and try again.', 429);
-  return new ApiError("Couldn't download the document. Check your connection and try again.", status ?? 0);
+  if (status === 404) return new ApiError(t('documents.gone'), 404);
+  if (status === 401) return new ApiError(t('documents.sessionExpired'), 401);
+  if (status === 429) return new ApiError(t('documents.tooMany'), 429);
+  return new ApiError(t('documents.downloadFailed'), status ?? 0);
 }

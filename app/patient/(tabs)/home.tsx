@@ -18,22 +18,24 @@ import { AppointmentCard } from '@/components/AppointmentCard';
 import { ResultStatusPill } from '@/components/ResultStatusPill';
 import { TourTarget } from '@/components/QuickTour';
 import { VisitFeedbackPrompt } from '@/components/VisitFeedbackPrompt';
+import { PlainKey, TFunction, useT } from '@/lib/i18n';
 
-const ACTIVE_QUEUE = new Set(['waiting', 'in-progress']);
+const ACTIVE_QUEUE = new Set(['waiting', 'in-progress', 'away']);
 
-function greeting(): string {
+function greeting(t: TFunction): string {
   const h = new Date().getHours();
-  return h < 12 ? 'Good morning,' : h < 18 ? 'Good afternoon,' : 'Good evening,';
+  return h < 12 ? t('home.greeting.morning') : h < 18 ? t('home.greeting.afternoon') : t('home.greeting.evening');
 }
 
-const SHORTCUTS: { label: string; icon: IconName; href: string; bg: string; fg: string }[] = [
-  { label: 'Appointments', icon: 'calendar-outline', href: '/patient/appointments', bg: '#E3F6F5', fg: '#0A7F7E' },
-  { label: 'My Queue', icon: 'qr-code-outline', href: '/patient/queue', bg: '#E6EEFB', fg: '#2F5FB3' },
-  { label: 'View Results', icon: 'document-text-outline', href: '/patient/results', bg: '#EEEAFB', fg: '#5B47B0' },
-  { label: 'Prescriptions', icon: 'bandage-outline', href: '/patient/prescriptions', bg: '#FDEFE4', fg: '#B5541B' },
+const SHORTCUTS: { label: PlainKey; icon: IconName; href: string; bg: string; fg: string }[] = [
+  { label: 'home.shortcut.appointments', icon: 'calendar-outline', href: '/patient/appointments', bg: '#E3F6F5', fg: '#0A7F7E' },
+  { label: 'home.shortcut.queue', icon: 'qr-code-outline', href: '/patient/queue', bg: '#E6EEFB', fg: '#2F5FB3' },
+  { label: 'home.shortcut.results', icon: 'document-text-outline', href: '/patient/results', bg: '#EEEAFB', fg: '#5B47B0' },
+  { label: 'home.shortcut.prescriptions', icon: 'bandage-outline', href: '/patient/prescriptions', bg: '#FDEFE4', fg: '#B5541B' },
 ];
 
 export default function HomeScreen() {
+  const t = useT();
   const { viewing: patient } = useProfile();
   const { refreshUnread } = useUnread();
   const appointments = useApiData<Appointment[]>('/api/patients/me/appointments?limit=20', {
@@ -102,13 +104,13 @@ export default function HomeScreen() {
           <SafeAreaView edges={['top']}>
             <AppHeader />
 
-            <Text style={styles.hello}>{greeting()}</Text>
+            <Text style={styles.hello}>{greeting(t)}</Text>
             {fullName ? (
               <Text style={styles.name} numberOfLines={1}>
                 {fullName} 👋
               </Text>
             ) : null}
-            <Text style={styles.tagline}>Your health. Our priority.</Text>
+            <Text style={styles.tagline}>{t('home.tagline')}</Text>
           </SafeAreaView>
         </View>
 
@@ -125,14 +127,14 @@ export default function HomeScreen() {
               style={styles.cta}
               onPress={() => router.push('/patient/appointments/book')}
               accessibilityRole="button"
-              accessibilityLabel="Book an appointment"
+              accessibilityLabel={t('home.cta.a11y')}
             >
               <View style={styles.ctaIcon}>
                 <Ionicons name="medkit-outline" size={24} color={colors.primary} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.ctaTitle}>Need to book an appointment?</Text>
-                <Text style={styles.ctaText}>Choose a doctor and a schedule that works for you.</Text>
+                <Text style={styles.ctaTitle}>{t('home.cta.title')}</Text>
+                <Text style={styles.ctaText}>{t('home.cta.text')}</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.primary} />
             </TouchableOpacity>
@@ -146,20 +148,20 @@ export default function HomeScreen() {
                 style={styles.shortcut}
                 onPress={() => router.push(s.href as never)}
                 accessibilityRole="button"
-                accessibilityLabel={s.label}
+                accessibilityLabel={t(s.label)}
               >
                 <View style={[styles.shortcutIcon, { backgroundColor: s.bg }]}>
                   <Ionicons name={s.icon} size={26} color={s.fg} />
                 </View>
                 <Text style={styles.shortcutLabel} numberOfLines={2}>
-                  {s.label}
+                  {t(s.label)}
                 </Text>
               </TouchableOpacity>
             ))}
           </TourTarget>
 
           {/* Next appointment */}
-          <Section title="Next Appointment" action="View All" onAction={() => router.push('/patient/appointments')}>
+          <Section title={t('home.next.title')} action={t('home.viewAll')} onAction={() => router.push('/patient/appointments')}>
             {appointments.loading ? (
               <LoadingCard />
             ) : appointments.error && !appointments.data ? (
@@ -168,8 +170,8 @@ export default function HomeScreen() {
               <AppointmentCard appointment={next} />
             ) : (
               <MessageCard
-                text="No upcoming appointments."
-                action={{ title: 'Book one', onPress: () => router.push('/patient/appointments/book') }}
+                text={t('home.next.none')}
+                action={{ title: t('home.next.bookOne'), onPress: () => router.push('/patient/appointments/book') }}
               />
             )}
           </Section>
@@ -179,14 +181,14 @@ export default function HomeScreen() {
               style={[styles.card, styles.rowCard, styles.checkInCard]}
               onPress={() => router.push({ pathname: '/patient/queue', params: { scan: '1' } })}
               accessibilityRole="button"
-              accessibilityLabel="At the clinic? Scan the check-in QR code"
+              accessibilityLabel={t('home.checkIn.a11y')}
             >
               <View style={styles.tile}>
                 <Ionicons name="scan-outline" size={24} color={colors.primary} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.cardTitle}>At the clinic?</Text>
-                <Text style={styles.meta}>Scan the check-in QR at the front desk to join the queue.</Text>
+                <Text style={styles.cardTitle}>{t('home.checkIn.title')}</Text>
+                <Text style={styles.meta}>{t('home.checkIn.text')}</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
             </TouchableOpacity>
@@ -194,7 +196,7 @@ export default function HomeScreen() {
 
           {/* Queue — only while the patient is actually in line */}
           {queueEntry ? (
-            <Section title="Queue Status" action="View Queue" onAction={() => router.push('/patient/queue')}>
+            <Section title={t('home.queue.title')} action={t('home.queue.view')} onAction={() => router.push('/patient/queue')}>
               <TouchableOpacity
                 style={[styles.card, styles.queueCard]}
                 onPress={() => router.push('/patient/queue')}
@@ -206,24 +208,25 @@ export default function HomeScreen() {
                 <View style={styles.flex}>
                   {queueEntry.status === 'in-progress' ? (
                     <>
-                      <Text style={styles.queueTurn}>It's your turn!</Text>
+                      <Text style={styles.queueTurn}>{t('home.queue.yourTurn')}</Text>
                       <Text style={styles.meta}>
-                        {queueEntry.room ? `Please proceed to ${queueEntry.room.name}.` : 'Please proceed to your room.'}
+                        {queueEntry.room ? t('home.queue.proceedTo', { room: queueEntry.room.name }) : t('home.queue.proceedRoom')}
                       </Text>
                     </>
                   ) : (
                     <>
-                      <Text style={styles.meta}>Your Queue Number</Text>
+                      <Text style={styles.meta}>{t('home.queue.yourNumber')}</Text>
                       <Text style={styles.queueNumber}>{queueEntry.queueNumber}</Text>
+                      {queueEntry.status === 'away' ? <Text style={styles.queueLine}>{queueEntry.awayReason === 'missed' ? t('home.queue.missed') : t('home.queue.atLab')}</Text> : null}
                       {queueEntry.position !== null ? (
                         <Text style={styles.queueLine}>
                           {queueEntry.position <= 1
-                            ? "You're next"
-                            : `${queueEntry.position - 1} patient${queueEntry.position - 1 === 1 ? '' : 's'} ahead of you`}
+                            ? t('home.queue.next')
+                            : t('home.queue.ahead', { count: queueEntry.position - 1 })}
                         </Text>
                       ) : null}
                       {queueEntry.estimatedWaitTime ? (
-                        <Text style={styles.meta}>Estimated wait: ~{queueEntry.estimatedWaitTime} min</Text>
+                        <Text style={styles.meta}>{t('home.queue.wait', { minutes: queueEntry.estimatedWaitTime })}</Text>
                       ) : null}
                     </>
                   )}
@@ -235,7 +238,7 @@ export default function HomeScreen() {
 
           {/* Latest result */}
           {latestResult ? (
-            <Section title="Recent Results" action="View All" onAction={() => router.push('/patient/results')}>
+            <Section title={t('home.results.title')} action={t('home.viewAll')} onAction={() => router.push('/patient/results')}>
               <TouchableOpacity
                 style={[styles.card, styles.rowCard]}
                 onPress={() => router.push(`/patient/results/${latestResult._id}`)}
@@ -246,7 +249,7 @@ export default function HomeScreen() {
                 </View>
                 <View style={styles.flex}>
                   <Text style={styles.cardTitle} numberOfLines={1}>
-                    {latestResult.request?.testType ?? 'Lab test'}
+                    {latestResult.request?.testType ?? t('home.results.labTest')}
                   </Text>
                   <Text style={styles.meta}>
                     {formatDate(latestResult.resultDate ?? latestResult.orderDate ?? latestResult.createdAt)}
@@ -259,7 +262,7 @@ export default function HomeScreen() {
           ) : null}
 
           {/* Health summary */}
-          <Section title="Health Summary" action="Open" onAction={() => router.push('/patient/health-summary')}>
+          <Section title={t('home.health.title')} action={t('home.open')} onAction={() => router.push('/patient/health-summary')}>
             <TouchableOpacity
               style={[styles.card, styles.rowCard]}
               onPress={() => router.push('/patient/health-summary')}
@@ -269,8 +272,8 @@ export default function HomeScreen() {
                 <Ionicons name="heart-outline" size={24} color={colors.primary} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.cardTitle}>Allergies, medicines and vaccines</Text>
-                <Text style={styles.meta}>From every clinic, in one place. Download it as a PDF for a new doctor.</Text>
+                <Text style={styles.cardTitle}>{t('home.health.cardTitle')}</Text>
+                <Text style={styles.meta}>{t('home.health.cardText')}</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
             </TouchableOpacity>
@@ -278,7 +281,7 @@ export default function HomeScreen() {
 
           {/* Balance */}
           {balance > 0 ? (
-            <Section title="Outstanding Balance" action="View Bills" onAction={() => router.push('/patient/invoices')}>
+            <Section title={t('home.balance.title')} action={t('home.balance.view')} onAction={() => router.push('/patient/invoices')}>
               <TouchableOpacity
                 style={[styles.card, styles.rowCard]}
                 onPress={() => router.push('/patient/invoices')}
@@ -288,12 +291,12 @@ export default function HomeScreen() {
                   <Ionicons name="receipt-outline" size={24} color={colors.primary} />
                 </View>
                 <View style={styles.flex}>
-                  <Text style={styles.meta}>Total Amount Due</Text>
+                  <Text style={styles.meta}>{t('home.balance.due')}</Text>
                   <Text style={styles.balance}>{formatMoney(balance)}</Text>
                 </View>
                 <View style={styles.payNote}>
                   <Ionicons name="business-outline" size={14} color={colors.primaryOnSoft} />
-                  <Text style={styles.payNoteText}>Pay at the clinic</Text>
+                  <Text style={styles.payNoteText}>{t('home.balance.payAtClinic')}</Text>
                 </View>
               </TouchableOpacity>
             </Section>
@@ -309,17 +312,19 @@ export default function HomeScreen() {
  * Ending within 30 days: a renewal reminder. Otherwise nothing (More shows the end date).
  */
 function ActivationCard({ activation }: { activation: EmcrAccount['activation'] }) {
+  const t = useT();
   const needed = !activation.active && activation.enforced;
   const renew = activation.active && activation.daysLeft <= 30;
   if (!needed && !renew) return null;
 
   const until = activation.expiresAt ? formatDate(activation.expiresAt, { month: 'long', day: 'numeric', year: 'numeric' }) : null;
-  const title = needed ? 'Activate eMCR' : 'Renew your eMCR';
+  const title = needed ? t('home.activation.title') : t('home.activation.renewTitle');
+  const left = activation.daysLeft > 0 ? t('home.activation.daysLeft', { count: activation.daysLeft }) : '';
   const text = needed
-    ? 'Get an activation voucher at your clinic, then enter the code to book, check in and see your results.'
-    : `Your eMCR ends ${until ? `on ${until}` : 'soon'}${
-        activation.daysLeft > 0 ? ` (${activation.daysLeft} day${activation.daysLeft === 1 ? '' : 's'} left)` : ''
-      }. Enter a new code to add a year.`;
+    ? t('home.activation.needed')
+    : until
+      ? t('home.activation.endsOn', { date: until, left })
+      : t('home.activation.endsSoon', { left });
   return (
     <TouchableOpacity
       style={[styles.card, styles.rowCard, needed ? styles.activateCard : styles.renewCard]}

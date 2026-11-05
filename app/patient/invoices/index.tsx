@@ -12,11 +12,13 @@ import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { InvoiceStatusPill } from '@/components/InvoiceStatusPill';
+import { useT } from '@/lib/i18n';
 
 type Filter = 'all' | InvoiceStatus;
 
 export default function InvoicesScreen() {
   const bottomPad = useBottomPadding();
+  const t = useT();
   const [filter, setFilter] = useState<Filter>('all');
   const list = usePaginatedList<Invoice, InvoiceListEnvelope>(
     `/api/patients/me/invoices${filter === 'all' ? '' : `?status=${filter}`}`,
@@ -34,26 +36,26 @@ export default function InvoicesScreen() {
   const unpaid = current?.unpaidCount ?? 0;
 
   const filters: { value: Filter; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'unpaid', label: 'Unpaid' },
-    { value: 'partial', label: 'Partial' },
-    { value: 'paid', label: 'Paid' },
+    { value: 'all', label: t('invoices.filter.all') },
+    { value: 'unpaid', label: t('invoices.filter.unpaid') },
+    { value: 'partial', label: t('invoices.filter.partial') },
+    { value: 'paid', label: t('invoices.filter.paid') },
   ];
 
   const header = (
     <SafeAreaView edges={['top']}>
       <AppHeader back />
       <Text style={styles.title} accessibilityRole="header">
-        Billing
+        {t('invoices.title')}
       </Text>
-      <Text style={styles.subtitle}>Your bills, balance and payment history.</Text>
+      <Text style={styles.subtitle}>{t('invoices.subtitle')}</Text>
 
       <View style={styles.balanceCard}>
         <View style={styles.wallet}>
           <Ionicons name="wallet-outline" size={32} color={colors.primary} />
         </View>
         <View style={styles.flex}>
-          <Text style={styles.balanceLabel}>Outstanding Balance</Text>
+          <Text style={styles.balanceLabel}>{t('invoices.outstandingBalance')}</Text>
           <Text style={[styles.balance, balance === 0 && styles.balanceClear]}>
             {current ? formatMoney(balance) : '—'}
           </Text>
@@ -61,8 +63,8 @@ export default function InvoicesScreen() {
             {!current
               ? ' '
               : unpaid > 0
-                ? `${unpaid} invoice${unpaid === 1 ? '' : 's'} awaiting payment`
-                : "You're all paid up"}
+                ? t('invoices.awaitingPayment', { count: unpaid })
+                : t('invoices.allPaidUp')}
           </Text>
         </View>
       </View>
@@ -70,7 +72,7 @@ export default function InvoicesScreen() {
         <View style={styles.payNote}>
           <Ionicons name="business-outline" size={18} color={colors.slate} />
           <Text style={styles.payNoteText}>
-            Pay at the clinic's front desk. Online payment isn't available in the app yet.
+            {t('invoices.payAtDeskNoOnline')}
           </Text>
         </View>
       ) : null}
@@ -106,7 +108,7 @@ export default function InvoicesScreen() {
     empty = (
       <View style={styles.empty}>
         <Text style={styles.emptyText}>{list.error}</Text>
-        <Button title="Try Again" variant="secondary" onPress={list.reload} style={styles.stretch} />
+        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={list.reload} style={styles.stretch} />
       </View>
     );
   } else {
@@ -115,9 +117,9 @@ export default function InvoicesScreen() {
         <View style={styles.emptyIcon}>
           <Ionicons name="receipt-outline" size={32} color={colors.primary} />
         </View>
-        <Text style={styles.emptyTitle}>{filter === 'all' ? 'No invoices yet' : 'Nothing here'}</Text>
+        <Text style={styles.emptyTitle}>{filter === 'all' ? t('invoices.emptyTitle') : t('invoices.emptyFilteredTitle')}</Text>
         <Text style={styles.emptyText}>
-          {filter === 'all' ? 'Bills from your clinic visits will show up here.' : 'No invoices with this status.'}
+          {filter === 'all' ? t('invoices.emptyBody') : t('invoices.emptyFilteredBody')}
         </Text>
       </View>
     );
@@ -142,6 +144,7 @@ export default function InvoicesScreen() {
 }
 
 function InvoiceRow({ invoice }: { invoice: Invoice }) {
+  const t = useT();
   const look = invoiceLook(invoice);
   const balance = balanceOf(invoice);
   const paidOn = lastPaymentDate(invoice);
@@ -151,14 +154,18 @@ function InvoiceRow({ invoice }: { invoice: Invoice }) {
       style={styles.row}
       onPress={() => router.push(`/patient/invoices/${invoice._id}`)}
       accessibilityRole="button"
-      accessibilityLabel={`Invoice ${invoice.invoiceNumber ?? ''}, ${formatMoney(invoice.total)}, ${invoice.status}`}
+      accessibilityLabel={t('invoices.rowA11y', {
+        number: invoice.invoiceNumber ?? '',
+        amount: formatMoney(invoice.total),
+        status: t(`common.invoice.${invoice.status}`),
+      })}
     >
       <View style={[styles.tile, { backgroundColor: look.bg }]}>
         <Ionicons name={look.icon} size={24} color={look.fg} />
       </View>
       <View style={styles.flex}>
         <Text style={styles.rowTitle} numberOfLines={1}>
-          {invoice.invoiceNumber ?? 'Invoice'}
+          {invoice.invoiceNumber ?? t('invoices.invoice')}
         </Text>
         <Text style={styles.rowSub}>{look.label}</Text>
         <Text style={styles.rowMeta}>{formatDate(invoice.createdAt)}</Text>
@@ -172,9 +179,9 @@ function InvoiceRow({ invoice }: { invoice: Invoice }) {
         <Text style={styles.amount}>{formatMoney(invoice.total)}</Text>
         <InvoiceStatusPill status={invoice.status} />
         {invoice.status === 'paid' && paidOn ? (
-          <Text style={styles.rowMeta}>Paid {formatDate(paidOn)}</Text>
+          <Text style={styles.rowMeta}>{t('invoices.paidOn', { date: formatDate(paidOn) })}</Text>
         ) : balance > 0 ? (
-          <Text style={styles.due}>Balance {formatMoney(balance)}</Text>
+          <Text style={styles.due}>{t('invoices.balanceAmount', { amount: formatMoney(balance) })}</Text>
         ) : null}
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />

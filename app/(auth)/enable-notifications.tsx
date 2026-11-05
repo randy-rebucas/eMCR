@@ -8,8 +8,9 @@ import { registerForPushNotifications, shouldAskForNotifications } from '@/lib/p
 import { colors, radius, spacing } from '@/lib/theme';
 import { Button, LoadingView } from '@/components/ui';
 import { AuthHeader, AuthScreen, TextLink, useBlockHardwareBack } from '@/components/auth';
+import { useT } from '@/lib/i18n';
 
-const BENEFITS = ['Appointment reminders', 'Lab result notifications', 'Queue updates'];
+const BENEFITS = ['auth.notify.reminders', 'auth.notify.results', 'auth.notify.queue'] as const;
 
 /**
  * Explains notifications before the OS permission dialog. Every fresh sign-in
@@ -18,6 +19,7 @@ const BENEFITS = ['Appointment reminders', 'Lab result notifications', 'Queue up
  */
 export default function EnableNotificationsScreen() {
   const { signedIn } = useAuth();
+  const t = useT();
   const [needed, setNeeded] = useState<boolean | null>(null);
   const [asking, setAsking] = useState(false);
   // Back would reach the sign-in screen, which only redirects here again.
@@ -52,8 +54,8 @@ export default function EnableNotificationsScreen() {
   return (
     <AuthScreen>
       <AuthHeader
-        title="Stay Updated"
-        subtitle="Allow notifications so you don't miss important updates about your appointments, results and more."
+        title={t('auth.notify.title')}
+        subtitle={t('auth.notify.subtitle')}
       />
 
       <View style={styles.art} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
@@ -67,13 +69,13 @@ export default function EnableNotificationsScreen() {
         {BENEFITS.map((label) => (
           <View key={label} style={styles.item}>
             <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
-            <Text style={styles.itemText}>{label}</Text>
+            <Text style={styles.itemText}>{t(label)}</Text>
           </View>
         ))}
       </View>
 
-      <Button title="Allow Notifications" onPress={allow} loading={asking} />
-      <TextLink title="Not Now" onPress={done} disabled={asking} style={styles.later} />
+      <Button title={t('auth.notify.allow')} onPress={allow} loading={asking} />
+      <TextLink title={t('auth.notify.notNow')} onPress={done} disabled={asking} style={styles.later} />
     </AuthScreen>
   );
 }

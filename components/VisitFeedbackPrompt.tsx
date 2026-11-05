@@ -28,12 +28,13 @@ import {
 } from '@/lib/visitFeedback';
 import { Banner, Button } from '@/components/ui';
 import { softShadow } from '@/components/AppHeader';
+import { t as translate, useT } from '@/lib/i18n';
 
 function visitLine(visit: PendingFeedback): string {
   const parts = [
-    visit.providerName ? `with ${visit.providerName}` : null,
-    visit.clinicName ? `at ${visit.clinicName}` : null,
-    `on ${formatDate(visit.visitDate, { month: 'long', day: 'numeric' })}`,
+    visit.providerName ? translate('patient.feedback.with', { name: visit.providerName }) : null,
+    visit.clinicName ? translate('patient.feedback.at', { clinic: visit.clinicName }) : null,
+    translate('patient.feedback.on', { date: formatDate(visit.visitDate, { month: 'long', day: 'numeric' }) }),
   ];
   return parts.filter(Boolean).join(' ');
 }
@@ -43,6 +44,7 @@ function visitLine(visit: PendingFeedback): string {
  * app session; tapping it opens a short form (the same questions as the SMS/email link).
  */
 export function VisitFeedbackPrompt() {
+  const t = useT();
   const pending = useApiData<PendingFeedback[]>(PENDING_FEEDBACK_PATH);
   const [, setHiddenCount] = useState(0);
   const [open, setOpen] = useState<PendingFeedback | null>(null);
@@ -63,21 +65,21 @@ export function VisitFeedbackPrompt() {
             style={[styles.row, styles.flex]}
             onPress={() => setOpen(visit)}
             accessibilityRole="button"
-            accessibilityLabel={`How was your visit ${visitLine(visit)}? Rate it`}
+            accessibilityLabel={t('patient.feedback.cardA11y', { visit: visitLine(visit) })}
           >
             <View style={styles.tile}>
               <Ionicons name="star-outline" size={24} color={colors.primary} />
             </View>
             <View style={styles.flex}>
-              <Text style={styles.title}>How was your visit?</Text>
-              <Text style={styles.meta}>{visitLine(visit)}. Tap to rate it.</Text>
+              <Text style={styles.title}>{t('patient.feedback.title')}</Text>
+              <Text style={styles.meta}>{t('patient.feedback.tapToRate', { visit: visitLine(visit) })}</Text>
             </View>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.close}
             onPress={() => hide(visit.visitId)}
             accessibilityRole="button"
-            accessibilityLabel="Not now"
+            accessibilityLabel={t('patient.feedback.notNow')}
             hitSlop={8}
           >
             <Ionicons name="close" size={20} color={colors.textMuted} />
@@ -109,6 +111,7 @@ export function VisitFeedbackPrompt() {
 }
 
 function FeedbackForm({ visit, onClose }: { visit: PendingFeedback; onClose: (answered: boolean) => void }) {
+  const t = useT();
   const [answers, setAnswers] = useState<Partial<FeedbackAnswers>>({});
   const [comments, setComments] = useState('');
   const [sending, setSending] = useState(false);
@@ -117,7 +120,7 @@ function FeedbackForm({ visit, onClose }: { visit: PendingFeedback; onClose: (an
 
   async function send() {
     if (!answers.overallRating) {
-      setError('Choose how many stars to give your visit.');
+      setError(t('patient.feedback.chooseStars'));
       return;
     }
     setSending(true);
@@ -126,7 +129,7 @@ function FeedbackForm({ visit, onClose }: { visit: PendingFeedback; onClose: (an
       await submitVisitFeedback(visit.visitId, { ...answers, overallRating: answers.overallRating, comments });
       setDone(true);
     } catch (err) {
-      setError(errorMessage(err, "Your feedback couldn't be sent. Please try again."));
+      setError(errorMessage(err, t('patient.feedback.sendFailed')));
     } finally {
       setSending(false);
     }
@@ -139,12 +142,14 @@ function FeedbackForm({ visit, onClose }: { visit: PendingFeedback; onClose: (an
           <Ionicons name="heart" size={36} color={colors.primary} />
         </View>
         <Text style={styles.sheetTitle} accessibilityRole="header">
-          Thank you!
+          {t('patient.feedback.thanks')}
         </Text>
         <Text style={[styles.meta, styles.center]}>
-          {visit.clinicName ? `${visit.clinicName} reads` : 'Your clinic reads'} every answer to make visits better.
+          {visit.clinicName
+            ? t('patient.feedback.clinicReads', { clinic: visit.clinicName })
+            : t('patient.feedback.yourClinicReads')}
         </Text>
-        <Button title="Done" onPress={() => onClose(true)} style={styles.stretch} />
+        <Button title={t('common.done')} onPress={() => onClose(true)} style={styles.stretch} />
       </SafeAreaView>
     );
   }
@@ -154,24 +159,24 @@ function FeedbackForm({ visit, onClose }: { visit: PendingFeedback; onClose: (an
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle} accessibilityRole="header">
-            How was your visit?
+            {t('patient.feedback.title')}
           </Text>
-          <TouchableOpacity onPress={() => onClose(false)} accessibilityRole="button" accessibilityLabel="Close" hitSlop={8}>
+          <TouchableOpacity onPress={() => onClose(false)} accessibilityRole="button" accessibilityLabel={t('patient.feedback.close')} hitSlop={8}>
             <Ionicons name="close" size={26} color={colors.text} />
           </TouchableOpacity>
         </View>
         <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
           <Text style={styles.meta}>{visitLine(visit)}</Text>
 
-          <Text style={styles.label}>Overall</Text>
+          <Text style={styles.label}>{t('patient.feedback.overall')}</Text>
           <Stars
-            label="Overall"
+            label={t('patient.feedback.overall')}
             size={36}
             value={answers.overallRating}
             onChange={(v) => setAnswers((a) => ({ ...a, overallRating: v }))}
           />
 
-          <Text style={[styles.label, styles.gapTop]}>Tell us more (optional)</Text>
+          <Text style={[styles.label, styles.gapTop]}>{t('patient.feedback.tellMore')}</Text>
           {DETAIL_RATINGS.map((r) => (
             <View key={r.key} style={styles.detailRow}>
               <Text style={styles.detailLabel}>{r.label}</Text>
@@ -184,11 +189,11 @@ function FeedbackForm({ visit, onClose }: { visit: PendingFeedback; onClose: (an
             </View>
           ))}
 
-          <Text style={[styles.label, styles.gapTop]}>Would you recommend this clinic?</Text>
+          <Text style={[styles.label, styles.gapTop]}>{t('patient.feedback.recommend')}</Text>
           <View style={styles.choices}>
             {[
-              { label: 'Yes', value: true },
-              { label: 'No', value: false },
+              { label: t('patient.feedback.yes'), value: true },
+              { label: t('patient.feedback.no'), value: false },
             ].map((c) => {
               const selected = answers.wouldRecommend === c.value;
               return (
@@ -205,22 +210,22 @@ function FeedbackForm({ visit, onClose }: { visit: PendingFeedback; onClose: (an
             })}
           </View>
 
-          <Text style={[styles.label, styles.gapTop]}>Comments (optional)</Text>
+          <Text style={[styles.label, styles.gapTop]}>{t('patient.feedback.comments')}</Text>
           <TextInput
             style={styles.input}
             value={comments}
             onChangeText={setComments}
-            placeholder="What went well, or what could be better?"
+            placeholder={t('patient.feedback.commentsPlaceholder')}
             placeholderTextColor={colors.textMuted}
             multiline
             maxLength={COMMENTS_MAX}
             textAlignVertical="top"
-            accessibilityLabel="Comments"
+            accessibilityLabel={t('patient.feedback.commentsA11y')}
           />
 
           {error ? <Banner message={error} /> : null}
-          <Button title="Send feedback" onPress={send} loading={sending} style={styles.gapTop} />
-          <Text style={[styles.meta, styles.center, styles.gapTop]}>Your answers go to the clinic only.</Text>
+          <Button title={t('patient.feedback.send')} onPress={send} loading={sending} style={styles.gapTop} />
+          <Text style={[styles.meta, styles.center, styles.gapTop]}>{t('patient.feedback.private')}</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -238,8 +243,9 @@ function Stars({
   onChange: (value: number) => void;
   size: number;
 }) {
+  const t = useT();
   return (
-    <View style={styles.stars} accessibilityRole="radiogroup" accessibilityLabel={`${label} rating`}>
+    <View style={styles.stars} accessibilityRole="radiogroup" accessibilityLabel={t('patient.feedback.ratingA11y', { label })}>
       {[1, 2, 3, 4, 5].map((n) => {
         const on = !!value && n <= value;
         return (
@@ -248,7 +254,7 @@ function Stars({
             onPress={() => onChange(n)}
             accessibilityRole="radio"
             accessibilityState={{ selected: value === n }}
-            accessibilityLabel={`${n} star${n === 1 ? '' : 's'}`}
+            accessibilityLabel={t('patient.feedback.stars', { count: n })}
             style={styles.star}
           >
             <Ionicons name={on ? 'star' : 'star-outline'} size={size} color={on ? '#E0A400' : colors.border} />

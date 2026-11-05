@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ApiError, errorMessage } from '@/lib/api';
 import { useApiData } from '@/lib/useApiData';
-import { possessive, useProfile } from '@/lib/profile';
+import { useProfile } from '@/lib/profile';
 import { formatDateTime } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import {
@@ -32,6 +32,7 @@ import {
 import { Badge, Banner, Button, IconName, LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
+import { possessiveName, useT } from '@/lib/i18n';
 
 /**
  * Share the health summary with another doctor: a link to the PDF that works until it expires
@@ -39,6 +40,7 @@ import { ErrorState } from '@/components/ErrorState';
  * often each was opened. Honours the family profile being viewed (the API answers for it).
  */
 export default function ShareScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const { viewing } = useProfile();
   const { data, setData, loading, refreshing, error, refresh } = useApiData<ShareLinkList>(SHARE_LINKS_PATH, {
@@ -58,23 +60,22 @@ export default function ShareScreen() {
     setCreateError(null);
   }, [viewing?.id]);
 
-  const whose = possessive(viewing);
-  const whoseInText = whose === 'Your' ? 'your' : whose;
+  const other = viewing && !viewing.self ? viewing.firstName : null;
   const links = data?.links ?? [];
   const activeCount = links.filter((l) => l.status === 'active').length;
   const atLimit = data ? activeCount >= data.maxActive : false;
 
   async function share(url: string, link: ShareLink) {
-    const until = `Opens until ${formatDateTime(link.expiresAt)}.`;
+    const until = t('share.opensUntil', { date: formatDateTime(link.expiresAt) });
     try {
       await Share.share(
         Platform.OS === 'ios'
-          ? { url, message: `Health summary (PDF). ${until}` }
-          : { title: 'Health summary', message: `Health summary (PDF): ${url}\n${until}` },
-        { dialogTitle: 'Share health summary', subject: 'Health summary' }
+          ? { url, message: t('share.messageIos', { until }) }
+          : { title: t('share.shareTitle'), message: t('share.messageAndroid', { url, until }) },
+        { dialogTitle: t('share.dialogTitle'), subject: t('share.shareTitle') }
       );
     } catch {
-      Alert.alert('Couldn’t open sharing', 'Try again, or revoke this link if you no longer need it.');
+      Alert.alert(t('share.shareFailedTitle'), t('share.shareFailedText'));
     }
   }
 
@@ -91,7 +92,7 @@ export default function ShareScreen() {
       setCreateError(
         err instanceof ApiError && err.code === 'SHARE_LINK_LIMIT'
           ? err.message
-          : errorMessage(err, 'Couldn’t create the link. Check your connection and try again.')
+          : errorMessage(err, t('share.createFailed'))
       );
     } finally {
       setCreating(false);
@@ -100,12 +101,12 @@ export default function ShareScreen() {
 
   function confirmRevoke(link: ShareLink) {
     Alert.alert(
-      'Revoke this link?',
-      `${link.label ? `“${link.label}” ` : 'Anyone with the link '}will no longer be able to open the health summary. This can’t be undone.`,
+      t('share.revokeTitle'),
+      link.label ? t('share.revokeNamed', { label: link.label }) : t('share.revokeAnyone'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Revoke',
+          text: t('share.revoke'),
           style: 'destructive',
           onPress: async () => {
             setRevoking(link.id);
@@ -114,7 +115,7 @@ export default function ShareScreen() {
               setData((prev) => (prev ? { ...prev, links: prev.links.map((l) => (l.id === updated.id ? updated : l)) } : prev));
               setFresh((f) => (f?.link.id === updated.id ? null : f));
             } catch (err) {
-              Alert.alert('Couldn’t revoke', errorMessage(err, 'Please try again.'));
+              Alert.alert(t('share.revokeFailed'), errorMessage(err, t('share.revokeFailedFallback')));
             } finally {
               setRevoking(null);
             }
@@ -128,9 +129,11 @@ export default function ShareScreen() {
     <SafeAreaView edges={['top']}>
       <AppHeader back />
       <Text style={styles.title} accessibilityRole="header">
-        Share with a doctor
+        {t('share.title')}
       </Text>
-      <Text style={styles.subtitle}>Send {whoseInText} health summary to another doctor with a link you can revoke.</Text>
+      <Text style={styles.subtitle}>
+        {other ? t('share.subtitleOther', { whose: possessiveName(other) }) : t('share.subtitleSelf')}
+      </Text>
     </SafeAreaView>
   );
 
@@ -155,17 +158,16 @@ export default function ShareScreen() {
 
       <View style={styles.explain}>
         <Info icon="document-text-outline">
-          The link opens a PDF of {whoseInText} allergies, medicines, conditions and vaccinations from the clinics
-          you can see in this app.
+          {other ? t('share.infoPdfOther', { whose: possessiveName(other) }) : t('share.infoPdfSelf')}
         </Info>
         <Info icon="people-outline" warn>
-          Anyone who has the link can open it, until it expires or you revoke it. Only send it to people you trust.
+          {t('share.infoAnyone')}
         </Info>
-        <Info icon="eye-outline">Each time it is opened, it is recorded and shown below.</Info>
+        <Info icon="eye-outline">{t('share.infoTracked')}</Info>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.label}>How long should it work?</Text>
+        <Text style={styles.label}>{t('share.howLong')}</Text>
         <View style={styles.chips} accessibilityRole="radiogroup">
           {DURATIONS.map((d) => {
             const selected = d.value === duration;
@@ -183,23 +185,23 @@ export default function ShareScreen() {
           })}
         </View>
 
-        <Text style={[styles.label, { marginTop: spacing.md }]}>Who is it for? (optional)</Text>
+        <Text style={[styles.label, { marginTop: spacing.md }]}>{t('share.whoFor')}</Text>
         <TextInput
           style={styles.input}
           value={label}
           onChangeText={setLabel}
-          placeholder="e.g. Dr. Santos, cardiology"
+          placeholder={t('share.whoForPlaceholder')}
           placeholderTextColor={colors.textMuted}
           maxLength={LABEL_MAX}
           autoCapitalize="words"
           returnKeyType="done"
-          accessibilityLabel="Who is it for? Optional"
+          accessibilityLabel={t('share.whoForA11y')}
         />
-        <Text style={styles.hint}>Only you see this, to tell your links apart.</Text>
+        <Text style={styles.hint}>{t('share.whoForHint')}</Text>
 
         {createError ? <Banner message={createError} /> : null}
         <Button
-          title="Create link and share"
+          title={t('share.create')}
           icon="share-outline"
           onPress={create}
           loading={creating}
@@ -207,21 +209,19 @@ export default function ShareScreen() {
           style={{ marginTop: spacing.md }}
         />
         {atLimit ? (
-          <Text style={styles.hint}>You have {activeCount} active links, the most allowed. Revoke one to make another.</Text>
+          <Text style={styles.hint}>{t('share.atLimit', { count: activeCount })}</Text>
         ) : null}
       </View>
 
       {fresh && fresh.link.status === 'active' ? (
         <View style={styles.fresh}>
-          <Text style={styles.freshText}>
-            Link created. For privacy it is shown only now: if you lose it, revoke it and make a new one.
-          </Text>
-          <Button title="Share again" variant="secondary" icon="share-outline" onPress={() => share(fresh.url, fresh.link)} />
+          <Text style={styles.freshText}>{t('share.created')}</Text>
+          <Button title={t('share.shareAgain')} variant="secondary" icon="share-outline" onPress={() => share(fresh.url, fresh.link)} />
         </View>
       ) : null}
 
       <Text style={styles.sectionTitle} accessibilityRole="header">
-        Shared links
+        {t('share.sharedLinks')}
       </Text>
       {error && !data ? (
         <ErrorState message={error} onRetry={refresh} />
@@ -238,36 +238,39 @@ export default function ShareScreen() {
           ))}
         </View>
       ) : (
-        <Text style={styles.empty}>No links yet. Links you make appear here, with how often they were opened.</Text>
+        <Text style={styles.empty}>{t('share.empty')}</Text>
       )}
     </ScrollView>
   );
 }
 
 function LinkRow({ link, last, revoking, onRevoke }: { link: ShareLink; last: boolean; revoking: boolean; onRevoke: () => void }) {
+  const t = useT();
   const ended =
     link.status === 'revoked'
-      ? `Revoked ${formatDateTime(link.revokedAt)}`
+      ? t('share.revokedAt', { date: formatDateTime(link.revokedAt) })
       : link.status === 'expired'
-        ? `Expired ${formatDateTime(link.expiresAt)}`
-        : `Expires ${formatDateTime(link.expiresAt)}`;
+        ? t('share.expiredAt', { date: formatDateTime(link.expiresAt) })
+        : t('share.expiresAt', { date: formatDateTime(link.expiresAt) });
   const opened =
     link.accessCount === 0
-      ? 'Not opened yet'
-      : `Opened ${link.accessCount === 1 ? 'once' : `${link.accessCount} times`} · last ${formatDateTime(link.lastAccessedAt)}`;
+      ? t('share.notOpened')
+      : t('share.opened', { count: link.accessCount, date: formatDateTime(link.lastAccessedAt) });
   return (
     <View style={[styles.row, !last && styles.divider]}>
       <View style={styles.rowTop}>
         <Text style={[styles.rowTitle, link.status !== 'active' && styles.muted]} numberOfLines={2}>
-          {link.label || 'Link without a name'}
+          {link.label || t('share.noName')}
         </Text>
         <Badge label={STATUS_LABEL[link.status]} tone={link.status === 'active' ? 'primary' : link.status === 'revoked' ? 'danger' : 'neutral'} />
       </View>
-      <Text style={styles.rowLine}>Created {formatDateTime(link.createdAt)}{link.sharedByFamily ? ' by a family manager' : ''}</Text>
+      <Text style={styles.rowLine}>
+        {t(link.sharedByFamily ? 'share.createdByFamily' : 'share.createdAt', { date: formatDateTime(link.createdAt) })}
+      </Text>
       <Text style={styles.rowLine}>{ended}</Text>
       <Text style={styles.rowLine}>{opened}</Text>
       {link.status === 'active' ? (
-        <Button title="Revoke" variant="dangerOutline" icon="close-circle-outline" onPress={onRevoke} loading={revoking} style={styles.revoke} />
+        <Button title={t('share.revoke')} variant="dangerOutline" icon="close-circle-outline" onPress={onRevoke} loading={revoking} style={styles.revoke} />
       ) : null}
     </View>
   );

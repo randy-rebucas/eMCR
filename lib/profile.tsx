@@ -4,6 +4,7 @@ import { apiRequest, setActiveProfileId, setProfileLostHandler } from './api';
 import { useAuth } from './auth';
 import { clearDocumentCache } from './documents';
 import { useRefreshOn } from './events';
+import { t } from './i18n';
 import { FamilyMember, FamilyOverview } from './types';
 
 /** The person whose records the app is showing. */
@@ -99,7 +100,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     setProfileLostHandler((message) => {
       switchTo(null);
       refreshFamily();
-      Alert.alert('Switched back to you', message);
+      Alert.alert(t('patient.switchedBack'), message);
     });
     return () => setProfileLostHandler(null);
   }, [refreshFamily, switchTo]);

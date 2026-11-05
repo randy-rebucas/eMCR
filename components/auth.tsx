@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { ComponentRef, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   BackHandler,
   KeyboardAvoidingView,
@@ -202,7 +202,7 @@ export function OtpInput({
   autoFocus?: boolean;
 }) {
   const t = useT();
-  const input = useRef<TextInput>(null);
+  const input = useRef<ComponentRef<typeof TextInput>>(null);
   const [focused, setFocused] = useState(autoFocus);
   const digits = value.split('');
   return (

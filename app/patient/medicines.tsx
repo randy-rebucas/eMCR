@@ -15,7 +15,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/lib/auth';
-import { possessive, useProfile } from '@/lib/profile';
+import { useProfile } from '@/lib/profile';
 import { useApiData } from '@/lib/useApiData';
 import { Prescription } from '@/lib/types';
 import { formatDate } from '@/lib/format';
@@ -45,15 +45,16 @@ import {
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
+import { PlainKey, possessiveName, useT } from '@/lib/i18n';
 
 const MAX_TIMES = 6;
 const STEP_MIN = 30;
 
-const STATUS: Record<DoseStatus, { label: string; fg: string; bg: string; icon: keyof typeof Ionicons.glyphMap }> = {
-  taken: { label: 'Taken', fg: colors.primaryOnSoft, bg: colors.primarySoft, icon: 'checkmark-circle' },
-  due: { label: 'Due now', fg: colors.warning, bg: colors.warningSoft, icon: 'alarm-outline' },
-  missed: { label: 'Missed', fg: colors.danger, bg: colors.dangerSoft, icon: 'close-circle-outline' },
-  upcoming: { label: 'Later', fg: colors.slate, bg: colors.slateSoft, icon: 'time-outline' },
+const STATUS: Record<DoseStatus, { label: PlainKey; fg: string; bg: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  taken: { label: 'medicines.status.taken', fg: colors.primaryOnSoft, bg: colors.primarySoft, icon: 'checkmark-circle' },
+  due: { label: 'medicines.status.due', fg: colors.warning, bg: colors.warningSoft, icon: 'alarm-outline' },
+  missed: { label: 'medicines.status.missed', fg: colors.danger, bg: colors.dangerSoft, icon: 'close-circle-outline' },
+  upcoming: { label: 'medicines.status.upcoming', fg: colors.slate, bg: colors.slateSoft, icon: 'time-outline' },
 };
 
 /**
@@ -62,6 +63,7 @@ const STATUS: Record<DoseStatus, { label: string; fg: string; bg: string; icon: 
  * this phone. Opened from a reminder with `?slot=HH:mm` to show what's due.
  */
 export default function MedicinesScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const { slot } = useLocalSearchParams<{ slot?: string }>();
   const { patient } = useAuth();
@@ -133,7 +135,7 @@ export default function MedicinesScreen() {
       setSchedule(await setMedicineReminder(owner, profile, medicine, times));
       setEditing(({ [medicine.key]: _, ...rest }) => rest);
     } catch {
-      setSaveError("Couldn't save your reminders. Please try again.");
+      setSaveError(t('medicines.saveFailed'));
     } finally {
       setBusy(null);
     }
@@ -155,7 +157,7 @@ export default function MedicinesScreen() {
     try {
       setSchedule(await setDoseTaken(owner, profile.id, key, time, taken));
     } catch {
-      setSaveError("Couldn't save that. Please try again.");
+      setSaveError(t('medicines.markFailed'));
     }
   }
 
@@ -177,7 +179,6 @@ export default function MedicinesScreen() {
   }, [schedule, medicines, now]);
 
   const hasReminders = (schedule?.meds.length ?? 0) > 0;
-  const whose = possessive(viewing);
 
   return (
     <ScrollView
@@ -189,10 +190,12 @@ export default function MedicinesScreen() {
       <SafeAreaView edges={['top']}>
         <AppHeader back />
         <Text style={styles.title} accessibilityRole="header">
-          Medicine Reminders
+          {t('medicines.title')}
         </Text>
         <Text style={styles.subtitle}>
-          {whose} medicines from current prescriptions. Reminders are kept on this phone only.
+          {!viewing || viewing.self
+            ? t('medicines.subtitleSelf')
+            : t('medicines.subtitleOther', { whose: possessiveName(viewing.firstName) })}
         </Text>
       </SafeAreaView>
 
@@ -205,7 +208,7 @@ export default function MedicinesScreen() {
       {doses.length ? (
         <>
           <Text style={styles.groupTitle} accessibilityRole="header">
-            Today
+            {t('medicines.today')}
           </Text>
           <View style={[styles.card, styles.list]}>
             {doses.map((d, i) => {
@@ -224,7 +227,7 @@ export default function MedicinesScreen() {
                     {d.medicine.med.dose ? <Text style={styles.rowDetail}>{d.medicine.med.dose}</Text> : null}
                     <View style={[styles.pill, { backgroundColor: s.bg }]}>
                       <Ionicons name={s.icon} size={13} color={s.fg} />
-                      <Text style={[styles.pillText, { color: s.fg }]}>{s.label}</Text>
+                      <Text style={[styles.pillText, { color: s.fg }]}>{t(s.label)}</Text>
                     </View>
                   </View>
                   {d.status === 'upcoming' ? null : (
@@ -235,8 +238,8 @@ export default function MedicinesScreen() {
                       accessibilityState={{ checked: d.status === 'taken' }}
                       accessibilityLabel={
                         d.status === 'taken'
-                          ? `Undo taken for ${d.medicine.med.name} at ${formatSlot(d.time)}`
-                          : `Mark ${d.medicine.med.name} at ${formatSlot(d.time)} as taken`
+                          ? t('medicines.undoA11y', { name: d.medicine.med.name, time: formatSlot(d.time) })
+                          : t('medicines.markA11y', { name: d.medicine.med.name, time: formatSlot(d.time) })
                       }
                     >
                       <Ionicons
@@ -245,7 +248,7 @@ export default function MedicinesScreen() {
                         color={d.status === 'taken' ? colors.primary : colors.primaryText}
                       />
                       <Text style={[styles.takenText, d.status === 'taken' && styles.takenTextOn]}>
-                        {d.status === 'taken' ? 'Undo' : 'Taken'}
+                        {d.status === 'taken' ? t('medicines.undo') : t('medicines.taken')}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -257,20 +260,20 @@ export default function MedicinesScreen() {
       ) : null}
 
       <Text style={styles.groupTitle} accessibilityRole="header">
-        Medicines
+        {t('medicines.medicines')}
       </Text>
       {loading && !data ? (
         <ActivityIndicator color={colors.primary} style={styles.loading} />
       ) : error && !data ? (
         <View style={styles.card}>
           <Text style={styles.bodyText}>{error}</Text>
-          <Button title="Try Again" variant="secondary" icon="refresh" onPress={refresh} style={styles.retry} />
+          <Button title={t('common.tryAgainTitle')} variant="secondary" icon="refresh" onPress={refresh} style={styles.retry} />
         </View>
       ) : !medicines.length ? (
         <View style={[styles.card, styles.empty]}>
           <Ionicons name="medical-outline" size={32} color={colors.primary} />
-          <Text style={styles.emptyTitle}>No current medicines</Text>
-          <Text style={styles.rowDetail}>Medicines on your current prescriptions will show up here.</Text>
+          <Text style={styles.emptyTitle}>{t('medicines.empty.title')}</Text>
+          <Text style={styles.rowDetail}>{t('medicines.empty.text')}</Text>
         </View>
       ) : (
         medicines.map((m) => (
@@ -288,10 +291,7 @@ export default function MedicinesScreen() {
         ))
       )}
 
-      <Text style={styles.footnote}>
-        Reminders don't show medicine names on your lock screen. They stop when a course ends or a prescription is
-        no longer active. Always follow your doctor's instructions.
-      </Text>
+      <Text style={styles.footnote}>{t('medicines.footnote')}</Text>
     </ScrollView>
   );
 }
@@ -317,6 +317,7 @@ function MedicineCard({
   onCancel: () => void;
   onSave: (times: string[]) => void;
 }) {
+  const t = useT();
   const { med } = medicine;
   const title = [med.name, med.strength].filter(Boolean).join(' ');
   const dosage = [med.dose, frequencyLabel(med.frequency)].filter(Boolean).join(' · ');
@@ -325,8 +326,8 @@ function MedicineCard({
     medicine.end === null
       ? null
       : left !== null && left <= 1
-        ? 'Last day today'
-        : `Until ${formatDate(new Date(medicine.end - 1), { month: 'short', day: 'numeric' })}`;
+        ? t('medicines.lastDay')
+        : t('medicines.until', { date: formatDate(new Date(medicine.end - 1), { month: 'short', day: 'numeric' }) });
   const suggestion = suggestTimes(med.frequency);
   const on = times !== null || draft !== null;
 
@@ -349,7 +350,7 @@ function MedicineCard({
           trackColor={{ false: colors.border, true: colors.accent }}
           thumbColor={colors.surface}
           ios_backgroundColor={colors.border}
-          accessibilityLabel={`Reminders for ${title}`}
+          accessibilityLabel={t('medicines.remindersFor', { name: title })}
         />
       </View>
 
@@ -368,11 +369,11 @@ function MedicineCard({
           <Ionicons name="alarm-outline" size={18} color={colors.primary} />
           <Text style={[styles.bodyText, styles.flex]}>{times.map(formatSlot).join(', ')}</Text>
           <TouchableOpacity onPress={() => onEdit(times)} accessibilityRole="button" hitSlop={8}>
-            <Text style={styles.linkText}>Change times</Text>
+            <Text style={styles.linkText}>{t('medicines.changeTimes')}</Text>
           </TouchableOpacity>
         </View>
       ) : suggestion.kind === 'prn' ? (
-        <Text style={styles.hint}>Taken as needed, so no reminder is set.</Text>
+        <Text style={styles.hint}>{t('medicines.prnNoReminder')}</Text>
       ) : null}
     </View>
   );
@@ -395,6 +396,7 @@ function TimeEditor({
   onCancel: () => void;
   onSave: () => void;
 }) {
+  const tr = useT();
   const shift = (i: number, by: number) =>
     onChange(sortTimes(times.map((t, j) => (j === i ? fromMinutes(toMinutes(t) + by) : t))));
   const remove = (i: number) => onChange(times.filter((_, j) => j !== i));
@@ -405,13 +407,13 @@ function TimeEditor({
 
   let note: string;
   if (suggestion.kind === 'times') {
-    note = `Suggested for ${suggestion.basis}. Check these match your doctor's instructions, then save.`;
+    note = tr('medicines.suggested', { basis: tr(suggestion.basis) });
   } else if (suggestion.kind === 'prn') {
-    note = 'This medicine is taken as needed. Add a time only if your doctor gave you a set schedule.';
+    note = tr('medicines.prnNote');
   } else {
     note = frequency?.trim()
-      ? `We couldn't tell the times from "${frequency.trim()}". Add the times your doctor told you.`
-      : 'Add the times your doctor told you to take it.';
+      ? tr('medicines.unknownFreq', { frequency: frequency.trim() })
+      : tr('medicines.noFreq');
   }
 
   return (
@@ -423,7 +425,7 @@ function TimeEditor({
             style={styles.stepBtn}
             onPress={() => shift(i, -STEP_MIN)}
             accessibilityRole="button"
-            accessibilityLabel={`Earlier than ${formatSlot(t)}`}
+            accessibilityLabel={tr('medicines.earlier', { time: formatSlot(t) })}
           >
             <Ionicons name="remove" size={20} color={colors.primary} />
           </TouchableOpacity>
@@ -434,7 +436,7 @@ function TimeEditor({
             style={styles.stepBtn}
             onPress={() => shift(i, STEP_MIN)}
             accessibilityRole="button"
-            accessibilityLabel={`Later than ${formatSlot(t)}`}
+            accessibilityLabel={tr('medicines.later', { time: formatSlot(t) })}
           >
             <Ionicons name="add" size={20} color={colors.primary} />
           </TouchableOpacity>
@@ -442,7 +444,7 @@ function TimeEditor({
             style={styles.removeBtn}
             onPress={() => remove(i)}
             accessibilityRole="button"
-            accessibilityLabel={`Remove ${formatSlot(t)}`}
+            accessibilityLabel={tr('medicines.remove', { time: formatSlot(t) })}
             hitSlop={8}
           >
             <Ionicons name="trash-outline" size={18} color={colors.danger} />
@@ -452,13 +454,13 @@ function TimeEditor({
       {times.length < MAX_TIMES ? (
         <TouchableOpacity style={styles.addBtn} onPress={add} accessibilityRole="button">
           <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-          <Text style={styles.linkText}>Add a time</Text>
+          <Text style={styles.linkText}>{tr('medicines.addTime')}</Text>
         </TouchableOpacity>
       ) : null}
       <View style={styles.editorActions}>
-        <Button title="Cancel" variant="secondary" onPress={onCancel} disabled={busy} style={styles.flex} />
+        <Button title={tr('common.cancel')} variant="secondary" onPress={onCancel} disabled={busy} style={styles.flex} />
         <Button
-          title="Save Reminders"
+          title={tr('medicines.saveReminders')}
           onPress={onSave}
           loading={busy}
           disabled={!times.length}
@@ -470,13 +472,12 @@ function TimeEditor({
 }
 
 function PermissionCard({ permission, onTurnOn }: { permission: ReminderPermission; onTurnOn: () => void }) {
+  const t = useT();
   if (permission === 'unavailable') {
     return (
       <View style={[styles.status, styles.statusOff]}>
         <Ionicons name="phone-portrait-outline" size={22} color={colors.slate} />
-        <Text style={[styles.bodyText, styles.flex]}>
-          Reminders can't alert you on this device. You can still check and mark today's doses here.
-        </Text>
+        <Text style={[styles.bodyText, styles.flex]}>{t('medicines.unavailable')}</Text>
       </View>
     );
   }
@@ -486,18 +487,18 @@ function PermissionCard({ permission, onTurnOn }: { permission: ReminderPermissi
       <View style={styles.statusRow}>
         <Ionicons name="notifications-off-outline" size={22} color={colors.warning} />
         <View style={styles.flex}>
-          <Text style={styles.statusTitle}>Notifications are off</Text>
+          <Text style={styles.statusTitle}>{t('medicines.off.title')}</Text>
           <Text style={styles.bodyText}>
             {denied
-              ? 'Your reminders are saved, but this phone won’t alert you. Turn on notifications for eMCR in your phone settings.'
-              : 'Turn on notifications so this phone can alert you when it’s time for your medicine.'}
+              ? t('medicines.off.denied')
+              : t('medicines.off.undetermined')}
           </Text>
         </View>
       </View>
       {denied ? (
-        <Button title="Open Phone Settings" icon="settings-outline" onPress={() => Linking.openSettings()} />
+        <Button title={t('medicines.openSettings')} icon="settings-outline" onPress={() => Linking.openSettings()} />
       ) : (
-        <Button title="Turn On Notifications" icon="notifications-outline" onPress={onTurnOn} />
+        <Button title={t('medicines.turnOn')} icon="notifications-outline" onPress={onTurnOn} />
       )}
     </View>
   );

@@ -19,37 +19,30 @@ import { setWelcomeSeen } from '@/lib/storage';
 import { colors, radius, spacing } from '@/lib/theme';
 import { BrandLogo } from '@/components/BrandLogo';
 import { Button } from '@/components/ui';
+import { LanguagePicker, useLanguageSummary } from '@/components/LanguagePicker';
+import { useT } from '@/lib/i18n';
 
 type Slide = {
-  key: string;
-  title: string;
-  body: string;
+  /** Text is `auth.welcome.<key>.title` and `.body`. */
+  key: 'intro' | 'appointments' | 'records' | 'notify';
   Art: (p: { size: number }) => React.ReactElement;
 };
 
 const SLIDES: Slide[] = [
   {
     key: 'intro',
-    title: 'Your Health\nin One Place',
-    body: 'Manage your appointments, medical records, prescriptions, and more — anytime, anywhere.',
     Art: IntroArt,
   },
   {
     key: 'appointments',
-    title: 'Book and Manage\nAppointments',
-    body: 'Schedule, reschedule, or cancel your clinic appointments with ease.',
     Art: AppointmentsArt,
   },
   {
     key: 'records',
-    title: 'Access Your\nMedical Records',
-    body: 'View your lab results, prescriptions, medical history, and important documents all in one secure place.',
     Art: RecordsArt,
   },
   {
     key: 'notify',
-    title: 'Stay Informed',
-    body: 'Receive notifications, payment updates, and important announcements from your clinic.',
     Art: NotifyArt,
   },
 ];
@@ -61,6 +54,9 @@ export default function WelcomeScreen() {
   const listRef = useRef<FlatList<Slide>>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const [index, setIndex] = useState(0);
+  const [pickingLanguage, setPickingLanguage] = useState(false);
+  const t = useT();
+  const languageSummary = useLanguageSummary();
 
   if (signedIn) return <Redirect href="/patient/home" />;
 
@@ -85,12 +81,25 @@ export default function WelcomeScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <View style={styles.topBar}>
+        <Pressable
+          onPress={() => setPickingLanguage(true)}
+          hitSlop={12}
+          style={styles.language}
+          accessibilityRole="button"
+          accessibilityLabel={`${t('common.language.title')}: ${languageSummary}`}
+        >
+          <Ionicons name="globe-outline" size={18} color={colors.primary} />
+          <Text style={styles.languageText} numberOfLines={1}>
+            {languageSummary}
+          </Text>
+        </Pressable>
         {index > 0 ? (
-          <Pressable onPress={finish} hitSlop={12} accessibilityRole="button" accessibilityLabel="Skip intro">
-            <Text style={styles.skip}>Skip</Text>
+          <Pressable onPress={finish} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('auth.welcome.skipA11y')}>
+            <Text style={styles.skip}>{t('common.skip')}</Text>
           </Pressable>
         ) : null}
       </View>
+      <LanguagePicker visible={pickingLanguage} onClose={() => setPickingLanguage(false)} />
 
       <Animated.FlatList
         ref={listRef}
@@ -110,16 +119,16 @@ export default function WelcomeScreen() {
               <View style={styles.introHead}>
                 <BrandLogo size="md" />
                 <Text style={[styles.title, styles.center, styles.introTitle]} accessibilityRole="header">
-                  {item.title}
+                  {t(`auth.welcome.${item.key}.title`)}
                 </Text>
-                <Text style={[styles.body, styles.center]}>{item.body}</Text>
+                <Text style={[styles.body, styles.center]}>{t(`auth.welcome.${item.key}.body`)}</Text>
               </View>
             ) : (
               <View>
                 <Text style={styles.title} accessibilityRole="header">
-                  {item.title}
+                  {t(`auth.welcome.${item.key}.title`)}
                 </Text>
-                <Text style={styles.body}>{item.body}</Text>
+                <Text style={styles.body}>{t(`auth.welcome.${item.key}.body`)}</Text>
               </View>
             )}
             <View style={styles.artWrap} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
@@ -134,7 +143,7 @@ export default function WelcomeScreen() {
       />
 
       <View style={styles.footer}>
-        <View style={styles.dots} accessibilityLabel={`Step ${index + 1} of ${SLIDES.length}`}>
+        <View style={styles.dots} accessibilityLabel={t('auth.welcome.step', { step: index + 1, total: SLIDES.length })}>
           {SLIDES.map((s, i) => {
             const range = [(i - 1) * width, i * width, (i + 1) * width];
             const w = scrollX.interpolate({ inputRange: range, outputRange: [8, 22, 8], extrapolate: 'clamp' });
@@ -143,7 +152,7 @@ export default function WelcomeScreen() {
           })}
         </View>
         <Button
-          title={index === 0 || last ? 'Get Started' : 'Next'}
+          title={index === 0 || last ? t('auth.welcome.getStarted') : t('common.next')}
           icon="arrow-forward"
           iconPosition="right"
           onPress={next}
@@ -303,11 +312,12 @@ function RowCard({ row, chevron, compact }: { row: Row; chevron?: boolean; compa
 }
 
 function RecordsArt({ size }: { size: number }) {
+  const t = useT();
   const rows: Row[] = [
-    { label: 'Lab Results', bg: colors.primarySoft, tint: '#F4FAFA', icon: <Ionicons name="flask-outline" size={20} color={colors.primary} /> },
-    { label: 'Prescriptions', bg: '#E3F5EC', tint: '#F4FBF7', icon: <MaterialCommunityIcons name="pill" size={20} color="#1F9D62" /> },
-    { label: 'Medical History', bg: '#EEEAFB', tint: '#F8F6FE', icon: <Ionicons name="document-text-outline" size={20} color="#5B47B0" /> },
-    { label: 'Imaging Reports', bg: '#FDF1DC', tint: '#FEFAF2', icon: <Ionicons name="image-outline" size={20} color="#C26A00" /> },
+    { label: t('auth.welcome.art.labResults'), bg: colors.primarySoft, tint: '#F4FAFA', icon: <Ionicons name="flask-outline" size={20} color={colors.primary} /> },
+    { label: t('auth.welcome.art.prescriptions'), bg: '#E3F5EC', tint: '#F4FBF7', icon: <MaterialCommunityIcons name="pill" size={20} color="#1F9D62" /> },
+    { label: t('auth.welcome.art.history'), bg: '#EEEAFB', tint: '#F8F6FE', icon: <Ionicons name="document-text-outline" size={20} color="#5B47B0" /> },
+    { label: t('auth.welcome.art.imaging'), bg: '#FDF1DC', tint: '#FEFAF2', icon: <Ionicons name="image-outline" size={20} color="#C26A00" /> },
   ];
   return (
     <View style={{ width: size, height: size, justifyContent: 'center' }}>
@@ -323,11 +333,12 @@ function RecordsArt({ size }: { size: number }) {
 
 function NotifyArt({ size }: { size: number }) {
   const s = size;
+  const t = useT();
   const rows: Row[] = [
-    { label: 'Appointment Reminder', bg: '#E6EEFB', tint: colors.surface, icon: <Ionicons name="calendar-outline" size={18} color="#2F5FB3" /> },
-    { label: 'Lab Result Available', bg: '#E3F5EC', tint: colors.surface, icon: <Ionicons name="document-text-outline" size={18} color="#1F9D62" /> },
-    { label: 'Payment Update', bg: '#FDF1DC', tint: colors.surface, icon: <Ionicons name="card-outline" size={18} color="#C26A00" /> },
-    { label: 'Clinic Announcement', bg: '#EEEAFB', tint: colors.surface, icon: <Ionicons name="megaphone-outline" size={18} color="#5B47B0" /> },
+    { label: t('auth.welcome.art.reminder'), bg: '#E6EEFB', tint: colors.surface, icon: <Ionicons name="calendar-outline" size={18} color="#2F5FB3" /> },
+    { label: t('auth.welcome.art.labReady'), bg: '#E3F5EC', tint: colors.surface, icon: <Ionicons name="document-text-outline" size={18} color="#1F9D62" /> },
+    { label: t('auth.welcome.art.payment'), bg: '#FDF1DC', tint: colors.surface, icon: <Ionicons name="card-outline" size={18} color="#C26A00" /> },
+    { label: t('auth.welcome.art.announcement'), bg: '#EEEAFB', tint: colors.surface, icon: <Ionicons name="megaphone-outline" size={18} color="#5B47B0" /> },
   ];
   return (
     <View style={{ width: s, height: s }}>
@@ -364,7 +375,16 @@ const shadow = {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  topBar: { height: 44, paddingHorizontal: spacing.lg, alignItems: 'flex-end', justifyContent: 'center' },
+  topBar: {
+    height: 44,
+    paddingHorizontal: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  language: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  languageText: { color: colors.primary, fontSize: 14, fontWeight: '600', flexShrink: 1 },
   skip: { color: colors.primary, fontSize: 15, fontWeight: '600' },
   slide: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   introHead: { alignItems: 'center', marginTop: -spacing.sm },

@@ -4,7 +4,7 @@ import { MessageKey, useT } from '@/lib/i18n';
 import { catalogs } from '@/lib/i18n/registry';
 
 const DANGER = new Set(['cancelled', 'no-show', 'unpaid', 'abnormal', 'critical', 'discontinued', 'closed']);
-const WARNING = new Set(['pending', 'partial', 'in-progress', 'ordered', 'open', 'inactive', 'rescheduled']);
+const WARNING = new Set(['pending', 'partial', 'in-progress', 'away', 'ordered', 'open', 'inactive', 'rescheduled']);
 const PRIMARY = new Set([
   'confirmed',
   'scheduled',

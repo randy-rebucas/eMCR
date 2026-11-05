@@ -19,6 +19,7 @@ import {
   StatusScreen,
 } from '@/components/auth';
 import { BirthDateField } from '@/components/emcr';
+import { useT } from '@/lib/i18n';
 
 const SEARCH_DELAY_MS = 350;
 
@@ -31,6 +32,7 @@ function clinicPlace(c: ClinicDirectoryEntry): string {
  * is always the same, whether or not the clinic has a matching record.
  */
 export default function RequestAccessScreen() {
+  const t = useT();
   const [clinic, setClinic] = useState<ClinicDirectoryEntry | null>(null);
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<ClinicDirectoryEntry[]>([]);
@@ -67,7 +69,7 @@ export default function RequestAccessScreen() {
           setSearchError(null);
         })
         .catch((err) => {
-          if (!cancelled) setSearchError(errorMessage(err, "Couldn't search clinics. Please try again."));
+          if (!cancelled) setSearchError(errorMessage(err, t('auth.request.searchFailed')));
         })
         .finally(() => {
           if (!cancelled) setSearching(false);
@@ -83,9 +85,9 @@ export default function RequestAccessScreen() {
     return (
       <StatusScreen
         art={<IconBadge icon="paper-plane-outline" />}
-        title="Request Sent"
+        title={t('auth.request.sentTitle')}
         message={sentMessage}
-        action={{ title: 'Done', onPress: () => (router.canGoBack() ? router.back() : router.replace('/login')) }}
+        action={{ title: t('common.done'), onPress: () => (router.canGoBack() ? router.back() : router.replace('/login')) }}
       />
     );
   }
@@ -93,13 +95,13 @@ export default function RequestAccessScreen() {
   async function submit() {
     if (inFlight.current) return;
     const fail = (message: string) => setFailure({ kind: 'message', message, status: 0 });
-    if (!clinic) return fail('Choose your clinic.');
-    if (!firstName.trim() || !lastName.trim()) return fail('Enter your first and last name as the clinic has them.');
-    if (!isValidBirthDate(dob)) return fail('Enter your birth date as YYYY-MM-DD, for example 1990-04-25.');
+    if (!clinic) return fail(t('auth.request.chooseClinic'));
+    if (!firstName.trim() || !lastName.trim()) return fail(t('auth.request.enterName'));
+    if (!isValidBirthDate(dob)) return fail(t('auth.request.enterBirthDate'));
     const contactPhone = phone.trim();
     const contactEmail = email.trim();
-    if (!contactPhone && !contactEmail) return fail('Add a phone number or email so the clinic can reach you.');
-    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) return fail('Enter a valid email address.');
+    if (!contactPhone && !contactEmail) return fail(t('auth.request.needContact'));
+    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) return fail(t('auth.invalidEmail'));
 
     inFlight.current = true;
     setFailure(null);
@@ -133,12 +135,12 @@ export default function RequestAccessScreen() {
   return (
     <AuthScreen back>
       <AuthHeader
-        title="Request Access"
-        subtitle="If your clinic doesn't have your mobile number, ask them for access. We'll send sign-in instructions to the contact details the clinic has on file, or the clinic will contact you."
+        title={t('auth.request.title')}
+        subtitle={t('auth.request.subtitle')}
       />
       {errorText ? <Banner message={errorText} /> : null}
 
-      <Text style={styles.label}>Your clinic</Text>
+      <Text style={styles.label}>{t('auth.request.yourClinic')}</Text>
       {clinic ? (
         <View style={styles.selected}>
           <Ionicons name="business-outline" size={20} color={colors.primary} />
@@ -150,16 +152,16 @@ export default function RequestAccessScreen() {
             onPress={() => setClinic(null)}
             style={styles.change}
             accessibilityRole="button"
-            accessibilityLabel="Choose a different clinic"
+            accessibilityLabel={t('auth.request.changeA11y')}
           >
-            <Text style={styles.changeText}>Change</Text>
+            <Text style={styles.changeText}>{t('auth.request.change')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <>
           <IconField
             icon="search-outline"
-            label="Search for your clinic"
+            label={t('auth.request.search')}
             value={search}
             onChangeText={setSearch}
             autoCorrect={false}
@@ -168,7 +170,7 @@ export default function RequestAccessScreen() {
           {searching ? <ActivityIndicator color={colors.primary} style={styles.searching} /> : null}
           {searchError ? <Text style={styles.searchNote}>{searchError}</Text> : null}
           {!searching && !searchError && search.trim().length >= 2 && results.length === 0 ? (
-            <Text style={styles.searchNote}>No clinics match “{search.trim()}”.</Text>
+            <Text style={styles.searchNote}>{t('auth.request.noMatch', { term: search.trim() })}</Text>
           ) : null}
           {results.length ? (
             <View style={styles.results}>
@@ -181,7 +183,7 @@ export default function RequestAccessScreen() {
                     setFailure(null);
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel={`Choose ${c.displayName || c.name}`}
+                  accessibilityLabel={t('auth.request.chooseA11y', { clinic: c.displayName || c.name })}
                 >
                   <View style={styles.flex}>
                     <Text style={styles.clinicName}>{c.displayName || c.name}</Text>
@@ -195,10 +197,10 @@ export default function RequestAccessScreen() {
         </>
       )}
 
-      <Text style={[styles.label, styles.section]}>About you</Text>
+      <Text style={[styles.label, styles.section]}>{t('auth.request.aboutYou')}</Text>
       <IconField
         icon="person-outline"
-        label="First name"
+        label={t('auth.request.firstName')}
         value={firstName}
         onChangeText={setFirstName}
         autoCapitalize="words"
@@ -208,7 +210,7 @@ export default function RequestAccessScreen() {
       />
       <IconField
         icon="person-outline"
-        label="Last name"
+        label={t('auth.request.lastName')}
         value={lastName}
         onChangeText={setLastName}
         autoCapitalize="words"
@@ -218,11 +220,11 @@ export default function RequestAccessScreen() {
       />
       <BirthDateField value={dob} onChange={setDob} />
 
-      <Text style={[styles.label, styles.section]}>How the clinic can reach you</Text>
-      <Text style={styles.hint}>Add at least one.</Text>
+      <Text style={[styles.label, styles.section]}>{t('auth.request.reach')}</Text>
+      <Text style={styles.hint}>{t('auth.request.atLeastOne')}</Text>
       <IconField
         icon="call-outline"
-        label="Mobile number"
+        label={t('auth.request.mobile')}
         value={phone}
         onChangeText={setPhone}
         keyboardType="phone-pad"
@@ -232,7 +234,7 @@ export default function RequestAccessScreen() {
       />
       <IconField
         icon="mail-outline"
-        label="Email address"
+        label={t('auth.setPw.email')}
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
@@ -244,7 +246,7 @@ export default function RequestAccessScreen() {
         onSubmitEditing={submit}
       />
 
-      <Button title="Send Request" onPress={submit} loading={submitting} />
+      <Button title={t('auth.request.send')} onPress={submit} loading={submitting} />
     </AuthScreen>
   );
 }

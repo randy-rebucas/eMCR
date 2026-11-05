@@ -21,16 +21,18 @@ import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppHeader } from '@/components/AppHeader';
 import { AppointmentCard } from '@/components/AppointmentCard';
 import { BookedSummary, BookingForm, BookingSuccess } from '@/components/BookingForm';
+import { PlainKey, useT } from '@/lib/i18n';
 
 type Segment = 'book' | 'upcoming' | 'history';
 
-const SEGMENTS: { label: string; value: Segment }[] = [
-  { label: 'Book', value: 'book' },
-  { label: 'Upcoming', value: 'upcoming' },
-  { label: 'History', value: 'history' },
+const SEGMENTS: { label: PlainKey; value: Segment }[] = [
+  { label: 'appointments.segment.book', value: 'book' },
+  { label: 'appointments.segment.upcoming', value: 'upcoming' },
+  { label: 'appointments.segment.history', value: 'history' },
 ];
 
 export default function AppointmentsScreen() {
+  const t = useT();
   const [segment, setSegment] = useState<Segment>('upcoming');
   const [booked, setBooked] = useState<BookedSummary | null>(null);
   // One newest-first list, split client-side: upcoming visits sort to the top of it anyway.
@@ -62,19 +64,19 @@ export default function AppointmentsScreen() {
       <View style={styles.titleRow}>
         <View style={styles.flex}>
           <Text style={styles.title} accessibilityRole="header">
-            Appointments
+            {t('appointments.title')}
           </Text>
-          <Text style={styles.subtitle}>Book, manage, and view your visits.</Text>
+          <Text style={styles.subtitle}>{t('appointments.subtitle')}</Text>
         </View>
         {segment !== 'book' ? (
           <TouchableOpacity
             style={styles.bookNew}
             onPress={() => choose('book')}
             accessibilityRole="button"
-            accessibilityLabel="Book new appointment"
+            accessibilityLabel={t('appointments.bookNewA11y')}
           >
             <Ionicons name="add-circle-outline" size={20} color={colors.primaryText} />
-            <Text style={styles.bookNewText}>Book New</Text>
+            <Text style={styles.bookNewText}>{t('appointments.bookNew')}</Text>
           </TouchableOpacity>
         ) : null}
       </View>
@@ -91,7 +93,7 @@ export default function AppointmentsScreen() {
               accessibilityState={{ selected }}
             >
               <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>
-                {s.label}
+                {t(s.label)}
                 {s.value === 'upcoming' && upcoming.length > 0 ? ` (${upcoming.length})` : ''}
               </Text>
             </TouchableOpacity>
@@ -122,12 +124,12 @@ export default function AppointmentsScreen() {
 
   let empty = null;
   if (segment !== 'book') {
-    if (list.loading) empty = <Text style={styles.emptyText}>Loading…</Text>;
+    if (list.loading) empty = <Text style={styles.emptyText}>{t('appointments.loading')}</Text>;
     else if (list.error && list.items.length === 0) {
       empty = (
         <View style={styles.empty}>
           <Text style={styles.emptyText}>{list.error}</Text>
-          <Button title="Try again" variant="secondary" onPress={list.reload} />
+          <Button title={t('common.tryAgain')} variant="secondary" onPress={list.reload} />
         </View>
       );
     } else if (segment === 'upcoming') {
@@ -136,16 +138,16 @@ export default function AppointmentsScreen() {
           <View style={styles.emptyIcon}>
             <Ionicons name="calendar-outline" size={36} color={colors.primary} />
           </View>
-          <Text style={styles.emptyTitle}>No upcoming appointments</Text>
-          <Text style={styles.emptyText}>Book a visit with one of your clinic's doctors.</Text>
-          <Button title="Book an Appointment" onPress={() => choose('book')} style={styles.emptyButton} />
+          <Text style={styles.emptyTitle}>{t('appointments.empty.upcomingTitle')}</Text>
+          <Text style={styles.emptyText}>{t('appointments.empty.upcomingText')}</Text>
+          <Button title={t('appointments.empty.book')} onPress={() => choose('book')} style={styles.emptyButton} />
         </View>
       );
     } else {
       empty = (
         <View style={styles.empty}>
           <Text style={styles.emptyText}>
-            {list.hasMore ? 'Loading earlier appointments…' : 'No past appointments yet.'}
+            {list.hasMore ? t('appointments.empty.loadingEarlier') : t('appointments.empty.noPast')}
           </Text>
         </View>
       );
@@ -160,9 +162,9 @@ export default function AppointmentsScreen() {
         renderItem={({ item }) =>
           segment === 'upcoming' ? <AppointmentCard appointment={item} actions /> : <AppointmentCard appointment={item} compact />
         }
-        ListHeaderComponent={header}
+        ListHeaderComponent={header ?? undefined}
         ListHeaderComponentStyle={styles.headerSpacing}
-        ListEmptyComponent={empty}
+        ListEmptyComponent={empty ?? undefined}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -174,7 +176,7 @@ export default function AppointmentsScreen() {
         ListFooterComponent={
           segment === 'history' ? (
             <ListFooter loadingMore={list.loadingMore} error={list.loadMoreError} onRetry={list.loadMore} />
-          ) : null
+          ) : undefined
         }
       />
     </KeyboardAvoidingView>

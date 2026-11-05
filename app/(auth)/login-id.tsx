@@ -6,6 +6,7 @@ import { takeIssuedLoginId } from '@/lib/emcr';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Button } from '@/components/ui';
 import { AuthHeader, AuthScreen, IconBadge, useBlockHardwareBack } from '@/components/auth';
+import { useT } from '@/lib/i18n';
 
 /**
  * Shown once after the first password is saved: the structured login ID the account was given.
@@ -13,6 +14,7 @@ import { AuthHeader, AuthScreen, IconBadge, useBlockHardwareBack } from '@/compo
  */
 export default function LoginIdScreen() {
   const { signedIn } = useAuth();
+  const t = useT();
   const [loginId] = useState(takeIssuedLoginId);
   useBlockHardwareBack();
 
@@ -25,17 +27,17 @@ export default function LoginIdScreen() {
         <IconBadge icon="key-outline" badge={{ icon: 'checkmark', tone: 'primary' }} />
       </View>
       <AuthHeader
-        title="Your eMCR Login ID"
-        subtitle="Sign in with this or your mobile number, plus your new password. You can also find it under More."
+        title={t('auth.loginId.title')}
+        subtitle={t('auth.loginId.subtitle')}
         align="center"
       />
       <View style={styles.box}>
-        <Text style={styles.id} selectable accessibilityLabel={`Login ID ${loginId}`}>
+        <Text style={styles.id} selectable accessibilityLabel={t('auth.loginId.a11y', { id: loginId })}>
           {loginId}
         </Text>
       </View>
-      <Text style={styles.note}>This is a sign-in name only. No email is sent to it.</Text>
-      <Button title="Continue" onPress={() => router.replace('/enable-notifications')} />
+      <Text style={styles.note}>{t('auth.loginId.note')}</Text>
+      <Button title={t('auth.continue')} onPress={() => router.replace('/enable-notifications')} />
     </AuthScreen>
   );
 }

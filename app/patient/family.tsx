@@ -6,12 +6,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { ApiError, apiFetch, apiRequest, errorMessage } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useProfile } from '@/lib/profile';
-import { FamilyMember, FamilyOverview, FamilySuggestion } from '@/lib/types';
+import { FAMILY_RELATIONSHIPS, FamilyMember, FamilyOverview, FamilyRelationship, FamilySuggestion } from '@/lib/types';
 import { formatDate, humanize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { OtpConfirm } from '@/components/auth';
+import { useT } from '@/lib/i18n';
 
 function age(dateOfBirth: string | null): number | null {
   if (!dateOfBirth) return null;
@@ -22,6 +23,11 @@ function age(dateOfBirth: string | null): number | null {
   return years >= 0 ? years : null;
 }
 
+/** Relationship in the app's language; any value the app doesn't know, as the server sent it. */
+function isKnownRelationship(value: string): value is FamilyRelationship {
+  return (FAMILY_RELATIONSHIPS as readonly string[]).includes(value);
+}
+
 /**
  * Family accounts: switch whose records the app shows, add children registered with this
  * phone number, and stop managing someone. Always about the signed-in person, whichever
@@ -29,6 +35,7 @@ function age(dateOfBirth: string | null): number | null {
  */
 export default function FamilyScreen() {
   const bottomPad = useBottomPadding();
+  const t = useT();
   const { viewing, family, refreshFamily, switchTo } = useProfile();
   const auth = useAuth();
   const [loading, setLoading] = useState(!family);
@@ -42,7 +49,7 @@ export default function FamilyScreen() {
   async function reload(mode: 'initial' | 'refresh' = 'refresh') {
     if (mode === 'refresh') setRefreshing(true);
     const result = await refreshFamily();
-    setError(result ? null : 'Your family list didn’t load. Pull to try again.');
+    setError(result ? null : t('family.loadFailed'));
     setLoading(false);
     setRefreshing(false);
   }
@@ -70,18 +77,18 @@ export default function FamilyScreen() {
       });
       setOtpFor(null);
       await refreshFamily();
-      Alert.alert('Added to your family', `You can now see ${suggestion.firstName}’s records. Tap their name to switch.`);
+      Alert.alert(t('family.addedTitle'), t('family.addedBody', { name: suggestion.firstName }));
     } catch (err) {
       if (err instanceof ApiError && err.code === 'OTP_REQUIRED' && !otp) {
         try {
           setOtpFor({ suggestion, phone: await sendCode() });
         } catch (sendErr) {
-          setError(errorMessage(sendErr, 'Couldn’t send a confirmation code. Please try again.'));
+          setError(errorMessage(sendErr, t('family.sendCodeFailed')));
         }
       } else if (otp) {
-        setOtpError(errorMessage(err, 'That code didn’t work. Please try again.'));
+        setOtpError(errorMessage(err, t('family.codeFailed')));
       } else {
-        setError(errorMessage(err, 'Couldn’t add them. Please try again.'));
+        setError(errorMessage(err, t('family.addFailed')));
       }
     } finally {
       setBusyKey(null);
@@ -90,14 +97,14 @@ export default function FamilyScreen() {
 
   function confirmRemove(member: FamilyMember) {
     Alert.alert(
-      `Stop managing ${member.firstName}’s records?`,
+      t('family.removeTitle', { name: member.firstName }),
       member.source === 'clinic'
-        ? 'The clinic linked you. To manage their records again, ask the front desk.'
-        : 'You can add them again later from this screen while they’re under 18.',
+        ? t('family.removeClinicLinked')
+        : t('family.removeReAdd'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Remove',
+          text: t('family.remove'),
           style: 'destructive',
           onPress: async () => {
             setBusyKey(member.id);
@@ -106,7 +113,7 @@ export default function FamilyScreen() {
               if (viewing?.id === member.id) switchTo(null, '/patient/family');
               await refreshFamily();
             } catch (err) {
-              Alert.alert('Couldn’t remove', errorMessage(err, 'Please try again.'));
+              Alert.alert(t('family.removeFailed'), errorMessage(err, t('family.removeFailedBody')));
             } finally {
               setBusyKey(null);
             }
@@ -139,12 +146,12 @@ export default function FamilyScreen() {
       <SafeAreaView edges={['top']}>
         <AppHeader back />
         <Text style={styles.title} accessibilityRole="header">
-          Family
+          {t('family.title')}
         </Text>
         <Text style={styles.subtitle}>
           {guardianOnly
-            ? 'The people you look after. Tap a name to see their records.'
-            : 'See and manage your family’s records from your own login. Tap a name to switch.'}
+            ? t('family.subtitleGuardian')
+            : t('family.subtitle')}
         </Text>
       </SafeAreaView>
 
@@ -156,19 +163,23 @@ export default function FamilyScreen() {
             {overview.self ? (
               <PersonRow
                 name={`${overview.self.firstName} ${overview.self.lastName}`}
-                detail="You"
+                detail={t('family.you')}
                 active={!!viewing?.self}
                 onPress={() => switchTo(null)}
                 last={overview.members.length === 0}
               />
             ) : overview.members.length === 0 ? (
-              <Text style={styles.empty}>No one is linked to your eMCR yet.</Text>
+              <Text style={styles.empty}>{t('family.noOne')}</Text>
             ) : null}
             {overview.members.map((m, i) => {
               const years = age(m.dateOfBirth);
               const detail = [
-                m.relationship ? humanize(m.relationship) : 'Family',
-                years !== null ? `${years} yrs` : null,
+                m.relationship
+                  ? isKnownRelationship(m.relationship)
+                    ? t(`common.relationship.${m.relationship}`)
+                    : humanize(m.relationship)
+                  : t('family.familyFallback'),
+                years !== null ? t('family.years', { count: years }) : null,
                 m.clinics.length ? m.clinics.join(', ') : null,
               ]
                 .filter(Boolean)
@@ -178,7 +189,7 @@ export default function FamilyScreen() {
                   key={m.id}
                   name={`${m.firstName} ${m.lastName}`}
                   detail={detail}
-                  note={m.accessEndsAt ? `Access ends ${formatDate(m.accessEndsAt, { utc: true })} (18th birthday)` : null}
+                  note={m.accessEndsAt ? t('family.accessEnds', { date: formatDate(m.accessEndsAt, { utc: true }) }) : null}
                   active={viewing?.id === m.id}
                   busy={busyKey === m.id}
                   onPress={() => choose(m)}
@@ -190,31 +201,29 @@ export default function FamilyScreen() {
           </View>
 
           <Button
-            title="Add someone I look after"
+            title={t('family.addSomeone')}
             icon="person-add-outline"
             variant="secondary"
             onPress={() => router.push('/phone?purpose=add')}
             style={styles.addSomeone}
           />
           <Text style={styles.addNote}>
-            Their clinic must have your mobile number on their record. We’ll text you a code, then ask for their first
-            name and birth date.
+            {t('family.addNote')}
           </Text>
 
           {!guardianOnly && overview.suggestions.length ? (
             <>
               <Text style={styles.sectionTitle} accessibilityRole="header">
-                Children on your phone number
+                {t('family.childrenTitle')}
               </Text>
               <Text style={styles.sectionNote}>
-                Clinics registered these children with your mobile number. Add them to see their records, book visits and
-                check them in.
+                {t('family.childrenNote')}
               </Text>
               <View style={styles.card}>
                 {overview.suggestions.map((s, i) =>
                   otpFor?.suggestion.key === s.key ? (
                     <View key={s.key} style={[styles.otp, i < overview.suggestions.length - 1 && styles.divider]}>
-                      <Text style={styles.otpTitle}>Confirm it’s you to add {s.firstName}</Text>
+                      <Text style={styles.otpTitle}>{t('family.confirmToAdd', { name: s.firstName })}</Text>
                       <OtpConfirm
                         phone={otpFor.phone}
                         sendCode={sendCode}
@@ -237,7 +246,7 @@ export default function FamilyScreen() {
                           {s.firstName} {s.lastInitial}
                         </Text>
                         <Text style={styles.detail}>
-                          {[s.birthYear ? `Born ${s.birthYear}` : null, s.clinics.join(', ') || null].filter(Boolean).join(' · ')}
+                          {[s.birthYear ? t('family.born', { year: s.birthYear }) : null, s.clinics.join(', ') || null].filter(Boolean).join(' · ')}
                         </Text>
                       </View>
                       <TouchableOpacity
@@ -245,10 +254,10 @@ export default function FamilyScreen() {
                         onPress={() => add(s)}
                         disabled={busyKey !== null}
                         accessibilityRole="button"
-                        accessibilityLabel={`Add ${s.firstName} to your family`}
+                        accessibilityLabel={t('family.addA11y', { name: s.firstName })}
                         accessibilityState={{ busy: busyKey === s.key, disabled: busyKey !== null }}
                       >
-                        <Text style={styles.addText}>{busyKey === s.key ? 'Adding…' : 'Add'}</Text>
+                        <Text style={styles.addText}>{busyKey === s.key ? t('family.adding') : t('family.add')}</Text>
                       </TouchableOpacity>
                     </View>
                   )
@@ -260,8 +269,7 @@ export default function FamilyScreen() {
           <View style={styles.note}>
             <Ionicons name="information-circle-outline" size={18} color={colors.slate} />
             <Text style={styles.noteText}>
-              Adding a parent or another adult? Their clinic confirms it with them in person first, then they appear here.
-              You can also ask the front desk to link you.
+              {t('family.adultNote')}
             </Text>
           </View>
         </>
@@ -295,6 +303,7 @@ function PersonRow({
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase())
     .join('');
+  const t = useT();
   return (
     <View style={[styles.row, !last && styles.divider]}>
       <TouchableOpacity
@@ -302,7 +311,7 @@ function PersonRow({
         onPress={onPress}
         disabled={active}
         accessibilityRole="button"
-        accessibilityLabel={active ? `${name}, showing now` : `Switch to ${name}`}
+        accessibilityLabel={active ? t('family.showingA11y', { name }) : t('family.switchA11y', { name })}
         accessibilityState={{ selected: active }}
       >
         <View style={[styles.avatar, active && styles.avatarActive]}>
@@ -320,7 +329,7 @@ function PersonRow({
         {active ? (
           <View style={styles.activePill}>
             <Ionicons name="checkmark" size={14} color={colors.primaryOnSoft} />
-            <Text style={styles.activeText}>Showing</Text>
+            <Text style={styles.activeText}>{t('family.showing')}</Text>
           </View>
         ) : null}
       </TouchableOpacity>
@@ -330,7 +339,7 @@ function PersonRow({
           onPress={onRemove}
           disabled={busy}
           accessibilityRole="button"
-          accessibilityLabel={`Stop managing ${name}`}
+          accessibilityLabel={t('family.stopA11y', { name })}
         >
           <Ionicons name="close-circle-outline" size={22} color={colors.textMuted} />
         </TouchableOpacity>

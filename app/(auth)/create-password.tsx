@@ -7,21 +7,7 @@ import { getCredentialStep, rememberIssuedLoginId, saveAccountPassword, setCrede
 import { colors, spacing } from '@/lib/theme';
 import { Banner, Button } from '@/components/ui';
 import { AuthHeader, AuthScreen, ChecklistItem, IconField, PASSWORD_RULES, StatusScreen, IconBadge, useBlockHardwareBack } from '@/components/auth';
-
-const COPY = {
-  create: {
-    title: 'Create Your Password',
-    subtitle: 'Next time, sign in with your mobile number and this password. No code needed.',
-  },
-  temp: {
-    title: 'Choose Your Own Password',
-    subtitle: 'The password from your clinic was for your first sign-in only. Choose one only you know.',
-  },
-  reset: {
-    title: 'Choose a New Password',
-    subtitle: "You're signed in with your code. Set a new password for signing in with your mobile number.",
-  },
-} as const;
+import { useT } from '@/lib/i18n';
 
 /**
  * The eMCR sign-in credential (mobile number + password), owed right after a sign-in
@@ -31,6 +17,7 @@ const COPY = {
  */
 export default function CreatePasswordScreen() {
   const { signedIn, signOut } = useAuth();
+  const t = useT();
   const [step] = useState(getCredentialStep);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -44,7 +31,10 @@ export default function CreatePasswordScreen() {
   if (!signedIn) return <Redirect href="/login" />;
   if (!step) return <Redirect href="/enable-notifications" />;
 
-  const copy = COPY[step.mode];
+  const copy = {
+    title: t(`auth.createPw.${step.mode}.title`),
+    subtitle: t(`auth.createPw.${step.mode}.subtitle`),
+  };
   const rulesMet = PASSWORD_RULES.every((rule) => rule.test(password));
   const matches = confirm.length > 0 && confirm === password;
 
@@ -52,10 +42,10 @@ export default function CreatePasswordScreen() {
     return (
       <StatusScreen
         art={<IconBadge icon="time-outline" tone="slate" />}
-        title="Sign In Again"
-        message="For your security, a password is set within 15 minutes of confirming your phone. Sign in with an SMS code again to set it."
+        title={t('auth.createPw.staleTitle')}
+        message={t('auth.createPw.staleMessage')}
         action={{
-          title: 'Sign In Again',
+          title: t('auth.createPw.staleTitle'),
           onPress: async () => {
             setCredentialStep(null);
             await signOut();
@@ -68,8 +58,8 @@ export default function CreatePasswordScreen() {
 
   async function save() {
     if (inFlight.current || !step) return;
-    if (!rulesMet) return setError('Your password needs at least 8 characters, an uppercase letter and a number.');
-    if (!matches) return setError("The passwords don't match.");
+    if (!rulesMet) return setError(t('auth.pw.rulesError'));
+    if (!matches) return setError(t('auth.pw.mismatch'));
     inFlight.current = true;
     setError(null);
     setSaving(true);
@@ -90,8 +80,8 @@ export default function CreatePasswordScreen() {
       }
       setError(
         err instanceof ApiError && err.code === 'NETWORK'
-          ? "Can't reach the server. Check your connection and try again."
-          : errorMessage(err, "Couldn't save your password. Please try again.")
+          ? t('common.network')
+          : errorMessage(err, t('auth.pw.saveFailed'))
       );
     } finally {
       inFlight.current = false;
@@ -105,7 +95,7 @@ export default function CreatePasswordScreen() {
       {error ? <Banner message={error} /> : null}
       <IconField
         icon="lock-closed-outline"
-        label={step.mode === 'create' ? 'Create password' : 'New password'}
+        label={step.mode === 'create' ? t('auth.pw.create') : t('auth.pw.new')}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -115,7 +105,7 @@ export default function CreatePasswordScreen() {
       />
       <IconField
         icon="lock-closed-outline"
-        label="Confirm password"
+        label={t('auth.pw.confirm')}
         value={confirm}
         onChangeText={setConfirm}
         secureTextEntry
@@ -126,13 +116,13 @@ export default function CreatePasswordScreen() {
         onSubmitEditing={save}
       />
       <View style={styles.rules}>
-        <Text style={styles.rulesTitle}>Password must have:</Text>
+        <Text style={styles.rulesTitle}>{t('auth.pw.mustHave')}</Text>
         {PASSWORD_RULES.map((rule) => (
           <ChecklistItem key={rule.label} label={rule.label} met={rule.test(password)} />
         ))}
-        <ChecklistItem label="Passwords match" met={matches} />
+        <ChecklistItem label={t('auth.pw.match')} met={matches} />
       </View>
-      <Button title="Save and Continue" onPress={save} loading={saving} />
+      <Button title={t('auth.pw.saveAndContinue')} onPress={save} loading={saving} />
     </AuthScreen>
   );
 }

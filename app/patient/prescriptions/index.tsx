@@ -12,19 +12,21 @@ import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { MedicationCard } from '@/components/MedicationCard';
+import { PlainKey, useT } from '@/lib/i18n';
 
 type Tab = 'current' | 'past';
 
-const VISIT_TYPE: Record<string, string> = {
-  consultation: 'Consultation',
-  'follow-up': 'Follow-up Visit',
-  checkup: 'Check-up',
-  emergency: 'Emergency Visit',
-  teleconsult: 'Teleconsultation',
-  vaccination: 'Vaccination',
+const VISIT_TYPE: Record<string, PlainKey> = {
+  consultation: 'prescriptions.visitType.consultation',
+  'follow-up': 'prescriptions.visitType.follow-up',
+  checkup: 'prescriptions.visitType.checkup',
+  emergency: 'prescriptions.visitType.emergency',
+  teleconsult: 'prescriptions.visitType.teleconsult',
+  vaccination: 'prescriptions.visitType.vaccination',
 };
 
 export default function PrescriptionsScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const [tab, setTab] = useState<Tab>('current');
   const [tipDismissed, setTipDismissed] = useState(false);
@@ -49,27 +51,30 @@ export default function PrescriptionsScreen() {
     <SafeAreaView edges={['top']}>
       <AppHeader back />
       <Text style={styles.title} accessibilityRole="header">
-        Prescriptions
+        {t('prescriptions.title')}
       </Text>
-      <Text style={styles.subtitle}>Your current and past prescriptions, by visit.</Text>
+      <Text style={styles.subtitle}>{t('prescriptions.subtitle')}</Text>
 
       <View style={styles.tabs} accessibilityRole="tablist">
         {(
           [
-            { value: 'current', label: `Current${current.length ? ` (${current.length})` : ''}` },
-            { value: 'past', label: 'Past' },
+            {
+              value: 'current',
+              label: current.length ? t('prescriptions.tab.currentCount', { count: current.length }) : t('prescriptions.tab.current'),
+            },
+            { value: 'past', label: t('prescriptions.tab.past') },
           ] as { value: Tab; label: string }[]
-        ).map((t) => {
-          const selected = t.value === tab;
+        ).map((item) => {
+          const selected = item.value === tab;
           return (
             <TouchableOpacity
-              key={t.value}
+              key={item.value}
               style={[styles.tab, selected && styles.tabSelected]}
-              onPress={() => setTab(t.value)}
+              onPress={() => setTab(item.value)}
               accessibilityRole="tab"
               accessibilityState={{ selected }}
             >
-              <Text style={[styles.tabText, selected && styles.tabTextSelected]}>{t.label}</Text>
+              <Text style={[styles.tabText, selected && styles.tabTextSelected]}>{item.label}</Text>
             </TouchableOpacity>
           );
         })}
@@ -81,10 +86,10 @@ export default function PrescriptionsScreen() {
             <Ionicons name="medical-outline" size={22} color={colors.primary} />
           </View>
           <View style={styles.flex}>
-            <Text style={styles.tipTitle}>Take your medications as prescribed.</Text>
-            <Text style={styles.tipText}>If you have questions, please contact your clinic.</Text>
+            <Text style={styles.tipTitle}>{t('prescriptions.tip.title')}</Text>
+            <Text style={styles.tipText}>{t('prescriptions.tip.text')}</Text>
           </View>
-          <TouchableOpacity onPress={() => setTipDismissed(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss tip">
+          <TouchableOpacity onPress={() => setTipDismissed(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('prescriptions.tip.dismiss')}>
             <Ionicons name="close" size={20} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
@@ -102,7 +107,7 @@ export default function PrescriptionsScreen() {
     empty = (
       <View style={styles.empty}>
         <Text style={styles.emptyText}>{list.error}</Text>
-        <Button title="Try Again" variant="secondary" onPress={list.reload} style={styles.stretch} />
+        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={list.reload} style={styles.stretch} />
       </View>
     );
   } else {
@@ -111,8 +116,8 @@ export default function PrescriptionsScreen() {
         <View style={styles.emptyIcon}>
           <Ionicons name="medical-outline" size={32} color={colors.primary} />
         </View>
-        <Text style={styles.emptyTitle}>{tab === 'current' ? 'No current prescriptions' : 'No past prescriptions'}</Text>
-        <Text style={styles.emptyText}>Prescriptions from your clinic visits will show up here.</Text>
+        <Text style={styles.emptyTitle}>{tab === 'current' ? t('prescriptions.empty.current') : t('prescriptions.empty.past')}</Text>
+        <Text style={styles.emptyText}>{t('prescriptions.empty.text')}</Text>
       </View>
     );
   }
@@ -136,9 +141,15 @@ export default function PrescriptionsScreen() {
 }
 
 function VisitGroup({ group }: { group: PrescriptionGroup }) {
+  const t = useT();
+  const visitKey = group.visit ? VISIT_TYPE[group.visit.visitType ?? ''] : undefined;
   const label = group.visit
-    ? VISIT_TYPE[group.visit.visitType ?? ''] ?? (group.visit.visitType ? humanize(group.visit.visitType) : 'Clinic Visit')
-    : 'Prescription';
+    ? visitKey
+      ? t(visitKey)
+      : group.visit.visitType
+        ? humanize(group.visit.visitType)
+        : t('prescriptions.clinicVisit')
+    : t('prescriptions.prescription');
   return (
     <View style={styles.group}>
       <View style={styles.groupHeader}>
@@ -150,7 +161,7 @@ function VisitGroup({ group }: { group: PrescriptionGroup }) {
             {label} · {formatDate(group.date)}
           </Text>
           <Text style={styles.groupMeta}>
-            {[group.prescriber, group.visit?.visitCode].filter(Boolean).join(' · ') || 'From your clinic'}
+            {[group.prescriber, group.visit?.visitCode].filter(Boolean).join(' · ') || t('prescriptions.fromClinic')}
           </Text>
         </View>
       </View>
@@ -160,7 +171,7 @@ function VisitGroup({ group }: { group: PrescriptionGroup }) {
           {(p.medications ?? []).map((med, i) => (
             <MedicationCard key={`${p._id}-${i}`} prescription={p} med={med} />
           ))}
-          {!p.medications?.length ? <Text style={styles.noMeds}>No medications listed.</Text> : null}
+          {!p.medications?.length ? <Text style={styles.noMeds}>{t('prescriptions.noMeds')}</Text> : null}
           <PrescriptionFooter prescription={p} />
         </View>
       ))}
@@ -169,16 +180,17 @@ function VisitGroup({ group }: { group: PrescriptionGroup }) {
 }
 
 function PrescriptionFooter({ prescription: p }: { prescription: Prescription }) {
+  const t = useT();
   const pharmacy = p.pharmacyDispenses?.find((d) => d.pharmacyName)?.pharmacyName;
   return (
     <View style={styles.footer}>
       <View style={styles.flex}>
-        {p.prescriptionCode ? <Text style={styles.footerCode}>Rx {p.prescriptionCode}</Text> : null}
+        {p.prescriptionCode ? <Text style={styles.footerCode}>{t('prescriptions.rx', { code: p.prescriptionCode })}</Text> : null}
         {pharmacy ? (
           <View style={styles.pharmacy}>
             <Ionicons name="storefront-outline" size={14} color={colors.textMuted} />
             <Text style={styles.footerMeta} numberOfLines={1}>
-              Dispensed at {pharmacy}
+              {t('prescriptions.dispensedAt', { pharmacy })}
             </Text>
           </View>
         ) : null}
@@ -187,10 +199,10 @@ function PrescriptionFooter({ prescription: p }: { prescription: Prescription })
         style={styles.details}
         onPress={() => router.push(`/patient/prescriptions/${p._id}`)}
         accessibilityRole="button"
-        accessibilityLabel={`View prescription ${p.prescriptionCode ?? ''} details`}
+        accessibilityLabel={t('prescriptions.viewA11y', { code: p.prescriptionCode ?? '' })}
       >
         <Ionicons name="document-text-outline" size={16} color={colors.primaryText} />
-        <Text style={styles.detailsText}>View Details</Text>
+        <Text style={styles.detailsText}>{t('prescriptions.viewDetails')}</Text>
       </TouchableOpacity>
     </View>
   );

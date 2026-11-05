@@ -9,6 +9,8 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { Button, LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
+import { t as translate, useT } from '@/lib/i18n';
+import { rich } from '@/lib/i18n/rich';
 
 function addressLine(address: PatientClinic['address']): string | null {
   if (!address) return null;
@@ -18,12 +20,13 @@ function addressLine(address: PatientClinic['address']): string | null {
 
 function call(phone: string) {
   Linking.openURL(`tel:${phone.replace(/[^\d+]/g, '')}`).catch(() =>
-    Alert.alert("Couldn't start the call", `Call the clinic at ${phone}.`)
+    Alert.alert(translate('clinics.callFailedTitle'), translate('clinics.callFailedBody', { phone }))
   );
 }
 
 /** Every clinic the patient is registered at, most recently visited first. */
 export default function ClinicsScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const { data, loading, refreshing, error, refresh } = useApiData<PatientClinic[]>('/api/patients/me/clinics');
 
@@ -42,11 +45,9 @@ export default function ClinicsScreen() {
         <SafeAreaView edges={['top']}>
           <AppHeader back />
           <Text style={styles.title} accessibilityRole="header">
-            My Clinics
+            {t('clinics.title')}
           </Text>
-          <Text style={styles.subtitle}>
-            Every clinic you're registered at. Your records from all of them show up in this app.
-          </Text>
+          <Text style={styles.subtitle}>{t('clinics.subtitle')}</Text>
         </SafeAreaView>
       }
       ListEmptyComponent={
@@ -55,17 +56,14 @@ export default function ClinicsScreen() {
         ) : (
           <View style={styles.empty}>
             <Ionicons name="business-outline" size={36} color={colors.textMuted} />
-            <Text style={styles.emptyText}>No clinics yet. Clinics appear here after your first visit.</Text>
+            <Text style={styles.emptyText}>{t('clinics.empty')}</Text>
           </View>
         )
       }
       ListFooterComponent={
         clinics.length ? (
-          <Text style={styles.footnote}>
-            Missing a clinic? Sign in with a code sent to your phone. Clinics that registered you with the same
-            phone number and birth date are added automatically.
-          </Text>
-        ) : null
+          <Text style={styles.footnote}>{t('clinics.footnote')}</Text>
+        ) : undefined
       }
       renderItem={({ item }) => <ClinicCard clinic={item} />}
     />
@@ -73,6 +71,7 @@ export default function ClinicsScreen() {
 }
 
 function ClinicCard({ clinic }: { clinic: PatientClinic }) {
+  const t = useT();
   const address = addressLine(clinic.address);
   return (
     <View style={styles.card}>
@@ -94,25 +93,28 @@ function ClinicCard({ clinic }: { clinic: PatientClinic }) {
 
       <View style={styles.facts}>
         <Text style={styles.meta}>
-          Last visit: <Text style={styles.fact}>{clinic.lastVisitAt ? formatDate(clinic.lastVisitAt) : 'None yet'}</Text>
+          {rich(
+            t('clinics.lastVisit', { date: clinic.lastVisitAt ? formatDate(clinic.lastVisitAt) : t('clinics.noneYet') }),
+            styles.fact
+          )}
         </Text>
         {clinic.patientCode ? (
           <Text style={styles.meta}>
-            Patient ID: <Text style={styles.fact}>{clinic.patientCode}</Text>
+            {rich(t('clinics.patientId', { id: clinic.patientCode }), styles.fact)}
           </Text>
         ) : null}
       </View>
 
       <View style={styles.actions}>
         <Button
-          title="Book"
+          title={t('clinics.book')}
           icon="calendar-outline"
           style={styles.action}
           onPress={() => router.push({ pathname: '/patient/appointments/book', params: { tenantId: clinic.tenantId } })}
         />
         {clinic.phone ? (
           <Button
-            title="Call"
+            title={t('clinics.call')}
             icon="call-outline"
             variant="secondary"
             style={styles.action}

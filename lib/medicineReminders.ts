@@ -7,6 +7,7 @@ import { Notifications } from './notifications';
 import { isCurrent } from './prescriptions';
 import { toYmd } from './format';
 import { Medication, Prescription } from './types';
+import { PlainKey, possessiveName, t } from './i18n';
 
 /**
  * Medicine reminders, scheduled on this phone only (no server sync).
@@ -20,7 +21,7 @@ import { Medication, Prescription } from './types';
 // ── Frequency → suggested times ──────────────────────────────────────────────
 
 export type TimeSuggestion =
-  | { kind: 'times'; times: string[]; basis: string }
+  | { kind: 'times'; times: string[]; basis: PlainKey }
   | { kind: 'prn' }
   | { kind: 'unknown' };
 
@@ -29,39 +30,39 @@ export type TimeSuggestion =
  * win over the plain count ("TID"). `weak` patterns (plain "daily") give way to any other match,
  * so "twice daily" is twice, not once.
  */
-const PATTERNS: { count: number; times: string[]; basis: string; re: RegExp; weak?: boolean }[] = [
+const PATTERNS: { count: number; times: string[]; basis: PlainKey; re: RegExp; weak?: boolean }[] = [
   {
     count: 1,
     times: ['08:00'],
-    basis: 'once a day',
+    basis: 'medicines.basis.onceADay',
     weak: true,
     re: /\b(od|qd|q24h|once (a |per |each )?day|once daily|daily|every ?day|every 24 hours|1x( a| per)? day|isang beses( sa isang)? araw|minsan sa isang araw|araw[- ]araw|kada araw)\b/,
   },
-  { count: 1, times: ['08:00'], basis: 'every morning', re: /\b(qam|every morning|tuwing umaga)\b/ },
-  { count: 1, times: ['21:00'], basis: 'at bedtime', re: /\b(hs|qhs|at bedtime|before bed(time)?|bago matulog)\b/ },
+  { count: 1, times: ['08:00'], basis: 'medicines.basis.everyMorning', re: /\b(qam|every morning|tuwing umaga)\b/ },
+  { count: 1, times: ['21:00'], basis: 'medicines.basis.atBedtime', re: /\b(hs|qhs|at bedtime|before bed(time)?|bago matulog)\b/ },
   {
     count: 2,
     times: ['08:00', '20:00'],
-    basis: 'twice a day',
+    basis: 'medicines.basis.twiceADay',
     re: /\b(bid|q12h?|twice (a |per |each )?day|twice daily|2x( a| per)? day|every 12 hours|(tuwing|kada) 12 oras|dalawang beses|2 beses|umaga at gabi)\b/,
   },
-  { count: 3, times: ['06:00', '14:00', '22:00'], basis: 'every 8 hours', re: /\b(q8h?|every 8 hours|(tuwing|kada) 8 oras)\b/ },
+  { count: 3, times: ['06:00', '14:00', '22:00'], basis: 'medicines.basis.every8Hours', re: /\b(q8h?|every 8 hours|(tuwing|kada) 8 oras)\b/ },
   {
     count: 3,
     times: ['08:00', '14:00', '20:00'],
-    basis: 'three times a day',
+    basis: 'medicines.basis.threeTimesADay',
     re: /\b(tid|thrice (a |per )?day|thrice daily|three times (a |per |each )?day|three times daily|3x( a| per)? day|tatlong beses|3 beses)\b/,
   },
   {
     count: 4,
     times: ['00:00', '06:00', '12:00', '18:00'],
-    basis: 'every 6 hours',
+    basis: 'medicines.basis.every6Hours',
     re: /\b(q6h?|every 6 hours|(tuwing|kada) 6 oras)\b/,
   },
   {
     count: 4,
     times: ['08:00', '12:00', '16:00', '20:00'],
-    basis: 'four times a day',
+    basis: 'medicines.basis.fourTimesADay',
     re: /\b(qid|four times (a |per |each )?day|four times daily|4x( a| per)? day|apat na beses|4 beses)\b/,
   },
 ];
@@ -315,12 +316,13 @@ function fireDates(time: string, end: number, now: number): Date[] {
   return out;
 }
 
+// Translated when the reminder is scheduled, in the app's language at that moment.
 function content(slot: Slot) {
   return {
-    title: slot.who ? `Medicine reminder for ${slot.who}` : 'Medicine reminder',
+    title: slot.who ? t('medicines.notify.titleFor', { name: slot.who }) : t('medicines.notify.title'),
     body: slot.who
-      ? `It's time for ${slot.who}'s medicine. Tap to see which.`
-      : "It's time for your medicine. Tap to see which.",
+      ? t('medicines.notify.bodyFor', { whose: possessiveName(slot.who) })
+      : t('medicines.notify.body'),
     data: { tag: `medicine-reminder-${slot.time}`, profileId: slot.profileId, slot: slot.time },
   };
 }
@@ -386,7 +388,7 @@ export function rescheduleAll(): Promise<void> {
 
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-        name: 'Medicine reminders',
+        name: t('medicines.notify.channel'),
         importance: Notifications.AndroidImportance.HIGH,
       });
     }

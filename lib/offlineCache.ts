@@ -290,7 +290,9 @@ export async function writeOffline<T>(cacheKey: string, data: T, ifEpoch: number
       return;
     }
     cacheDir().create({ intermediates: true, idempotent: true });
-    file.write(sealed);
+    // Sync on purpose: nothing may run between the epoch check above and the write, or an
+    // entry could land after a sign-out cleared the cache.
+    file.writeSync(sealed);
     if (!pruned) {
       pruned = true;
       pruneOffline();

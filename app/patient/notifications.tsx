@@ -21,6 +21,7 @@ import { NotificationScreen, NotificationsEnvelope, PatientNotification } from '
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName, ListFooter, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
+import { PlainKey, useT } from '@/lib/i18n';
 
 const DETAIL_ROUTES: Partial<Record<NotificationScreen, string>> = {
   appointments: '/patient/appointments',
@@ -31,14 +32,14 @@ const DETAIL_ROUTES: Partial<Record<NotificationScreen, string>> = {
 
 type Filter = 'all' | 'unread' | PatientNotification['type'];
 
-const FILTERS: { value: Filter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'unread', label: 'Unread' },
-  { value: 'appointment', label: 'Appointments' },
-  { value: 'lab_result', label: 'Results' },
-  { value: 'invoice', label: 'Billing' },
-  { value: 'prescription', label: 'Prescriptions' },
-  { value: 'message', label: 'Messages' },
+const FILTERS: { value: Filter; label: PlainKey }[] = [
+  { value: 'all', label: 'notifications.filter.all' },
+  { value: 'unread', label: 'notifications.filter.unread' },
+  { value: 'appointment', label: 'notifications.filter.appointment' },
+  { value: 'lab_result', label: 'notifications.filter.lab_result' },
+  { value: 'invoice', label: 'notifications.filter.invoice' },
+  { value: 'prescription', label: 'notifications.filter.prescription' },
+  { value: 'message', label: 'notifications.filter.message' },
 ];
 
 const TYPE_STYLE: Record<PatientNotification['type'], { icon: IconName; bg: string; fg: string }> = {
@@ -53,26 +54,36 @@ function startOfDay(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-function groupLabel(date: string): string {
+type Group = 'today' | 'yesterday' | 'week' | 'earlier';
+
+const GROUP_LABEL: Record<Group, PlainKey> = {
+  today: 'notifications.group.today',
+  yesterday: 'notifications.group.yesterday',
+  week: 'notifications.group.week',
+  earlier: 'notifications.group.earlier',
+};
+
+function groupLabel(date: string): Group {
   const day = startOfDay(new Date(date));
   const today = startOfDay(new Date());
   const DAY = 24 * 60 * 60 * 1000;
-  if (day >= today) return 'Today';
-  if (day >= today - DAY) return 'Yesterday';
-  if (day >= today - 6 * DAY) return 'This Week';
-  return 'Earlier';
+  if (day >= today) return 'today';
+  if (day >= today - DAY) return 'yesterday';
+  if (day >= today - 6 * DAY) return 'week';
+  return 'earlier';
 }
 
 function timeLabel(date: string): string {
   const d = new Date(date);
   if (isNaN(d.getTime())) return '';
   const group = groupLabel(date);
-  return group === 'Today' || group === 'Yesterday'
+  return group === 'today' || group === 'yesterday'
     ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
     : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 export default function NotificationsScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const [filter, setFilter] = useState<Filter>('all');
   const { unreadCount, setUnreadCount } = useUnread();
@@ -98,13 +109,13 @@ export default function NotificationsScreen() {
   }, [visible.length, list.loading, list.loadingMore, list.loadMoreError, list.hasMore, list.loadMore]);
 
   const sections = useMemo(() => {
-    const groups = new Map<string, PatientNotification[]>();
+    const groups = new Map<Group, PatientNotification[]>();
     for (const n of visible) {
       const label = groupLabel(n.date);
       groups.set(label, [...(groups.get(label) ?? []), n]);
     }
-    return [...groups.entries()].map(([title, data]) => ({ title, data }));
-  }, [visible]);
+    return [...groups.entries()].map(([group, data]) => ({ title: t(GROUP_LABEL[group]), data }));
+  }, [visible, t]);
 
   function markLocallyRead(ids: string[] | 'all') {
     list.setItems((items) =>
@@ -137,7 +148,7 @@ export default function NotificationsScreen() {
       setUnreadCount(0);
       emitRefresh('notifications');
     } catch (err) {
-      setActionError(errorMessage(err, "Couldn't mark notifications as read."));
+      setActionError(errorMessage(err, t('notifications.markAllFailed')));
     } finally {
       setMarkingAll(false);
     }
@@ -149,9 +160,9 @@ export default function NotificationsScreen() {
       <View style={styles.titleRow}>
         <View style={styles.flex}>
           <Text style={styles.title} accessibilityRole="header">
-            Notifications
+            {t('notifications.title')}
           </Text>
-          <Text style={styles.subtitle}>Updates on your appointments, results and more.</Text>
+          <Text style={styles.subtitle}>{t('notifications.subtitle')}</Text>
         </View>
         {count > 0 ? (
           <TouchableOpacity
@@ -159,14 +170,14 @@ export default function NotificationsScreen() {
             onPress={markAllRead}
             disabled={markingAll}
             accessibilityRole="button"
-            accessibilityLabel="Mark all as read"
+            accessibilityLabel={t('notifications.markAllA11y')}
           >
             {markingAll ? (
               <ActivityIndicator color={colors.primary} size="small" />
             ) : (
               <>
                 <Ionicons name="checkmark-done" size={18} color={colors.primaryOnSoft} />
-                <Text style={styles.markAllText}>Mark all read</Text>
+                <Text style={styles.markAllText}>{t('notifications.markAll')}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -184,7 +195,7 @@ export default function NotificationsScreen() {
               accessibilityRole="tab"
               accessibilityState={{ selected }}
             >
-              <Text style={[styles.filterText, selected && styles.filterTextSelected]}>{f.label}</Text>
+              <Text style={[styles.filterText, selected && styles.filterTextSelected]}>{t(f.label)}</Text>
               {f.value === 'unread' && count > 0 ? (
                 <View style={[styles.countBadge, selected && styles.countBadgeSelected]}>
                   <Text style={[styles.countText, selected && styles.countTextSelected]}>{count > 99 ? '99+' : count}</Text>
@@ -207,7 +218,7 @@ export default function NotificationsScreen() {
     empty = (
       <View style={styles.empty}>
         <Text style={styles.emptyText}>{list.error}</Text>
-        <Button title="Try Again" variant="secondary" onPress={list.reload} style={styles.stretch} />
+        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={list.reload} style={styles.stretch} />
       </View>
     );
   } else {
@@ -216,9 +227,9 @@ export default function NotificationsScreen() {
         <View style={styles.emptyIcon}>
           <Ionicons name="notifications-off-outline" size={32} color={colors.primary} />
         </View>
-        <Text style={styles.emptyTitle}>{filter === 'unread' ? "You're all caught up" : 'No notifications'}</Text>
+        <Text style={styles.emptyTitle}>{filter === 'unread' ? t('notifications.caughtUpTitle') : t('notifications.noneTitle')}</Text>
         <Text style={styles.emptyText}>
-          {filter === 'unread' ? 'New updates from your clinic will show up here.' : 'Nothing here from the last 90 days.'}
+          {filter === 'unread' ? t('notifications.caughtUpText') : t('notifications.noneText')}
         </Text>
       </View>
     );
@@ -252,14 +263,14 @@ export default function NotificationsScreen() {
             style={styles.settings}
             onPress={() => Linking.openSettings()}
             accessibilityRole="link"
-            accessibilityLabel="Notification settings, opens your phone's settings"
+            accessibilityLabel={t('notifications.settingsA11y')}
           >
             <View style={styles.settingsIcon}>
               <Ionicons name="settings-outline" size={22} color={colors.primary} />
             </View>
             <View style={styles.flex}>
-              <Text style={styles.rowTitle}>Notification Settings</Text>
-              <Text style={styles.rowMessage}>Turn alerts on or off in your phone's settings</Text>
+              <Text style={styles.rowTitle}>{t('notifications.settingsTitle')}</Text>
+              <Text style={styles.rowMessage}>{t('notifications.settingsText')}</Text>
             </View>
             <Ionicons name="open-outline" size={18} color={colors.textMuted} />
           </TouchableOpacity>
@@ -284,7 +295,8 @@ function NotificationRow({
   last: boolean;
   onPress: () => void;
 }) {
-  const t = TYPE_STYLE[item.type] ?? TYPE_STYLE.appointment;
+  const t = useT();
+  const look = TYPE_STYLE[item.type] ?? TYPE_STYLE.appointment;
   // A message is read in place: its whole text shows and there is nowhere to go.
   const isMessage = item.type === 'message';
   const from = isMessage && typeof item.metadata?.from === 'string' ? item.metadata.from : null;
@@ -293,11 +305,15 @@ function NotificationRow({
       style={[styles.row, first && styles.rowFirst, last && styles.rowLast, !last && styles.rowDivider]}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${item.read ? '' : 'Unread. '}${item.title}. ${item.message}`}
+      accessibilityLabel={
+        item.read
+          ? t('notifications.rowA11y', { title: item.title, message: item.message })
+          : t('notifications.rowA11yUnread', { title: item.title, message: item.message })
+      }
     >
       <View style={styles.dotSlot}>{!item.read ? <View style={styles.dot} /> : null}</View>
-      <View style={[styles.icon, { backgroundColor: t.bg }]}>
-        <Ionicons name={t.icon} size={22} color={t.fg} />
+      <View style={[styles.icon, { backgroundColor: look.bg }]}>
+        <Ionicons name={look.icon} size={22} color={look.fg} />
       </View>
       <View style={styles.flex}>
         <View style={styles.rowHeader}>
@@ -306,7 +322,7 @@ function NotificationRow({
           </Text>
           <Text style={styles.time}>{timeLabel(item.date)}</Text>
         </View>
-        {from ? <Text style={styles.time}>From {from}</Text> : null}
+        {from ? <Text style={styles.time}>{t('notifications.from', { name: from })}</Text> : null}
         <Text style={styles.rowMessage} numberOfLines={isMessage ? undefined : 3}>
           {item.message}
         </Text>

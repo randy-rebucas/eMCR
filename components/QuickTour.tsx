@@ -1,4 +1,4 @@
-import { createContext, ReactNode, RefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { ComponentRef, createContext, ReactNode, RefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
@@ -46,7 +46,7 @@ const STEPS: Step[] = [
 const HOME = '/patient/home';
 
 type Ctx = {
-  register: (id: TourId, ref: RefObject<View | null>) => () => void;
+  register: (id: TourId, ref: RefObject<ViewRef | null>) => () => void;
   /** Replay the tour: returns to Home and starts once it's on screen. */
   replay: () => void;
 };
@@ -62,7 +62,7 @@ export function useTour(): Ctx {
 /** Marks a view the tour can spotlight. Renders a plain wrapper View. */
 export function TourTarget({ id, children, style }: { id: TourId; children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const ctx = useContext(TourContext);
-  const ref = useRef<View>(null);
+  const ref = useRef<ViewRef>(null);
   useEffect(() => ctx?.register(id, ref), [ctx, id]);
   return (
     <View ref={ref} collapsable={false} style={style}>
@@ -71,9 +71,11 @@ export function TourTarget({ id, children, style }: { id: TourId; children: Reac
   );
 }
 
+type ViewRef = ComponentRef<typeof View>;
+
 type Box = { x: number; y: number; width: number; height: number };
 
-function measure(ref: RefObject<View | null>): Promise<Box | null> {
+function measure(ref: RefObject<ViewRef | null>): Promise<Box | null> {
   return new Promise((resolve) => {
     if (!ref.current) return resolve(null);
     ref.current.measureInWindow((x, y, width, height) => resolve(width > 0 && height > 0 ? { x, y, width, height } : null));
@@ -83,7 +85,7 @@ function measure(ref: RefObject<View | null>): Promise<Box | null> {
 export function TourProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   // Several mounted screens can render the same target (every tab has an AppHeader bell).
-  const targets = useRef(new Map<TourId, Set<RefObject<View | null>>>());
+  const targets = useRef(new Map<TourId, Set<RefObject<ViewRef | null>>>());
   const [pending, setPending] = useState(false);
   const [step, setStep] = useState<number | null>(null);
 
@@ -161,7 +163,7 @@ function TourOverlay({
   onFinish: () => void;
 }) {
   const { width: W, height: H } = useWindowDimensions();
-  const rootRef = useRef<View>(null);
+  const rootRef = useRef<ViewRef>(null);
   const [hole, setHole] = useState<Box | null>(null);
   const fade = useRef(new Animated.Value(0)).current;
   const t = useT();

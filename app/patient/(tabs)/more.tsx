@@ -17,6 +17,8 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { useTour } from '@/components/QuickTour';
+import { LanguagePicker, useLanguageSummary } from '@/components/LanguagePicker';
+import { t as translate, useT } from '@/lib/i18n';
 
 type Tint = 'teal' | 'blue' | 'purple' | 'amber' | 'rose';
 
@@ -33,21 +35,26 @@ const TERMS_URL = 'https://www.myclinicsoft.solutions/terms';
 
 function openWebPage(url: string) {
   Linking.openURL(url).catch(() =>
-    Alert.alert("Couldn't open the page", 'Please check your connection and try again.')
+    Alert.alert(translate('more.couldntOpen'), translate('more.checkConnection'))
   );
 }
 
 export default function MoreScreen() {
   const { patient: me, signOut, guardianOnly } = useAuth();
+  const t = useT();
+  const languageSummary = useLanguageSummary();
+  const [pickingLanguage, setPickingLanguage] = useState(false);
   const account = useApiData<EmcrAccount>(EMCR_ENDPOINTS.account, { refreshOn: ['activation'] });
   const activation = account.data?.activation ?? null;
   const activationDetail = !activation
-    ? 'Enter your activation code'
+    ? t('more.activation.enter')
     : activation.active && activation.expiresAt
-      ? `eMCR active until ${formatDate(activation.expiresAt, { month: 'long', day: 'numeric', year: 'numeric' })}`
+      ? t('more.activation.activeUntil', {
+          date: formatDate(activation.expiresAt, { month: 'long', day: 'numeric', year: 'numeric' }),
+        })
       : activation.expiresAt
-        ? 'Ended. Enter a new activation code'
-        : 'Enter your activation code';
+        ? t('more.activation.ended')
+        : t('more.activation.enter');
   const { viewing, family } = useProfile();
   const self = viewing?.self !== false;
   // The profile card shows whoever's records are on screen.
@@ -69,10 +76,10 @@ export default function MoreScreen() {
     const next = !appLock;
     const result = await setAppLock(next);
     if (result.ok) setAppLockState(next);
-    else if (result.message) Alert.alert("Couldn't turn on App Lock", result.message);
+    else if (result.message) Alert.alert(t('more.appLock.failedTitle'), result.message);
   }
 
-  const fullName = patient ? `${patient.firstName} ${patient.lastName}`.trim() : 'Your profile';
+  const fullName = patient ? `${patient.firstName} ${patient.lastName}`.trim() : t('more.yourProfile');
   const initials = patient ? `${patient.firstName?.[0] ?? ''}${patient.lastName?.[0] ?? ''}`.toUpperCase() : '';
 
   async function runSignOut(everywhere: boolean) {
@@ -86,7 +93,7 @@ export default function MoreScreen() {
       // signed out it sets the auth notice (shown on the sign-in screen this one is
       // about to be replaced by), so only unexpected errors need an alert here.
       if (!(err instanceof ApiError && err.code === 'SIGN_OUT_EVERYWHERE_FAILED')) {
-        Alert.alert("Couldn't sign out", errorMessage(err, 'Check your connection and try again.'));
+        Alert.alert(t('more.signOut.failed'), errorMessage(err, t('more.signOut.failedFallback')));
       }
     }
   }
@@ -95,16 +102,16 @@ export default function MoreScreen() {
     // A guardian-only session is signed in on someone else's record: "all devices" would sign
     // that person out everywhere too, so only this device is offered.
     if (guardianOnly) {
-      Alert.alert('Sign out?', undefined, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign out', style: 'destructive', onPress: () => runSignOut(false) },
+      Alert.alert(t('more.signOut.title'), undefined, [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('common.signOut'), style: 'destructive', onPress: () => runSignOut(false) },
       ]);
       return;
     }
-    Alert.alert('Sign out?', 'Choose "All devices" if you lost a phone or think someone else has access.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'All devices', style: 'destructive', onPress: () => runSignOut(true) },
-      { text: 'Sign out', style: 'destructive', onPress: () => runSignOut(false) },
+    Alert.alert(t('more.signOut.title'), t('more.signOut.everywhereHint'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('more.signOut.allDevices'), style: 'destructive', onPress: () => runSignOut(true) },
+      { text: t('common.signOut'), style: 'destructive', onPress: () => runSignOut(false) },
     ]);
   }
 
@@ -113,9 +120,9 @@ export default function MoreScreen() {
       <SafeAreaView edges={['top']}>
         <AppHeader />
         <Text style={styles.title} accessibilityRole="header">
-          More
+          {t('more.title')}
         </Text>
-        <Text style={styles.subtitle}>Access more features and manage your account.</Text>
+        <Text style={styles.subtitle}>{t('more.subtitle')}</Text>
       </SafeAreaView>
 
       {/* Profile card */}
@@ -123,7 +130,7 @@ export default function MoreScreen() {
         style={styles.profile}
         onPress={() => router.push('/patient/profile')}
         accessibilityRole="button"
-        accessibilityLabel={self ? `${fullName}, view profile` : `${fullName}, family member, view profile`}
+        accessibilityLabel={self ? t('more.profile.a11y', { name: fullName }) : t('more.profile.a11yMember', { name: fullName })}
       >
         <View style={styles.avatar}>
           {initials ? (
@@ -136,11 +143,11 @@ export default function MoreScreen() {
           <Text style={styles.profileName} numberOfLines={1}>
             {fullName}
           </Text>
-          {!self ? <Text style={styles.profileMeta}>Family member · you manage these records</Text> : null}
-          {patient?.patientCode ? <Text style={styles.profileMeta}>Patient ID: {patient.patientCode}</Text> : null}
+          {!self ? <Text style={styles.profileMeta}>{t('more.profile.member')}</Text> : null}
+          {patient?.patientCode ? <Text style={styles.profileMeta}>{t('more.profile.patientId', { id: patient.patientCode })}</Text> : null}
           {self && account.data?.loginId ? (
             <Text style={styles.profileMeta} numberOfLines={1} selectable>
-              Login ID: {account.data.loginId}
+              {t('more.profile.loginId', { id: account.data.loginId })}
             </Text>
           ) : null}
           {patient?.email ? (
@@ -152,19 +159,19 @@ export default function MoreScreen() {
         <Ionicons name="chevron-forward" size={20} color={colors.primary} />
       </TouchableOpacity>
 
-      <Group title="Family">
+      <Group title={t('more.group.family')}>
         <Row
           icon="people-outline"
           tint="rose"
-          label={self ? 'Family' : 'Switch Profile'}
+          label={self ? t('more.family.label') : t('more.family.switch')}
           detail={
             guardianOnly
-              ? `Viewing ${viewing?.firstName}. Switch to another person you look after`
+              ? t('more.family.guardian', { name: viewing?.firstName ?? '' })
               : !self
-              ? `Viewing ${viewing?.firstName}. Switch back to you or another family member`
-              : familyCount
-                ? `You manage ${familyCount} family member${familyCount === 1 ? '' : 's'}`
-                : "Manage your children's or parents' records"
+                ? t('more.family.viewing', { name: viewing?.firstName ?? '' })
+                : familyCount
+                  ? t('more.family.count', { count: familyCount })
+                  : t('more.family.none')
           }
           badge={self ? family?.suggestions.length || undefined : undefined}
           onPress={() => router.push('/patient/family')}
@@ -172,119 +179,119 @@ export default function MoreScreen() {
         />
       </Group>
 
-      <Group title="Health Records">
+      <Group title={t('more.group.records')}>
         <Row
           icon="heart-outline"
           tint="rose"
-          label="Health Summary"
-          detail="Allergies, medicines and vaccines from every clinic"
+          label={t('more.healthSummary.label')}
+          detail={t('more.healthSummary.detail')}
           onPress={() => router.push('/patient/health-summary')}
         />
         <Row
           icon="medkit-outline"
           tint="teal"
-          label="Visit History"
-          detail="Past visits, diagnoses and follow-ups"
+          label={t('more.visits.label')}
+          detail={t('more.visits.detail')}
           onPress={() => router.push('/patient/visits')}
         />
         <Row
           icon="pulse-outline"
           tint="blue"
-          label="Vitals"
-          detail="Blood pressure, weight and more over time"
+          label={t('more.vitals.label')}
+          detail={t('more.vitals.detail')}
           onPress={() => router.push('/patient/vitals')}
         />
         <Row
           icon="git-branch-outline"
           tint="amber"
-          label="Referrals"
-          detail="Where your doctor referred you, and the letter"
+          label={t('more.referrals.label')}
+          detail={t('more.referrals.detail')}
           onPress={() => router.push('/patient/referrals')}
         />
         <Row
           icon="hourglass-outline"
           tint="blue"
-          label="Waitlist"
-          detail="Get the next free slot with a fully booked doctor"
+          label={t('more.waitlist.label')}
+          detail={t('more.waitlist.detail')}
           onPress={() => router.push('/patient/waitlist')}
         />
         <Row
           icon="share-social-outline"
           tint="purple"
-          label="Share with a Doctor"
-          detail="Send a link to your health summary; revoke it any time"
+          label={t('more.share.label')}
+          detail={t('more.share.detail')}
           onPress={() => router.push('/patient/share')}
         />
         <Row
           icon="business-outline"
           tint="amber"
-          label="My Clinics"
-          detail="Every clinic you've visited"
+          label={t('more.clinics.label')}
+          detail={t('more.clinics.detail')}
           onPress={() => router.push('/patient/clinics')}
         />
         <Row
           icon="bandage-outline"
           tint="teal"
-          label="Prescriptions"
-          detail="Your current and past prescriptions"
+          label={t('more.prescriptions.label')}
+          detail={t('more.prescriptions.detail')}
           onPress={() => router.push('/patient/prescriptions')}
         />
         <Row
           icon="alarm-outline"
           tint="teal"
-          label="Medicine Reminders"
-          detail="Reminders to take your medicines"
+          label={t('more.medicines.label')}
+          detail={t('more.medicines.detail')}
           onPress={() => router.push('/patient/medicines')}
         />
         <Row
           icon="document-text-outline"
           tint="purple"
-          label="Documents"
-          detail="Certificates, referrals and uploaded files"
+          label={t('more.documents.label')}
+          detail={t('more.documents.detail')}
           onPress={() => router.push('/patient/documents')}
           last
         />
       </Group>
 
-      <Group title="Billing">
+      <Group title={t('more.group.billing')}>
         <Row
           icon="receipt-outline"
           tint="blue"
-          label="Billing & Invoices"
-          detail="Your bills, balance and payment history"
+          label={t('more.invoices.label')}
+          detail={t('more.invoices.detail')}
           onPress={() => router.push('/patient/invoices')}
         />
         <Row
           icon="card-outline"
           tint="amber"
-          label="Membership"
-          detail="Points, discount and member QR"
+          label={t('more.membership.label')}
+          detail={t('more.membership.detail')}
           onPress={() => router.push('/patient/membership')}
           last
         />
       </Group>
 
-      <Group title="Account & Settings">
+      <Group title={t('more.group.account')}>
         <Row
           icon="key-outline"
           tint={activation && !activation.active && activation.enforced ? 'amber' : 'teal'}
-          label="Activation"
+          label={t('more.activation.label')}
           detail={activationDetail}
           onPress={() => router.push('/patient/activate')}
         />
         <Row
           icon="person-outline"
           tint="blue"
-          label="Profile"
-          detail="Your personal and contact information"
+          label={t('more.profile.label')}
+          detail={t('more.profile.detail')}
           onPress={() => router.push('/patient/profile')}
         />
         {self && !guardianOnly ? (
           <Row
             icon="lock-closed-outline"
             tint="purple"
-            label="Password"
-            detail="Set or change your sign-in password"
+            label={t('more.password.label')}
+            detail={t('more.password.detail')}
             onPress={() => router.push('/patient/profile/password')}
           />
         ) : null}
@@ -292,54 +299,61 @@ export default function MoreScreen() {
           <Row
             icon="finger-print-outline"
             tint="rose"
-            label="App Lock"
-            detail={appLock ? 'On. Your fingerprint, face or screen lock opens the app' : 'Off. Ask for your fingerprint, face or screen lock'}
+            label={t('more.appLock.label')}
+            detail={appLock ? t('more.appLock.on') : t('more.appLock.off')}
             onPress={toggleAppLock}
           />
         ) : null}
         <Row
+          icon="language-outline"
+          tint="blue"
+          label={t('more.language.label')}
+          detail={languageSummary}
+          onPress={() => setPickingLanguage(true)}
+        />
+        <Row
           icon="mail-unread-outline"
           tint="teal"
-          label="Notifications"
-          detail={unreadCount ? `${unreadCount} unread update${unreadCount === 1 ? '' : 's'}` : 'Updates from your clinic'}
+          label={t('more.notifications.label')}
+          detail={unreadCount ? t('more.notifications.unread', { count: unreadCount }) : t('more.notifications.detail')}
           badge={unreadCount}
           onPress={() => router.push('/patient/notifications')}
         />
         <Row
           icon="notifications-outline"
           tint="amber"
-          label="Notification Settings"
-          detail="Choose which updates alert you"
+          label={t('more.notificationSettings.label')}
+          detail={t('more.notificationSettings.detail')}
           onPress={() => router.push('/patient/notification-settings')}
           last
         />
       </Group>
 
-      <Group title="Help">
+      <Group title={t('more.group.help')}>
         <Row
           icon="compass-outline"
           tint="teal"
-          label="Take a Quick Tour"
-          detail="A short walkthrough of the app"
+          label={t('more.tour.label')}
+          detail={t('more.tour.detail')}
           onPress={replayTour}
           last
         />
       </Group>
 
-      <Group title="Legal">
+      <Group title={t('more.group.legal')}>
         <Row
           icon="shield-checkmark-outline"
           tint="purple"
-          label="Privacy Policy"
-          detail="How we protect your data"
+          label={t('more.privacy.label')}
+          detail={t('more.privacy.detail')}
           external
           onPress={() => openWebPage(PRIVACY_URL)}
         />
         <Row
           icon="information-circle-outline"
           tint="teal"
-          label="Terms of Use"
-          detail="The terms for using eMCR"
+          label={t('more.terms.label')}
+          detail={t('more.terms.detail')}
           external
           onPress={() => openWebPage(TERMS_URL)}
           last
@@ -356,11 +370,12 @@ export default function MoreScreen() {
         <View style={[styles.rowIcon, { backgroundColor: TINTS.rose.bg }]}>
           <Ionicons name="log-out-outline" size={22} color={colors.danger} />
         </View>
-        <Text style={styles.signOutText}>Sign Out</Text>
+        <Text style={styles.signOutText}>{t('more.signOut.button')}</Text>
         {signingOut ? <ActivityIndicator color={colors.danger} /> : <Ionicons name="chevron-forward" size={20} color={colors.danger} />}
       </TouchableOpacity>
 
       <Text style={styles.version}>eMCR {Constants.expoConfig?.version ?? ''}</Text>
+      <LanguagePicker visible={pickingLanguage} onClose={() => setPickingLanguage(false)} />
     </ScrollView>
   );
 }

@@ -14,6 +14,7 @@ import { Banner, Button, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { IconField } from '@/components/auth';
 import { QrScanner } from '@/components/QrScanner';
+import { useT } from '@/lib/i18n';
 
 /**
  * "Enter your activation code": redeem the code printed on an eMCR voucher from a clinic.
@@ -22,6 +23,7 @@ import { QrScanner } from '@/components/QrScanner';
  */
 export default function ActivateScreen() {
   const bottomPad = useBottomPadding();
+  const t = useT();
   const account = useApiData<EmcrAccount>(EMCR_ENDPOINTS.account, { refreshOn: ['activation'] });
   const [code, setCode] = useState('');
   const [scanning, setScanning] = useState(false);
@@ -35,7 +37,7 @@ export default function ActivateScreen() {
   async function redeem(value = code) {
     if (inFlight.current) return;
     if (normalizeVoucherCode(value).length !== VOUCHER_LENGTH) {
-      setError('Enter the 12-character code on your voucher, like ABCD-EFGH-JKMN.');
+      setError(t('activate.enterFullCode'));
       return;
     }
     inFlight.current = true;
@@ -49,8 +51,8 @@ export default function ActivateScreen() {
     } catch (err) {
       setError(
         err instanceof ApiError && err.code === 'NETWORK'
-          ? "Can't reach the server. Check your connection and try again."
-          : errorMessage(err, "Couldn't activate. Please try again.")
+          ? t('common.network')
+          : errorMessage(err, t('activate.failed'))
       );
     } finally {
       inFlight.current = false;
@@ -62,7 +64,7 @@ export default function ActivateScreen() {
     setScanning(false);
     const scanned = voucherCodeFromQr(data);
     if (!scanned) {
-      setError("That QR code isn't an eMCR voucher. Scan the QR printed on your voucher, or type the code.");
+      setError(t('activate.notVoucher'));
       return;
     }
     const formatted = formatVoucherCode(scanned);
@@ -85,9 +87,9 @@ export default function ActivateScreen() {
       <SafeAreaView edges={['top']}>
         <AppHeader back />
         <Text style={styles.title} accessibilityRole="header">
-          Activate eMCR
+          {t('activate.title')}
         </Text>
-        <Text style={styles.subtitle}>Get an activation voucher at your clinic, then enter the code printed on it.</Text>
+        <Text style={styles.subtitle}>{t('activate.subtitle')}</Text>
       </SafeAreaView>
 
       {success ? (
@@ -96,22 +98,24 @@ export default function ActivateScreen() {
             <Ionicons name="checkmark" size={40} color={colors.primaryText} />
           </View>
           <Text style={styles.successTitle} accessibilityRole="header">
-            eMCR Is Active
+            {t('activate.successTitle')}
           </Text>
           <Text style={styles.successText}>
             {success.activation.expiresAt
-              ? `Active until ${formatDate(success.activation.expiresAt, { month: 'long', day: 'numeric', year: 'numeric' })}.`
-              : 'Your activation code was accepted.'}
+              ? t('activate.activeUntil', {
+                  date: formatDate(success.activation.expiresAt, { month: 'long', day: 'numeric', year: 'numeric' }),
+                })
+              : t('activate.accepted')}
           </Text>
-          {success.soldBy ? <Text style={styles.meta}>Voucher from {success.soldBy}</Text> : null}
-          <Button title="Done" onPress={close} style={styles.fullWidth} />
+          {success.soldBy ? <Text style={styles.meta}>{t('activate.voucherFrom', { seller: success.soldBy })}</Text> : null}
+          <Button title={t('common.done')} onPress={close} style={styles.fullWidth} />
         </View>
       ) : (
         <>
           <StatusCard loading={account.loading} error={account.error} account={account.data} />
 
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Enter your activation code</Text>
+            <Text style={styles.cardTitle}>{t('activate.enterCode')}</Text>
             {error ? (
               <View style={styles.banner}>
                 <Banner message={error} />
@@ -134,9 +138,9 @@ export default function ActivateScreen() {
               onSubmitEditing={() => redeem()}
               error={!!error}
             />
-            <Button title="Activate" onPress={() => redeem()} loading={submitting} disabled={!complete} />
+            <Button title={t('activate.activate')} onPress={() => redeem()} loading={submitting} disabled={!complete} />
             <Button
-              title="Scan the voucher QR"
+              title={t('activate.scanQr')}
               icon="qr-code-outline"
               variant="secondary"
               onPress={() => {
@@ -150,8 +154,7 @@ export default function ActivateScreen() {
           <View style={styles.note}>
             <Ionicons name="information-circle-outline" size={18} color={colors.slate} />
             <Text style={styles.noteText}>
-              Each code activates eMCR for a year, for you and the family members you manage. A new code adds a year
-              to the date your current one ends.
+              {t('activate.yearNote')}
             </Text>
           </View>
         </>
@@ -161,8 +164,8 @@ export default function ActivateScreen() {
         <QrScanner
           onScanned={handleScanned}
           onCancel={() => setScanning(false)}
-          prompt="Point the camera at the QR code on your activation voucher."
-          purpose="To scan your activation voucher"
+          prompt={t('activate.scanPrompt')}
+          purpose={t('activate.scanPurpose')}
         />
       </Modal>
     </ScrollView>
@@ -170,6 +173,7 @@ export default function ActivateScreen() {
 }
 
 function StatusCard({ loading, error, account }: { loading: boolean; error: string | null; account: EmcrAccount | null }) {
+  const t = useT();
   if (loading && !account) {
     return (
       <View style={[styles.card, styles.center]}>
@@ -188,13 +192,13 @@ function StatusCard({ loading, error, account }: { loading: boolean; error: stri
         <Ionicons name={active ? 'shield-checkmark-outline' : 'key-outline'} size={24} color={active ? colors.primaryOnSoft : colors.warning} />
       </View>
       <View style={styles.flex}>
-        <Text style={styles.cardTitle}>{active ? 'eMCR is active' : "eMCR isn't activated"}</Text>
+        <Text style={styles.cardTitle}>{active ? t('activate.isActive') : t('activate.notActivated')}</Text>
         <Text style={styles.meta}>
           {active
-            ? `Until ${until}${a.daysLeft ? ` · ${a.daysLeft} day${a.daysLeft === 1 ? '' : 's'} left` : ''}`
+            ? `${t('activate.until', { date: `${until}` })}${a.daysLeft ? t('activate.daysLeft', { count: a.daysLeft }) : ''}`
             : until
-              ? `Your activation ended on ${until}.`
-              : 'Enter a code to use booking, check-in, results and documents.'}
+              ? t('activate.endedOn', { date: until })
+              : t('activate.enterToUse')}
         </Text>
       </View>
     </View>

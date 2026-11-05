@@ -8,10 +8,11 @@ import { useApiData } from '@/lib/useApiData';
 import { appointmentStart, isUpcoming, rescheduleAppointment } from '@/lib/appointments';
 import { joinWaitlist } from '@/lib/waitlist';
 import { Appointment, BookingDoctor, BookingOptions } from '@/lib/types';
-import { clinicEpoch, clinicTodayYmd, clinicYmd, doctorName, formatTime, toYmd } from '@/lib/format';
+import { clinicEpoch, clinicTodayYmd, clinicYmd, doctorName, formatDate, FormatDateOptions, formatTime, toYmd } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName } from './ui';
 import { softShadow } from './AppHeader';
+import { PlainKey, t as translate, useT } from '@/lib/i18n';
 
 /** Matches the server's booking horizon; older servers without `bookableDates` get 30 days. */
 const HORIZON_DAYS = 60;
@@ -46,8 +47,16 @@ function fromYmd(key: string): Date {
   return new Date(y, m - 1, d);
 }
 
+/**
+ * A calendar day (local y/m/d, as the calendar builds them) in the app's language, through
+ * formatDate so month and weekday names follow the selected language.
+ */
+function dayLabel(d: Date, parts: Omit<FormatDateOptions, 'utc'>): string {
+  return formatDate(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()), { ...parts, utc: true });
+}
+
 function longDate(key: string): string {
-  return fromYmd(key).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  return dayLabel(fromYmd(key), { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
 /** The patient's upcoming appointment with this doctor at this slot, or null (also when offline). */
@@ -89,10 +98,10 @@ function useClinicToday(): string {
   return today;
 }
 
-const PERIODS: { label: string; icon: IconName; test: (minutes: number) => boolean }[] = [
-  { label: 'Morning', icon: 'partly-sunny-outline', test: (m) => m < 12 * 60 },
-  { label: 'Afternoon', icon: 'sunny-outline', test: (m) => m >= 12 * 60 && m < 17 * 60 },
-  { label: 'Evening', icon: 'moon-outline', test: (m) => m >= 17 * 60 },
+const PERIODS: { label: PlainKey; icon: IconName; test: (minutes: number) => boolean }[] = [
+  { label: 'appointments.book.period.morning', icon: 'partly-sunny-outline', test: (m) => m < 12 * 60 },
+  { label: 'appointments.book.period.afternoon', icon: 'sunny-outline', test: (m) => m >= 12 * 60 && m < 17 * 60 },
+  { label: 'appointments.book.period.evening', icon: 'moon-outline', test: (m) => m >= 17 * 60 },
 ];
 
 /**
@@ -132,6 +141,7 @@ export function BookingForm({
    */
   reschedule?: Appointment;
 }) {
+  const t = useT();
   const clinicParam = tenantId ? `tenantId=${encodeURIComponent(tenantId)}` : '';
   const doctorsQuery = useApiData<BookingOptions>(`/api/patients/appointments${clinicParam ? `?${clinicParam}` : ''}`);
   // Calendar days are plain y/m/d values; "today" is the clinic's date, not the phone's.
@@ -186,7 +196,7 @@ export function BookingForm({
         setSlots(available);
       })
       .catch((err) => {
-        if (!cancelled) setSlotsError(errorMessage(err, "Couldn't load available times."));
+        if (!cancelled) setSlotsError(errorMessage(err, translate('appointments.book.slotsFailed')));
       })
       .finally(() => {
         if (!cancelled) setSlotsLoading(false);
@@ -234,7 +244,7 @@ export function BookingForm({
       <View style={styles.center}>
         <Text style={styles.muted}>{doctorsQuery.error}</Text>
         <TouchableOpacity onPress={doctorsQuery.refresh} style={styles.retry} accessibilityRole="button">
-          <Text style={styles.link}>Try again</Text>
+          <Text style={styles.link}>{t('common.tryAgain')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -243,7 +253,9 @@ export function BookingForm({
     return (
       <View style={styles.center}>
         <Text style={styles.muted}>
-          {doctorName(reschedule?.doctor) ?? 'This doctor'} isn't taking online bookings right now. Please call the clinic to move this appointment.
+          {doctorName(reschedule?.doctor)
+            ? t('appointments.book.notOnline', { doctor: doctorName(reschedule?.doctor) ?? '' })
+            : t('appointments.book.notOnlineThisDoctor')}
         </Text>
       </View>
     );
@@ -251,7 +263,7 @@ export function BookingForm({
   if (doctors.length === 0) {
     return (
       <View style={styles.center}>
-        <Text style={styles.muted}>No doctors are taking online bookings at your clinic right now. Please call the clinic.</Text>
+        <Text style={styles.muted}>{t('appointments.book.noDoctors')}</Text>
       </View>
     );
   }
@@ -290,7 +302,7 @@ export function BookingForm({
   async function submit() {
     if (inFlight.current) return;
     if (!doctorId || !date || !time) {
-      setError('Choose a doctor, a date and a time.');
+      setError(t('appointments.book.chooseAll'));
       return;
     }
     inFlight.current = true;
@@ -310,7 +322,7 @@ export function BookingForm({
           onBooked({ appointment: saved, doctor: doctorName(doctor), date, time, video: wantsVideo });
           return;
         }
-        setError(errorMessage(err, "Couldn't move the appointment. Please try again."));
+        setError(errorMessage(err, t('appointments.book.moveFailed')));
         if (err instanceof ApiError && (err.status === 409 || err.status === 400)) setSlotsVersion((v) => v + 1);
       } finally {
         inFlight.current = false;
@@ -341,7 +353,7 @@ export function BookingForm({
         onBooked({ appointment: saved, doctor: doctorName(doctor), date, time, video: wantsVideo });
         return;
       }
-      setError(errorMessage(err, "Couldn't book the appointment. Please try again."));
+      setError(errorMessage(err, t('appointments.book.bookFailed')));
       if (err instanceof ApiError && (err.status === 409 || err.status === 400)) setSlotsVersion((v) => v + 1);
     } finally {
       inFlight.current = false;
@@ -352,13 +364,13 @@ export function BookingForm({
   const week = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const canPrev = weekStart > startOfWeek(today);
   const canNext = addDays(weekStart, 7) <= lastDay;
-  const monthLabel = week[3].toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const monthLabel = dayLabel(week[3], { month: 'long', year: 'numeric' });
   const noDates = !!doctor && bookable !== null && bookable.size === 0;
 
   return (
     <View style={styles.panel}>
       {showSpecialties ? (
-        <Step n={nextStep()} title="Select a Specialty" done={specialty !== ALL}>
+        <Step n={nextStep()} title={t('appointments.book.step.specialty')} done={specialty !== ALL}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList}>
             {[ALL, ...specialties].map((s) => {
               const selected = s === specialty;
@@ -372,7 +384,7 @@ export function BookingForm({
                 >
                   <Ionicons name={specialtyIcon(s)} size={26} color={colors.primary} />
                   <Text style={styles.specialtyText} numberOfLines={2}>
-                    {s === ALL ? 'All Doctors' : s}
+                    {s === ALL ? t('appointments.book.allDoctors') : s}
                   </Text>
                 </TouchableOpacity>
               );
@@ -382,13 +394,13 @@ export function BookingForm({
       ) : null}
 
       {moving ? (
-        <Step n={nextStep()} title="Your Appointment" done>
+        <Step n={nextStep()} title={t('appointments.book.step.yourAppointment')} done>
           <ReviewRow icon="person-outline" text={`${doctorName(doctor)}${doctor?.specialization ? ` · ${doctor.specialization}` : ''}`} />
-          {was ? <ReviewRow icon="calendar-outline" text={`Now: ${longDate(was.date)} at ${formatTime(was.time)}`} /> : null}
-          {wantsVideo ? <ReviewRow icon="videocam-outline" text="Video call" /> : null}
+          {was ? <ReviewRow icon="calendar-outline" text={t('appointments.book.now', { date: longDate(was.date), time: formatTime(was.time) })} /> : null}
+          {wantsVideo ? <ReviewRow icon="videocam-outline" text={t('appointments.videoCall')} /> : null}
         </Step>
       ) : (
-        <Step n={nextStep()} title="Choose a Doctor" done={!!doctor}>
+        <Step n={nextStep()} title={t('appointments.book.step.doctor')} done={!!doctor}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList}>
             {visibleDoctors.map((d) => {
               const id = d._id ?? '';
@@ -424,7 +436,7 @@ export function BookingForm({
                     <View style={styles.doctorHours}>
                       <Ionicons name="time-outline" size={13} color={colors.textMuted} />
                       <Text style={styles.doctorHoursText} numberOfLines={2}>
-                        {unavailable ? 'No openings in the next 2 months' : d.hoursSummary}
+                        {unavailable ? t('appointments.book.noOpenings2Months') : d.hoursSummary}
                       </Text>
                     </View>
                   ) : null}
@@ -441,11 +453,17 @@ export function BookingForm({
         </Step>
       )}
 
-      <Step n={nextStep()} title={moving ? 'Choose a New Date' : 'Select Date'} done={!!date} locked={!doctor} lockedHint="Choose a doctor first.">
+      <Step
+        n={nextStep()}
+        title={moving ? t('appointments.book.step.newDate') : t('appointments.book.step.date')}
+        done={!!date}
+        locked={!doctor}
+        lockedHint={t('appointments.book.lockedDoctor')}
+      >
         {noDates ? (
           <>
             <Text style={styles.muted}>
-              {doctorName(doctor)} has no openings in the next two months. Choose another doctor or call the clinic.
+              {t('appointments.book.noOpeningsDoctor', { doctor: doctorName(doctor) ?? '' })}
             </Text>
             {!moving && doctorId ? <WaitlistOffer key={doctorId} doctorId={doctorId} doctorLabel={doctorName(doctor)} date={null} /> : null}
           </>
@@ -457,7 +475,7 @@ export function BookingForm({
                 disabled={!canPrev}
                 style={styles.calNav}
                 accessibilityRole="button"
-                accessibilityLabel="Previous week"
+                accessibilityLabel={t('appointments.book.prevWeek')}
               >
                 <Ionicons name="chevron-back" size={20} color={canPrev ? colors.text : colors.border} />
               </TouchableOpacity>
@@ -467,7 +485,7 @@ export function BookingForm({
                 disabled={!canNext}
                 style={styles.calNav}
                 accessibilityRole="button"
-                accessibilityLabel="Next week"
+                accessibilityLabel={t('appointments.book.nextWeek')}
               >
                 <Ionicons name="chevron-forward" size={20} color={canNext ? colors.text : colors.border} />
               </TouchableOpacity>
@@ -486,10 +504,10 @@ export function BookingForm({
                     disabled={disabled}
                     accessibilityRole="button"
                     accessibilityState={{ selected, disabled }}
-                    accessibilityLabel={`${longDate(value)}${disabled ? ', unavailable' : ''}`}
+                    accessibilityLabel={disabled ? t('appointments.book.dayUnavailable', { date: longDate(value) }) : longDate(value)}
                   >
                     <Text style={[styles.weekday, isToday && styles.weekdayToday]} maxFontSizeMultiplier={1.4}>
-                      {isToday ? 'Today' : d.toLocaleDateString(undefined, { weekday: 'short' })}
+                      {isToday ? t('appointments.book.today') : dayLabel(d, { weekday: 'short' })}
                     </Text>
                     <View style={[styles.dayCell, selected && styles.dayCellSelected, disabled && styles.dayCellDisabled]}>
                       <Text
@@ -505,7 +523,7 @@ export function BookingForm({
               })}
             </View>
             {bookable ? (
-              <Text style={styles.legend}>Greyed-out days: the doctor isn't seeing patients.</Text>
+              <Text style={styles.legend}>{t('appointments.book.legend')}</Text>
             ) : null}
           </View>
         )}
@@ -513,24 +531,24 @@ export function BookingForm({
 
       <Step
         n={nextStep()}
-        title={moving ? 'Choose a New Time' : 'Select Time'}
+        title={moving ? t('appointments.book.step.newTime') : t('appointments.book.step.time')}
         done={!!time}
         locked={!doctor || !date}
-        lockedHint="Choose a doctor and a date to see open times."
-        aside={slots && slots.length > 0 ? `${slots.length} open` : undefined}
+        lockedHint={t('appointments.book.lockedTime')}
+        aside={slots && slots.length > 0 ? t('appointments.book.openCount', { count: slots.length }) : undefined}
       >
         {slotsLoading ? (
           <ActivityIndicator color={colors.primary} style={styles.slotsLoading} />
         ) : slotsError ? (
           <TouchableOpacity onPress={() => setSlotsVersion((v) => v + 1)} accessibilityRole="button">
-            <Text style={styles.error}>{slotsError} Tap to retry.</Text>
+            <Text style={styles.error}>{t('common.tapToRetry', { error: slotsError })}</Text>
           </TouchableOpacity>
         ) : grouped.length > 0 ? (
           grouped.map((g) => (
             <View key={g.label} style={styles.period}>
               <View style={styles.periodHeader}>
                 <Ionicons name={g.icon} size={15} color={colors.textMuted} />
-                <Text style={styles.periodLabel}>{g.label}</Text>
+                <Text style={styles.periodLabel}>{t(g.label)}</Text>
               </View>
               <View style={styles.slots}>
                 {g.slots.map((slot) => {
@@ -544,12 +562,12 @@ export function BookingForm({
                       disabled={isCurrent}
                       accessibilityRole="button"
                       accessibilityState={{ selected, disabled: isCurrent }}
-                      accessibilityLabel={isCurrent ? `${formatTime(slot)}, your current time` : undefined}
+                      accessibilityLabel={isCurrent ? t('appointments.book.currentA11y', { time: formatTime(slot) }) : undefined}
                     >
                       <Text style={[styles.slotText, selected && styles.slotTextSelected, isCurrent && styles.slotTextCurrent]}>
                         {formatTime(slot)}
                       </Text>
-                      {isCurrent ? <Text style={styles.slotCurrentLabel}>Current</Text> : null}
+                      {isCurrent ? <Text style={styles.slotCurrentLabel}>{t('appointments.book.current')}</Text> : null}
                     </TouchableOpacity>
                   );
                 })}
@@ -560,8 +578,10 @@ export function BookingForm({
           <>
             <Text style={styles.muted}>
               {dayOff
-                ? `${doctorName(doctor) ?? 'The doctor'} isn't seeing patients this day. Try another date.`
-                : 'This day is fully booked. Try another date, or wait for a time to open up.'}
+                ? doctorName(doctor)
+                  ? t('appointments.book.dayOff', { doctor: doctorName(doctor) ?? '' })
+                  : t('appointments.book.dayOffThisDoctor')
+                : t('appointments.book.fullyBooked')}
             </Text>
             {/* A full day can free up when someone cancels; a day off can't. */}
             {!dayOff && !moving && doctorId && date ? (
@@ -572,16 +592,26 @@ export function BookingForm({
       </Step>
 
       {videoOffered ? (
-        <Step n={nextStep()} title="Visit Type" done>
+        <Step n={nextStep()} title={t('appointments.book.step.visitType')} done>
           <View style={styles.modes}>
             {[
-              { value: false, icon: 'business-outline' as IconName, title: 'At the clinic', hint: 'See the doctor in person' },
-              { value: true, icon: 'videocam-outline' as IconName, title: 'Video call', hint: 'From your phone, with camera and mic' },
+              {
+                value: false,
+                icon: 'business-outline' as IconName,
+                title: t('appointments.book.mode.clinic'),
+                hint: t('appointments.book.mode.clinicHint'),
+              },
+              {
+                value: true,
+                icon: 'videocam-outline' as IconName,
+                title: t('appointments.videoCall'),
+                hint: t('appointments.book.mode.videoHint'),
+              },
             ].map((m) => {
               const selected = video === m.value;
               return (
                 <TouchableOpacity
-                  key={m.title}
+                  key={String(m.value)}
                   style={[styles.mode, selected && styles.selected]}
                   onPress={() => setVideo(m.value)}
                   accessibilityRole="radio"
@@ -599,29 +629,29 @@ export function BookingForm({
       ) : null}
 
       {moving ? null : (
-        <Step n={nextStep()} title="Reason for Visit" optional>
+        <Step n={nextStep()} title={t('appointments.book.step.reason')} optional>
           <TextInput
             style={styles.reason}
             value={reason}
             onChangeText={setReason}
             multiline
             maxLength={500}
-            placeholder="e.g. Follow-up check-up, cough for 3 days"
+            placeholder={t('appointments.book.reasonPlaceholder')}
             placeholderTextColor={colors.textMuted}
-            accessibilityLabel="Reason for visit"
+            accessibilityLabel={t('appointments.book.reasonA11y')}
           />
           <Text style={styles.counter}>{reason.length}/500</Text>
         </Step>
       )}
 
       {doctor && date && time ? (
-        <View style={styles.review} accessible accessibilityLabel={`Review: ${doctorName(doctor)}, ${longDate(date)} at ${formatTime(time)}`}>
-          <Text style={styles.reviewTitle}>{moving ? 'Review the change' : 'Review your request'}</Text>
+        <View style={styles.review} accessible accessibilityLabel={t('appointments.book.reviewA11y', { doctor: doctorName(doctor) ?? '', date: longDate(date), time: formatTime(time) })}>
+          <Text style={styles.reviewTitle}>{moving ? t('appointments.book.reviewChange') : t('appointments.book.reviewRequest')}</Text>
           <ReviewRow icon="person-outline" text={`${doctorName(doctor)}${doctor.specialization ? ` · ${doctor.specialization}` : ''}`} />
-          {was ? <ReviewRow icon="arrow-undo-outline" text={`From ${longDate(was.date)} at ${formatTime(was.time)}`} /> : null}
+          {was ? <ReviewRow icon="arrow-undo-outline" text={t('appointments.book.from', { date: longDate(was.date), time: formatTime(was.time) })} /> : null}
           <ReviewRow icon="calendar-outline" text={longDate(date)} />
           <ReviewRow icon="time-outline" text={formatTime(time)} />
-          {wantsVideo ? <ReviewRow icon="videocam-outline" text="Video call — join from this app" /> : null}
+          {wantsVideo ? <ReviewRow icon="videocam-outline" text={t('appointments.book.videoJoinApp')} /> : null}
           {!moving && reason.trim() ? <ReviewRow icon="chatbox-ellipses-outline" text={reason.trim()} /> : null}
         </View>
       ) : null}
@@ -629,7 +659,7 @@ export function BookingForm({
       {error ? <Banner message={error} /> : null}
 
       <Button
-        title={moving ? 'Confirm New Time' : 'Confirm Appointment'}
+        title={moving ? t('appointments.book.confirmNew') : t('appointments.book.confirm')}
         icon="calendar-outline"
         onPress={submit}
         loading={submitting}
@@ -637,8 +667,8 @@ export function BookingForm({
       />
       <Text style={styles.note}>
         {moving
-          ? "The clinic confirms the new time. You'll get a notification once it's confirmed."
-          : "The clinic confirms each request. You'll get a notification once it's confirmed."}
+          ? t('appointments.book.noteMove')
+          : t('appointments.book.noteBook')}
       </Text>
     </View>
   );
@@ -658,27 +688,28 @@ export function BookingSuccess({
   /** The appointment was moved rather than booked. */
   rescheduled?: boolean;
 }) {
+  const t = useT();
   const { appointment } = booked;
   return (
     <View style={[styles.panel, styles.success]}>
       <View style={styles.successIcon}>
         <Ionicons name="checkmark" size={40} color={colors.primaryText} />
       </View>
-      <Text style={styles.successTitle}>{rescheduled ? 'Appointment Moved' : 'Request Sent!'}</Text>
+      <Text style={styles.successTitle}>{rescheduled ? t('appointments.success.moved') : t('appointments.success.sent')}</Text>
       <Text style={styles.successText}>
         {rescheduled
-          ? "The clinic will confirm your new time. We'll notify you as soon as it's confirmed."
-          : "The clinic will review your request and confirm it. We'll notify you as soon as it's confirmed."}
+          ? t('appointments.success.movedText')
+          : t('appointments.success.sentText')}
       </Text>
       <View style={[styles.review, styles.successReview]}>
         {booked.doctor ? <ReviewRow icon="person-outline" text={booked.doctor} /> : null}
         <ReviewRow icon="calendar-outline" text={longDate(booked.date)} />
         <ReviewRow icon="time-outline" text={formatTime(booked.time)} />
-        {booked.video ? <ReviewRow icon="videocam-outline" text="Video call — the Join button appears 15 minutes before" /> : null}
-        {appointment?.appointmentCode ? <ReviewRow icon="pricetag-outline" text={`Ref ${appointment.appointmentCode}`} /> : null}
+        {booked.video ? <ReviewRow icon="videocam-outline" text={t('appointments.success.videoJoinSoon')} /> : null}
+        {appointment?.appointmentCode ? <ReviewRow icon="pricetag-outline" text={t('appointments.success.ref', { code: appointment.appointmentCode })} /> : null}
       </View>
-      {appointment?._id ? <Button title="View Appointment" onPress={onView} style={styles.stretch} /> : null}
-      {onBookAnother ? <Button title="Book Another" variant="secondary" onPress={onBookAnother} style={styles.stretch} /> : null}
+      {appointment?._id ? <Button title={t('appointments.success.view')} onPress={onView} style={styles.stretch} /> : null}
+      {onBookAnother ? <Button title={t('appointments.success.bookAnother')} variant="secondary" onPress={onBookAnother} style={styles.stretch} /> : null}
     </View>
   );
 }
@@ -692,7 +723,8 @@ function WaitlistOffer({ doctorId, doctorLabel, date }: { doctorId: string; doct
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showList, setShowList] = useState(false);
-  const who = doctorLabel ?? 'this doctor';
+  const t = useT();
+  const who = doctorLabel ? t('appointments.waitlist.who', { doctor: doctorLabel }) : t('appointments.waitlist.whoThisDoctor');
 
   async function join() {
     if (joining) return;
@@ -702,7 +734,7 @@ function WaitlistOffer({ doctorId, doctorLabel, date }: { doctorId: string; doct
       await joinWaitlist(doctorId, date);
       setJoined(true);
     } catch (err) {
-      setError(errorMessage(err, "Couldn't add you to the waitlist. Please try again."));
+      setError(errorMessage(err, t('appointments.waitlist.joinFailed')));
       // Already waiting or at the limit: the list is where to sort that out.
       setShowList(err instanceof ApiError && (err.code === 'ALREADY_WAITING' || err.code === 'WAITLIST_LIMIT'));
     } finally {
@@ -715,13 +747,15 @@ function WaitlistOffer({ doctorId, doctorLabel, date }: { doctorId: string; doct
       <View style={styles.waitlist} accessibilityLiveRegion="polite">
         <View style={styles.waitlistHead}>
           <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
-          <Text style={styles.waitlistTitle}>You're on the waitlist</Text>
+          <Text style={styles.waitlistTitle}>{t('appointments.waitlist.joinedTitle')}</Text>
         </View>
         <Text style={styles.waitlistText}>
-          If a time with {who} opens up{date ? ` within a week of ${longDate(date)}` : ''}, it's booked for you straight away
-          and we'll send you a notification. You can leave the waitlist at any time.
+          {t('appointments.waitlist.joinedText', {
+            who,
+            within: date ? t('appointments.waitlist.within', { date: longDate(date) }) : '',
+          })}
         </Text>
-        <Button title="View waitlist" variant="secondary" icon="list-outline" onPress={() => router.push('/patient/waitlist')} />
+        <Button title={t('appointments.waitlist.view')} variant="secondary" icon="list-outline" onPress={() => router.push('/patient/waitlist')} />
       </View>
     );
   }
@@ -730,18 +764,18 @@ function WaitlistOffer({ doctorId, doctorLabel, date }: { doctorId: string; doct
     <View style={styles.waitlist}>
       <View style={styles.waitlistHead}>
         <Ionicons name="hourglass-outline" size={20} color={colors.primary} />
-        <Text style={styles.waitlistTitle}>Wait for a cancellation</Text>
+        <Text style={styles.waitlistTitle}>{t('appointments.waitlist.offerTitle')}</Text>
       </View>
       <Text style={styles.waitlistText}>
         {date
-          ? `Join the waitlist and if a time with ${who} opens up within a week of ${longDate(date)}, we'll book it for you and let you know.`
-          : `Join the waitlist and if a time with ${who} opens up on any day, we'll book it for you and let you know.`}
+          ? t('appointments.waitlist.offerDay', { who, date: longDate(date) })
+          : t('appointments.waitlist.offerAny', { who })}
       </Text>
       {error ? <Banner message={error} /> : null}
-      <Button title="Join the waitlist" icon="hourglass-outline" variant="secondary" onPress={join} loading={joining} />
+      <Button title={t('appointments.waitlist.join')} icon="hourglass-outline" variant="secondary" onPress={join} loading={joining} />
       {showList ? (
         <TouchableOpacity onPress={() => router.push('/patient/waitlist')} accessibilityRole="link" style={styles.waitlistLink}>
-          <Text style={styles.link}>See your waitlist</Text>
+          <Text style={styles.link}>{t('appointments.waitlist.see')}</Text>
         </TouchableOpacity>
       ) : null}
     </View>
@@ -776,6 +810,7 @@ function Step({
   aside?: string;
   children: ReactNode;
 }) {
+  const t = useT();
   return (
     <View style={styles.step}>
       <View style={styles.stepHeader}>
@@ -791,7 +826,7 @@ function Step({
         <Text style={[styles.stepTitle, locked && styles.stepTitleLocked]} accessibilityRole="header">
           {title}
         </Text>
-        {optional ? <Text style={styles.aside}>Optional</Text> : aside ? <Text style={styles.asideStrong}>{aside}</Text> : null}
+        {optional ? <Text style={styles.aside}>{t('appointments.book.optional')}</Text> : aside ? <Text style={styles.asideStrong}>{aside}</Text> : null}
       </View>
       {locked ? <Text style={styles.lockedHint}>{lockedHint}</Text> : children}
     </View>

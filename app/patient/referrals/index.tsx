@@ -8,6 +8,7 @@ import { Referral, REFERRALS_PATH, referredToText, STATUS_LABEL, URGENCY_LABEL }
 import { colors, radius, spacing } from '@/lib/theme';
 import { Badge, Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
+import { useT } from '@/lib/i18n';
 
 const TONE: Record<Referral['status'], 'primary' | 'warning' | 'danger' | 'neutral'> = {
   pending: 'warning',
@@ -19,6 +20,7 @@ const TONE: Record<Referral['status'], 'primary' | 'warning' | 'danger' | 'neutr
 
 /** Referrals to a specialist or another clinic, newest first. */
 export default function ReferralsScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const list = usePaginatedList<Referral>(REFERRALS_PATH, { limit: 20, refreshOn: ['profile', 'family'] });
 
@@ -26,9 +28,9 @@ export default function ReferralsScreen() {
     <SafeAreaView edges={['top']}>
       <AppHeader back />
       <Text style={styles.title} accessibilityRole="header">
-        Referrals
+        {t('referrals.title')}
       </Text>
-      <Text style={styles.subtitle}>When your doctor refers you to a specialist or another clinic.</Text>
+      <Text style={styles.subtitle}>{t('referrals.subtitle')}</Text>
       {list.error && list.items.length > 0 ? <Banner message={list.error} /> : null}
     </SafeAreaView>
   );
@@ -40,7 +42,7 @@ export default function ReferralsScreen() {
     empty = (
       <View style={styles.empty}>
         <Text style={styles.emptyText}>{list.error}</Text>
-        <Button title="Try Again" variant="secondary" onPress={list.reload} style={styles.stretch} />
+        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={list.reload} style={styles.stretch} />
       </View>
     );
   } else {
@@ -49,8 +51,8 @@ export default function ReferralsScreen() {
         <View style={styles.emptyIcon}>
           <Ionicons name="git-branch-outline" size={32} color={colors.primary} />
         </View>
-        <Text style={styles.emptyTitle}>No referrals</Text>
-        <Text style={styles.emptyText}>If your doctor refers you to a specialist, you can follow it here.</Text>
+        <Text style={styles.emptyTitle}>{t('referrals.empty.title')}</Text>
+        <Text style={styles.emptyText}>{t('referrals.empty.text')}</Text>
       </View>
     );
   }
@@ -74,6 +76,7 @@ export default function ReferralsScreen() {
 }
 
 function ReferralCard({ referral: r }: { referral: Referral }) {
+  const t = useT();
   const to = referredToText(r);
   const urgency = URGENCY_LABEL[r.urgency];
   return (
@@ -81,7 +84,11 @@ function ReferralCard({ referral: r }: { referral: Referral }) {
       style={styles.card}
       onPress={() => router.push(`/patient/referrals/${r._id}`)}
       accessibilityRole="button"
-      accessibilityLabel={`Referral to ${to}, ${STATUS_LABEL[r.status] ?? r.status}${r.referredDate ? `, ${formatDate(r.referredDate)}` : ''}`}
+      accessibilityLabel={
+        r.referredDate
+          ? t('referrals.cardA11yDate', { to, status: STATUS_LABEL[r.status] ?? r.status, date: formatDate(r.referredDate) })
+          : t('referrals.cardA11y', { to, status: STATUS_LABEL[r.status] ?? r.status })
+      }
     >
       <View style={styles.cardTop}>
         <View style={styles.icon}>
@@ -107,7 +114,7 @@ function ReferralCard({ referral: r }: { referral: Referral }) {
         {r.appointment ? (
           <View style={styles.appt}>
             <Ionicons name="calendar-outline" size={14} color={colors.textMuted} />
-            <Text style={styles.cardMeta}>Appointment booked</Text>
+            <Text style={styles.cardMeta}>{t('referrals.apptBooked')}</Text>
           </View>
         ) : null}
         <View style={styles.flex} />

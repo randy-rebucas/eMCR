@@ -8,6 +8,7 @@ import { UnreadProvider } from '@/lib/unread';
 import { NotificationResponder } from '@/components/NotificationResponder';
 import { PrivacyGuard } from '@/components/PrivacyGuard';
 import { TourProvider } from '@/components/QuickTour';
+import { useT } from '@/lib/i18n';
 
 /** Patient area: tabs plus pushed detail screens. Only for a signed-in session. */
 export default function PatientLayout() {
@@ -32,6 +33,7 @@ export default function PatientLayout() {
  */
 function ProfileScreens() {
   const { viewing } = useProfile();
+  const t = useT();
   return (
     <UnreadProvider key={viewing?.id ?? 'self'}>
       <PendingRoute />
@@ -41,38 +43,40 @@ function ProfileScreens() {
             headerStyle: { backgroundColor: colors.surface },
             headerTitleStyle: { color: colors.text },
             headerTintColor: colors.primary,
-            headerBackTitle: 'Back',
+            headerBackTitle: t('common.back'),
+            // SDK 58 defaults to a see-through header on iOS 26+, which slides content under it.
+            headerTransparent: false,
             contentStyle: { backgroundColor: colors.background },
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="appointments/[id]" options={{ title: 'Appointment' }} />
-          <Stack.Screen name="appointments/book" options={{ title: 'Book appointment' }} />
-          <Stack.Screen name="appointments/reschedule" options={{ title: 'Reschedule' }} />
-          <Stack.Screen name="visits/index" options={{ title: 'Visit History', headerShown: false }} />
-          <Stack.Screen name="visits/[id]" options={{ title: 'Visit' }} />
-          <Stack.Screen name="vitals" options={{ title: 'Vitals', headerShown: false }} />
-          <Stack.Screen name="share" options={{ title: 'Share with a doctor', headerShown: false }} />
-          <Stack.Screen name="medicines" options={{ title: 'Medicine Reminders', headerShown: false }} />
-          <Stack.Screen name="membership" options={{ title: 'Membership', headerShown: false }} />
-          <Stack.Screen name="waitlist" options={{ title: 'Waitlist', headerShown: false }} />
-          <Stack.Screen name="referrals/index" options={{ title: 'Referrals', headerShown: false }} />
-          <Stack.Screen name="referrals/[id]" options={{ title: 'Referral' }} />
-          <Stack.Screen name="results/[id]" options={{ title: 'Lab result' }} />
-          <Stack.Screen name="prescriptions/index" options={{ title: 'Prescriptions', headerShown: false }} />
-          <Stack.Screen name="prescriptions/[id]" options={{ title: 'Prescription' }} />
-          <Stack.Screen name="invoices/index" options={{ title: 'Billing', headerShown: false }} />
-          <Stack.Screen name="invoices/[id]" options={{ title: 'Invoice' }} />
-          <Stack.Screen name="documents" options={{ title: 'Documents', headerShown: false }} />
-          <Stack.Screen name="clinics" options={{ title: 'My Clinics', headerShown: false }} />
-          <Stack.Screen name="health-summary" options={{ title: 'Health Summary', headerShown: false }} />
-          <Stack.Screen name="family" options={{ title: 'Family', headerShown: false }} />
-          <Stack.Screen name="notifications" options={{ title: 'Notifications', headerShown: false }} />
-          <Stack.Screen name="notification-settings" options={{ title: 'Notification Settings', headerShown: false }} />
-          <Stack.Screen name="profile/index" options={{ title: 'Profile', headerShown: false }} />
-          <Stack.Screen name="profile/edit" options={{ title: 'Edit contact details', headerShown: false }} />
-          <Stack.Screen name="profile/password" options={{ title: 'Password', headerShown: false }} />
-          <Stack.Screen name="activate" options={{ title: 'Activate eMCR', headerShown: false }} />
+          <Stack.Screen name="appointments/[id]" options={{ title: t('patient.title.appointment') }} />
+          <Stack.Screen name="appointments/book" options={{ title: t('patient.title.book') }} />
+          <Stack.Screen name="appointments/reschedule" options={{ title: t('patient.title.reschedule') }} />
+          <Stack.Screen name="visits/index" options={{ title: t('patient.title.visitHistory'), headerShown: false }} />
+          <Stack.Screen name="visits/[id]" options={{ title: t('patient.title.visit') }} />
+          <Stack.Screen name="vitals" options={{ title: t('patient.title.vitals'), headerShown: false }} />
+          <Stack.Screen name="share" options={{ title: t('patient.title.share'), headerShown: false }} />
+          <Stack.Screen name="medicines" options={{ title: t('patient.title.medicines'), headerShown: false }} />
+          <Stack.Screen name="membership" options={{ title: t('patient.title.membership'), headerShown: false }} />
+          <Stack.Screen name="waitlist" options={{ title: t('patient.title.waitlist'), headerShown: false }} />
+          <Stack.Screen name="referrals/index" options={{ title: t('patient.title.referrals'), headerShown: false }} />
+          <Stack.Screen name="referrals/[id]" options={{ title: t('patient.title.referral') }} />
+          <Stack.Screen name="results/[id]" options={{ title: t('patient.title.labResult') }} />
+          <Stack.Screen name="prescriptions/index" options={{ title: t('patient.title.prescriptions'), headerShown: false }} />
+          <Stack.Screen name="prescriptions/[id]" options={{ title: t('patient.title.prescription') }} />
+          <Stack.Screen name="invoices/index" options={{ title: t('patient.title.billing'), headerShown: false }} />
+          <Stack.Screen name="invoices/[id]" options={{ title: t('patient.title.invoice') }} />
+          <Stack.Screen name="documents" options={{ title: t('patient.title.documents'), headerShown: false }} />
+          <Stack.Screen name="clinics" options={{ title: t('patient.title.clinics'), headerShown: false }} />
+          <Stack.Screen name="health-summary" options={{ title: t('patient.title.healthSummary'), headerShown: false }} />
+          <Stack.Screen name="family" options={{ title: t('patient.title.family'), headerShown: false }} />
+          <Stack.Screen name="notifications" options={{ title: t('patient.title.notifications'), headerShown: false }} />
+          <Stack.Screen name="notification-settings" options={{ title: t('patient.title.notificationSettings'), headerShown: false }} />
+          <Stack.Screen name="profile/index" options={{ title: t('patient.title.profile'), headerShown: false }} />
+          <Stack.Screen name="profile/edit" options={{ title: t('patient.title.editContact'), headerShown: false }} />
+          <Stack.Screen name="profile/password" options={{ title: t('patient.title.password'), headerShown: false }} />
+          <Stack.Screen name="activate" options={{ title: t('patient.title.activate'), headerShown: false }} />
         </Stack>
       </TourProvider>
     </UnreadProvider>

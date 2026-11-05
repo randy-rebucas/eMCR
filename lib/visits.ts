@@ -3,6 +3,7 @@
 // Visit model; everything is optional because older records may lack it.
 
 import { humanize } from './format';
+import { PlainKey, t } from './i18n';
 
 export type VisitType = 'consultation' | 'follow-up' | 'checkup' | 'emergency' | 'teleconsult' | 'vaccination';
 
@@ -63,18 +64,19 @@ export interface VitalsEntry {
   vitals: VisitVitals;
 }
 
-const VISIT_TYPE: Record<string, string> = {
-  consultation: 'Consultation',
-  'follow-up': 'Follow-up Visit',
-  checkup: 'Check-up',
-  emergency: 'Emergency Visit',
-  teleconsult: 'Teleconsultation',
-  vaccination: 'Vaccination',
+const VISIT_TYPE: Record<string, PlainKey> = {
+  consultation: 'visits.type.consultation',
+  'follow-up': 'visits.type.follow-up',
+  checkup: 'visits.type.checkup',
+  emergency: 'visits.type.emergency',
+  teleconsult: 'visits.type.teleconsult',
+  vaccination: 'visits.type.vaccination',
 };
 
 export function visitTypeLabel(type: string | null | undefined): string {
-  if (!type) return 'Clinic Visit';
-  return VISIT_TYPE[type] ?? humanize(type);
+  if (!type) return t('visits.type.default');
+  const key = VISIT_TYPE[type];
+  return key ? t(key) : humanize(type);
 }
 
 /** "Dr. Ana Cruz", or null when the visit names no provider. */
@@ -138,16 +140,31 @@ export interface Measure {
   decimals: number;
 }
 
+/** A measure whose label and spoken unit are read in the current language each time. */
+function measure(key: MeasureKey, label: PlainKey, unit: string, unitSpoken: PlainKey | null, decimals: number): Measure {
+  return {
+    key,
+    get label() {
+      return t(label);
+    },
+    unit,
+    get unitSpoken() {
+      return unitSpoken ? t(unitSpoken) : '';
+    },
+    decimals,
+  };
+}
+
 /** Display order of the measures; only those present in the data are offered. */
 export const MEASURES: Measure[] = [
-  { key: 'bp', label: 'Blood Pressure', unit: 'mmHg', unitSpoken: 'millimetres of mercury', decimals: 0 },
-  { key: 'hr', label: 'Heart Rate', unit: 'bpm', unitSpoken: 'beats per minute', decimals: 0 },
-  { key: 'weightKg', label: 'Weight', unit: 'kg', unitSpoken: 'kilograms', decimals: 1 },
-  { key: 'bmi', label: 'BMI', unit: '', unitSpoken: '', decimals: 1 },
-  { key: 'tempC', label: 'Temperature', unit: '°C', unitSpoken: 'degrees Celsius', decimals: 1 },
-  { key: 'spo2', label: 'Oxygen (SpO₂)', unit: '%', unitSpoken: 'percent', decimals: 0 },
-  { key: 'rr', label: 'Breathing Rate', unit: '/min', unitSpoken: 'breaths per minute', decimals: 0 },
-  { key: 'heightCm', label: 'Height', unit: 'cm', unitSpoken: 'centimetres', decimals: 1 },
+  measure('bp', 'visits.measure.bp', 'mmHg', 'visits.spoken.bp', 0),
+  measure('hr', 'visits.measure.hr', 'bpm', 'visits.spoken.hr', 0),
+  measure('weightKg', 'visits.measure.weightKg', 'kg', 'visits.spoken.weightKg', 1),
+  measure('bmi', 'visits.measure.bmi', '', null, 1),
+  measure('tempC', 'visits.measure.tempC', '°C', 'visits.spoken.tempC', 1),
+  measure('spo2', 'visits.measure.spo2', '%', 'visits.spoken.spo2', 0),
+  measure('rr', 'visits.measure.rr', '/min', 'visits.spoken.rr', 0),
+  measure('heightCm', 'visits.measure.heightCm', 'cm', 'visits.spoken.heightCm', 1),
 ];
 
 /** One reading of a measure. `values` has one entry, or two for blood pressure (systolic, diastolic). */

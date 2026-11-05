@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Linking, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { errorMessage } from '@/lib/api';
+import { apiRequest, errorMessage } from '@/lib/api';
 import {
   getPushPermission,
   getPushPrefs,
@@ -15,30 +15,55 @@ import {
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName, LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
+import { PlainKey, t as translate, useT } from '@/lib/i18n';
 
-const CATEGORIES: { key: PushCategory; icon: IconName; label: string; detail: string }[] = [
+const SMS_ENDPOINT = '/api/patients/me/sms-preference';
+type SmsPreference = { hasPhone: boolean; textsEnabled: boolean };
+
+// Labels and details are string keys, translated where they are shown.
+const CATEGORIES: { key: PushCategory; icon: IconName; label: PlainKey; detail: PlainKey }[] = [
   {
     key: 'appointments',
     icon: 'calendar-outline',
-    label: 'Appointments',
-    detail: 'Confirmations, reminders and schedule changes',
+    label: 'patient.notifSettings.appointments',
+    detail: 'patient.notifSettings.appointmentsDetail',
   },
   {
     key: 'followUps',
     icon: 'repeat-outline',
-    label: 'Follow-up Visits',
-    detail: 'Reminders when a follow-up visit is coming up',
+    label: 'patient.notifSettings.followUps',
+    detail: 'patient.notifSettings.followUpsDetail',
   },
-  { key: 'labResults', icon: 'flask-outline', label: 'Lab Results', detail: 'When a new result is ready to view' },
+  {
+    key: 'labResults',
+    icon: 'flask-outline',
+    label: 'patient.notifSettings.labResults',
+    detail: 'patient.notifSettings.labResultsDetail',
+  },
   {
     key: 'prescriptions',
     icon: 'medkit-outline',
-    label: 'Prescription Refills',
-    detail: 'When a prescription is due for a refill',
+    label: 'patient.notifSettings.prescriptions',
+    detail: 'patient.notifSettings.prescriptionsDetail',
   },
-  { key: 'billing', icon: 'receipt-outline', label: 'Payments', detail: 'Reminders about unpaid balances' },
-  { key: 'queue', icon: 'people-outline', label: 'Queue Updates', detail: "When you're next or it's your turn" },
-  { key: 'messages', icon: 'chatbubble-ellipses-outline', label: 'Clinic Messages', detail: 'Messages and announcements from your clinic' },
+  {
+    key: 'billing',
+    icon: 'receipt-outline',
+    label: 'patient.notifSettings.billing',
+    detail: 'patient.notifSettings.billingDetail',
+  },
+  {
+    key: 'queue',
+    icon: 'people-outline',
+    label: 'patient.notifSettings.queue',
+    detail: 'patient.notifSettings.queueDetail',
+  },
+  {
+    key: 'messages',
+    icon: 'chatbubble-ellipses-outline',
+    label: 'patient.notifSettings.messages',
+    detail: 'patient.notifSettings.messagesDetail',
+  },
 ];
 
 /**
@@ -47,18 +72,21 @@ const CATEGORIES: { key: PushCategory; icon: IconName; label: string; detail: st
  */
 export default function NotificationSettingsScreen() {
   const bottomPad = useBottomPadding();
+  const t = useT();
   const [permission, setPermission] = useState<PushPermission | null>(null);
   const [prefs, setPrefs] = useState<PushPrefs | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState<Partial<Record<PushCategory, boolean>>>({});
   const [asking, setAsking] = useState(false);
+  const [sms, setSms] = useState<SmsPreference | null>(null);
+  const [savingSms, setSavingSms] = useState(false);
 
   const loadPrefs = useCallback(() => {
     setLoadError(null);
     getPushPrefs()
       .then(setPrefs)
-      .catch((err) => setLoadError(errorMessage(err, "Couldn't load your notification settings.")));
+      .catch((err) => setLoadError(errorMessage(err, translate('patient.notifSettings.loadFailed'))));
   }, []);
 
   // Re-read the permission on return from the phone's Settings app; register the token once it's on.
@@ -74,6 +102,8 @@ export default function NotificationSettingsScreen() {
   useEffect(() => {
     checkPermission();
     loadPrefs();
+    // Older servers don't have this; the switch just stays hidden.
+    apiRequest<SmsPreference>(SMS_ENDPOINT, { profile: false }).then(setSms).catch(() => {});
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') checkPermission();
     });
@@ -102,9 +132,24 @@ export default function NotificationSettingsScreen() {
       setPrefs((p) => (p ? { ...p, [key]: saved[key] } : saved));
     } catch (err) {
       setPrefs((p) => (p ? { ...p, [key]: !value } : p));
-      setSaveError(errorMessage(err, "Couldn't save that change. Please try again."));
+      setSaveError(errorMessage(err, t('patient.notifSettings.saveFailed')));
     } finally {
       setSaving((s) => ({ ...s, [key]: false }));
+    }
+  }
+
+  async function toggleTexts(value: boolean) {
+    if (!sms || savingSms) return;
+    setSaveError(null);
+    setSms({ ...sms, textsEnabled: value });
+    setSavingSms(true);
+    try {
+      await apiRequest(SMS_ENDPOINT, { method: 'PUT', body: { textsEnabled: value }, profile: false });
+    } catch (err) {
+      setSms((s) => (s ? { ...s, textsEnabled: !value } : s));
+      setSaveError(errorMessage(err, t('patient.notifSettings.saveFailed')));
+    } finally {
+      setSavingSms(false);
     }
   }
 
@@ -121,21 +166,21 @@ export default function NotificationSettingsScreen() {
       <SafeAreaView edges={['top']}>
         <AppHeader back />
         <Text style={styles.title} accessibilityRole="header">
-          Notification Settings
+          {t('patient.notifSettings.title')}
         </Text>
-        <Text style={styles.subtitle}>Choose which updates this phone alerts you about.</Text>
+        <Text style={styles.subtitle}>{t('patient.notifSettings.subtitle')}</Text>
       </SafeAreaView>
 
       <PermissionCard permission={permission} asking={asking} onTurnOn={turnOn} />
 
       <Text style={styles.groupTitle} accessibilityRole="header">
-        Notify me about
+        {t('patient.notifSettings.notifyMe')}
       </Text>
       {saveError ? <Banner message={saveError} /> : null}
       {loadError ? (
         <View style={styles.card}>
           <Text style={styles.errorText}>{loadError}</Text>
-          <Button title="Try Again" variant="secondary" icon="refresh" onPress={loadPrefs} style={styles.retry} />
+          <Button title={t('common.tryAgainTitle')} variant="secondary" icon="refresh" onPress={loadPrefs} style={styles.retry} />
         </View>
       ) : prefs ? (
         <View style={[styles.card, styles.list, !pushOn && styles.dimmed]}>
@@ -145,8 +190,8 @@ export default function NotificationSettingsScreen() {
                 <Ionicons name={c.icon} size={22} color={colors.primaryOnSoft} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.rowLabel}>{c.label}</Text>
-                <Text style={styles.rowDetail}>{c.detail}</Text>
+                <Text style={styles.rowLabel}>{t(c.label)}</Text>
+                <Text style={styles.rowDetail}>{t(c.detail)}</Text>
               </View>
               {saving[c.key] ? <ActivityIndicator size="small" color={colors.primary} style={styles.spinner} /> : null}
               <Switch
@@ -156,21 +201,52 @@ export default function NotificationSettingsScreen() {
                 trackColor={{ false: colors.border, true: colors.accent }}
                 thumbColor={colors.surface}
                 ios_backgroundColor={colors.border}
-                accessibilityLabel={`${c.label}. ${c.detail}`}
+                accessibilityLabel={t('patient.notifSettings.switchA11y', { label: t(c.label), detail: t(c.detail) })}
               />
             </View>
           ))}
         </View>
       ) : null}
 
+      {sms?.hasPhone ? (
+        <>
+          <Text style={styles.groupTitle} accessibilityRole="header">
+            {t('patient.notifSettings.textsTitle')}
+          </Text>
+          <View style={[styles.card, styles.list]}>
+            <View style={styles.row}>
+              <View style={styles.rowIcon}>
+                <Ionicons name="chatbox-ellipses-outline" size={22} color={colors.primaryOnSoft} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.rowLabel}>{t('patient.notifSettings.textsLabel')}</Text>
+                <Text style={styles.rowDetail}>{t('patient.notifSettings.textsDetail')}</Text>
+              </View>
+              {savingSms ? <ActivityIndicator size="small" color={colors.primary} style={styles.spinner} /> : null}
+              <Switch
+                value={sms.textsEnabled}
+                onValueChange={toggleTexts}
+                disabled={savingSms}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor={colors.surface}
+                ios_backgroundColor={colors.border}
+                accessibilityLabel={t('patient.notifSettings.switchA11y', {
+                  label: t('patient.notifSettings.textsLabel'),
+                  detail: t('patient.notifSettings.textsDetail'),
+                })}
+              />
+            </View>
+          </View>
+        </>
+      ) : null}
+
       <Text style={styles.footnote}>
-        These settings apply to this phone only. Everything still appears in your Notifications inbox, and your
-        clinic may also text or email you.
+        {t('patient.notifSettings.footnote')}
       </Text>
 
       {pushOn ? (
         <TouchableOpacity style={styles.link} onPress={() => Linking.openSettings()} accessibilityRole="link">
-          <Text style={styles.linkText}>Sounds and banners are set in your phone's settings</Text>
+          <Text style={styles.linkText}>{t('patient.notifSettings.soundsLink')}</Text>
           <Ionicons name="open-outline" size={16} color={colors.primary} />
         </TouchableOpacity>
       ) : null}
@@ -187,6 +263,7 @@ function PermissionCard({
   asking: boolean;
   onTurnOn: () => void;
 }) {
+  const t = useT();
   if (permission === 'granted') {
     return (
       <View style={[styles.status, styles.statusOn]}>
@@ -194,8 +271,8 @@ function PermissionCard({
           <Ionicons name="notifications" size={22} color={colors.primary} />
         </View>
         <View style={styles.flex}>
-          <Text style={styles.statusTitle}>Notifications are on</Text>
-          <Text style={styles.statusText}>This phone can alert you about the updates below.</Text>
+          <Text style={styles.statusTitle}>{t('patient.notifSettings.onTitle')}</Text>
+          <Text style={styles.statusText}>{t('patient.notifSettings.onBody')}</Text>
         </View>
       </View>
     );
@@ -208,9 +285,9 @@ function PermissionCard({
           <Ionicons name="phone-portrait-outline" size={22} color={colors.slate} />
         </View>
         <View style={styles.flex}>
-          <Text style={styles.statusTitle}>Not available on this device</Text>
+          <Text style={styles.statusTitle}>{t('patient.notifSettings.unavailableTitle')}</Text>
           <Text style={styles.statusText}>
-            Alerts work in the eMCR app on a phone. You'll still find every update in Notifications.
+            {t('patient.notifSettings.unavailableBody')}
           </Text>
         </View>
       </View>
@@ -225,18 +302,18 @@ function PermissionCard({
           <Ionicons name="notifications-off-outline" size={22} color={colors.warning} />
         </View>
         <View style={styles.flex}>
-          <Text style={styles.statusTitle}>Notifications are off</Text>
+          <Text style={styles.statusTitle}>{t('patient.notifSettings.offTitle')}</Text>
           <Text style={styles.statusText}>
             {denied
-              ? 'Turn on notifications for eMCR in your phone settings to get appointment reminders and results.'
-              : "Turn them on so you don't miss appointment reminders, results and queue updates."}
+              ? t('patient.notifSettings.offDenied')
+              : t('patient.notifSettings.offAsk')}
           </Text>
         </View>
       </View>
       {denied ? (
-        <Button title="Open Phone Settings" icon="settings-outline" onPress={() => Linking.openSettings()} />
+        <Button title={t('patient.notifSettings.openSettings')} icon="settings-outline" onPress={() => Linking.openSettings()} />
       ) : (
-        <Button title="Turn On Notifications" icon="notifications-outline" onPress={onTurnOn} loading={asking} />
+        <Button title={t('patient.notifSettings.turnOn')} icon="notifications-outline" onPress={onTurnOn} loading={asking} />
       )}
     </View>
   );

@@ -20,8 +20,10 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { IconName, LoadingView, useBottomPadding } from '@/components/ui';
 import { ErrorState } from '@/components/ErrorState';
 import { softShadow } from '@/components/AppHeader';
+import { useT } from '@/lib/i18n';
 
 export default function VisitDetailScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, loading, refreshing, error, refresh } = useApiData<Visit>(
@@ -31,7 +33,7 @@ export default function VisitDetailScreen() {
 
   if (loading) return <LoadingView />;
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data) return <ErrorState message="Visit not found." onRetry={refresh} />;
+  if (!data) return <ErrorState message={t('visits.notFound')} onRetry={refresh} />;
 
   const visit = data;
   const type = visitTypeLabel(visit.visitType);
@@ -69,25 +71,25 @@ export default function VisitDetailScreen() {
           </Text>
           <Text style={styles.meta}>{formatDate(visit.date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</Text>
           {doctor || clinic ? <Text style={styles.meta}>{[doctor, clinic].filter(Boolean).join(' · ')}</Text> : null}
-          {visit.visitCode ? <Text style={styles.meta}>Ref: {visit.visitCode}</Text> : null}
+          {visit.visitCode ? <Text style={styles.meta}>{t('visits.ref', { code: visit.visitCode })}</Text> : null}
         </View>
       </View>
 
       {visit.status === 'cancelled' ? (
         <View style={styles.note}>
           <Ionicons name="information-circle-outline" size={18} color={colors.slate} />
-          <Text style={styles.noteText}>This visit was cancelled.</Text>
+          <Text style={styles.noteText}>{t('visits.wasCancelled')}</Text>
         </View>
       ) : null}
 
       {visit.chiefComplaint?.trim() ? (
-        <Section title="Reason for Visit" icon="chatbubble-ellipses-outline">
+        <Section title={t('visits.reason')} icon="chatbubble-ellipses-outline">
           <Text style={styles.body}>{visit.chiefComplaint.trim()}</Text>
         </Section>
       ) : null}
 
       {diagnoses.length ? (
-        <Section title={diagnoses.length === 1 ? 'Diagnosis' : 'Diagnoses'} icon="clipboard-outline">
+        <Section title={diagnoses.length === 1 ? t('visits.diagnosis') : t('visits.diagnoses')} icon="clipboard-outline">
           {diagnoses.map((d, i) => {
             const text = diagnosisText(d);
             const code = d.description?.trim() && d.code?.trim() ? d.code.trim() : null;
@@ -96,7 +98,7 @@ export default function VisitDetailScreen() {
                 key={`${d.code ?? ''}-${i}`}
                 style={[styles.item, i < diagnoses.length - 1 && styles.divider]}
                 accessible
-                accessibilityLabel={[text, code ? `ICD-10 code ${code}` : null, d.primary ? 'Main diagnosis' : null]
+                accessibilityLabel={[text, code ? t('visits.icdA11y', { code }) : null, d.primary ? t('visits.mainA11y') : null]
                   .filter(Boolean)
                   .join('. ')}
               >
@@ -104,11 +106,11 @@ export default function VisitDetailScreen() {
                   <Text style={styles.itemTitle}>{text}</Text>
                   {d.primary && diagnoses.length > 1 ? (
                     <View style={styles.tag}>
-                      <Text style={styles.tagText}>Main</Text>
+                      <Text style={styles.tagText}>{t('visits.main')}</Text>
                     </View>
                   ) : null}
                 </View>
-                {code ? <Text style={styles.itemLine}>ICD-10: {code}</Text> : null}
+                {code ? <Text style={styles.itemLine}>{t('visits.icd', { code })}</Text> : null}
               </View>
             );
           })}
@@ -116,16 +118,16 @@ export default function VisitDetailScreen() {
       ) : null}
 
       {assessment ? (
-        <Section title="Doctor's Assessment" icon="document-text-outline">
+        <Section title={t('visits.assessment')} icon="document-text-outline">
           <Text style={styles.body}>{assessment}</Text>
         </Section>
       ) : null}
 
       {hasPlan ? (
-        <Section title="Treatment Plan" icon="list-outline">
+        <Section title={t('visits.treatmentPlan')} icon="list-outline">
           {plan ? <Text style={[styles.body, styles.planText]}>{plan}</Text> : null}
           {meds.length ? (
-            <SubList title="Medicines">
+            <SubList title={t('visits.medicines')}>
               {meds.map((m, i) => (
                 <Bullet
                   key={`${m.name}-${i}`}
@@ -136,20 +138,20 @@ export default function VisitDetailScreen() {
             </SubList>
           ) : null}
           {procedures.length ? (
-            <SubList title="Procedures">
+            <SubList title={t('visits.procedures')}>
               {procedures.map((p, i) => (
                 <Bullet
                   key={`${p.name}-${i}`}
                   title={p.name}
-                  line={[p.description, p.scheduledDate ? `Scheduled ${formatDate(p.scheduledDate)}` : null].filter(Boolean).join(' · ')}
+                  line={[p.description, p.scheduledDate ? t('visits.scheduled', { date: formatDate(p.scheduledDate) }) : null].filter(Boolean).join(' · ')}
                 />
               ))}
             </SubList>
           ) : null}
           {lifestyle.length ? (
-            <SubList title="Lifestyle">
+            <SubList title={t('visits.lifestyle')}>
               {lifestyle.map((l, i) => (
-                <Bullet key={i} title={l.category ? humanize(l.category) : 'Advice'} line={l.instructions} />
+                <Bullet key={i} title={l.category ? humanize(l.category) : t('visits.advice')} line={l.instructions} />
               ))}
             </SubList>
           ) : null}
@@ -157,7 +159,7 @@ export default function VisitDetailScreen() {
       ) : null}
 
       {vitals.length ? (
-        <Section title="Vitals Taken" icon="pulse-outline">
+        <Section title={t('visits.vitalsTaken')} icon="pulse-outline">
           {vitals.map((v, i) => (
             <View
               key={v.label}
@@ -173,16 +175,16 @@ export default function VisitDetailScreen() {
             style={styles.link}
             onPress={() => router.push('/patient/vitals')}
             accessibilityRole="link"
-            accessibilityLabel="See your vitals over time"
+            accessibilityLabel={t('visits.seeVitals')}
           >
-            <Text style={styles.linkText}>See your vitals over time</Text>
+            <Text style={styles.linkText}>{t('visits.seeVitals')}</Text>
             <Ionicons name="chevron-forward" size={16} color={colors.primary} />
           </TouchableOpacity>
         </Section>
       ) : null}
 
       {prescriptionIds.length ? (
-        <Section title="Prescriptions" icon="medical-outline">
+        <Section title={t('visits.prescriptions')} icon="medical-outline">
           {prescriptionIds.map((pid, i) => (
             <PrescriptionLink key={pid} id={pid} index={i} last={i === prescriptionIds.length - 1} />
           ))}
@@ -190,7 +192,7 @@ export default function VisitDetailScreen() {
       ) : null}
 
       {next ? (
-        <Section title="Follow-up" icon="calendar-outline">
+        <Section title={t('visits.followUp')} icon="calendar-outline">
           {next.date ? (
             <Text style={styles.followDate}>{formatDate(next.date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</Text>
           ) : null}
@@ -201,7 +203,7 @@ export default function VisitDetailScreen() {
       {nothingRecorded ? (
         <View style={styles.note}>
           <Ionicons name="information-circle-outline" size={18} color={colors.slate} />
-          <Text style={styles.noteText}>No notes from this visit are available yet. Ask your clinic if you need them.</Text>
+          <Text style={styles.noteText}>{t('visits.nothingRecorded')}</Text>
         </View>
       ) : null}
     </ScrollView>
@@ -210,24 +212,25 @@ export default function VisitDetailScreen() {
 
 /** One prescription written at the visit: names its medicines and opens the prescription. */
 function PrescriptionLink({ id, index, last }: { id: string; index: number; last: boolean }) {
+  const t = useT();
   const { data, loading, error } = useApiData<Prescription>(`/api/patients/me/prescriptions/${encodeURIComponent(id)}`);
   const names = (data?.medications ?? []).map((m) => m.name).filter(Boolean);
-  const title = data?.prescriptionCode ? `Rx ${data.prescriptionCode}` : `Prescription ${index + 1}`;
+  const title = data?.prescriptionCode ? t('visits.rx', { code: data.prescriptionCode }) : t('visits.prescriptionN', { n: index + 1 });
   const line = loading
-    ? 'Loading…'
+    ? t('visits.loadingShort')
     : error && !data
-      ? 'Tap to open'
+      ? t('visits.tapToOpen')
       : names.length
         ? names.join(', ')
-        : 'No medicines listed';
-  const status = data?.status === 'cancelled' ? 'Cancelled' : null;
+        : t('visits.noMedicines');
+  const status = data?.status === 'cancelled' ? t('visits.cancelled') : null;
   return (
     <TouchableOpacity
       style={[styles.item, !last && styles.divider]}
       onPress={() => router.push(`/patient/prescriptions/${id}`)}
       accessibilityRole="button"
       accessibilityLabel={[title, status, loading ? null : line].filter(Boolean).join('. ')}
-      accessibilityHint="Opens the prescription"
+      accessibilityHint={t('visits.openPrescriptionHint')}
     >
       <View style={styles.itemTop}>
         <Text style={styles.itemTitle}>{title}</Text>

@@ -12,16 +12,18 @@ import { OfflineBanner } from '@/components/OfflineBanner';
 import { ErrorState } from '@/components/ErrorState';
 import { ResultStatusPill } from '@/components/ResultStatusPill';
 import { softShadow } from '@/components/AppHeader';
+import { PlainKey, useT } from '@/lib/i18n';
 
 type Tab = 'summary' | 'details' | 'notes';
 
-const FLAG_TONE: Record<Flag, { label: string; bg: string; fg: string }> = {
-  normal: { label: 'Normal', bg: '#DCF5E7', fg: '#1F7A4A' },
-  high: { label: 'High', bg: colors.dangerSoft, fg: colors.danger },
-  low: { label: 'Low', bg: colors.warningSoft, fg: colors.warning },
+const FLAG_TONE: Record<Flag, { label: PlainKey; bg: string; fg: string }> = {
+  normal: { label: 'results.flag.normal', bg: '#DCF5E7', fg: '#1F7A4A' },
+  high: { label: 'results.flag.high', bg: colors.dangerSoft, fg: colors.danger },
+  low: { label: 'results.flag.low', bg: colors.warningSoft, fg: colors.warning },
 };
 
 export default function LabResultDetailScreen() {
+  const t = useT();
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<LabResult>(
@@ -32,13 +34,13 @@ export default function LabResultDetailScreen() {
 
   if (loading) return <LoadingView />;
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data) return <ErrorState message="Lab result not found." onRetry={refresh} />;
+  if (!data) return <ErrorState message={t('results.notFound')} onRetry={refresh} />;
 
   const result = data;
   const ready = isReady(result.status);
   const keys = Object.keys(result.results ?? {});
   const summary = summarize(result);
-  const testName = result.request?.testType ?? 'Lab test';
+  const testName = result.request?.testType ?? t('results.labTest');
   const when = result.resultDate ?? result.orderDate ?? result.createdAt;
 
   function share() {
@@ -46,12 +48,12 @@ export default function LabResultDetailScreen() {
       const flag = flagOf(result, key);
       const range = result.referenceRanges?.[key];
       return `• ${analyteLabel(key)}: ${displayValue(result.results?.[key])}${
-        range !== undefined && range !== null && range !== '' ? ` (ref ${displayValue(range)})` : ''
-      }${flag && flag !== 'normal' ? ` — ${FLAG_TONE[flag].label}` : ''}`;
+        range !== undefined && range !== null && range !== '' ? t('results.share.ref', { range: displayValue(range) }) : ''
+      }${flag && flag !== 'normal' ? ` — ${t(FLAG_TONE[flag].label)}` : ''}`;
     });
     Share.share({
       title: testName,
-      message: [`${testName} — ${formatDate(when)}`, ...lines, result.interpretation ? `\nNotes: ${result.interpretation}` : '']
+      message: [`${testName} — ${formatDate(when)}`, ...lines, result.interpretation ? `\n${t('results.share.notes', { notes: result.interpretation })}` : '']
         .filter(Boolean)
         .join('\n'),
     }).catch(() => {});
@@ -74,7 +76,7 @@ export default function LabResultDetailScreen() {
             {testName}
           </Text>
           <Text style={styles.meta}>{result.resultDate ? formatDateTime(result.resultDate) : formatDate(when)}</Text>
-          {result.requestCode ? <Text style={styles.meta}>Ref: {result.requestCode}</Text> : null}
+          {result.requestCode ? <Text style={styles.meta}>{t('results.ref', { code: result.requestCode })}</Text> : null}
         </View>
         <ResultStatusPill status={result.status} />
       </View>
@@ -83,21 +85,21 @@ export default function LabResultDetailScreen() {
       <View style={styles.tabs} accessibilityRole="tablist">
         {(
           [
-            { value: 'summary', label: 'Summary' },
-            { value: 'details', label: 'Details' },
-            { value: 'notes', label: "Doctor's Notes" },
+            { value: 'summary', label: t('results.tab.summary') },
+            { value: 'details', label: t('results.tab.details') },
+            { value: 'notes', label: t('results.tab.notes') },
           ] as { value: Tab; label: string }[]
-        ).map((t) => {
-          const selected = t.value === tab;
+        ).map((item) => {
+          const selected = item.value === tab;
           return (
             <TouchableOpacity
-              key={t.value}
+              key={item.value}
               style={[styles.tab, selected && styles.tabSelected]}
-              onPress={() => setTab(t.value)}
+              onPress={() => setTab(item.value)}
               accessibilityRole="tab"
               accessibilityState={{ selected }}
             >
-              <Text style={[styles.tabText, selected && styles.tabTextSelected]}>{t.label}</Text>
+              <Text style={[styles.tabText, selected && styles.tabTextSelected]}>{item.label}</Text>
             </TouchableOpacity>
           );
         })}
@@ -117,7 +119,7 @@ export default function LabResultDetailScreen() {
                     key={key}
                     style={[styles.value, flag === 'high' || flag === 'low' ? { borderColor: tone!.fg } : null]}
                     accessible
-                    accessibilityLabel={`${analyteLabel(key)}: ${displayValue(result.results?.[key])}${tone ? `, ${tone.label}` : ''}`}
+                    accessibilityLabel={`${analyteLabel(key)}: ${displayValue(result.results?.[key])}${tone ? `, ${t(tone.label)}` : ''}`}
                   >
                     <Text style={styles.valueName} numberOfLines={2}>
                       {analyteLabel(key)}
@@ -130,7 +132,7 @@ export default function LabResultDetailScreen() {
                     ) : null}
                     {tone ? (
                       <View style={[styles.flag, { backgroundColor: tone.bg }]}>
-                        <Text style={[styles.flagText, { color: tone.fg }]}>{tone.label}</Text>
+                        <Text style={[styles.flagText, { color: tone.fg }]}>{t(tone.label)}</Text>
                       </View>
                     ) : null}
                   </View>
@@ -143,15 +145,15 @@ export default function LabResultDetailScreen() {
 
       {tab === 'details' ? (
         <View style={styles.card}>
-          <DetailRow label="Test" value={testName} />
-          <DetailRow label="Ordered" value={formatDate(result.orderDate ?? result.createdAt)} />
-          <DetailRow label="Result date" value={result.resultDate ? formatDate(result.resultDate) : null} />
-          <DetailRow label="Reference" value={result.requestCode} />
-          <DetailRow label="Priority" value={result.request?.urgency ? humanize(result.request.urgency) : null} />
-          <DetailRow label="Fasting required" value={result.request?.fastingRequired ? 'Yes' : null} />
-          <DetailRow label="Description" value={result.request?.description} />
+          <DetailRow label={t('results.detail.test')} value={testName} />
+          <DetailRow label={t('results.detail.ordered')} value={formatDate(result.orderDate ?? result.createdAt)} />
+          <DetailRow label={t('results.detail.resultDate')} value={result.resultDate ? formatDate(result.resultDate) : null} />
+          <DetailRow label={t('results.detail.reference')} value={result.requestCode} />
+          <DetailRow label={t('results.detail.priority')} value={result.request?.urgency ? humanize(result.request.urgency) : null} />
+          <DetailRow label={t('results.detail.fasting')} value={result.request?.fastingRequired ? t('results.yes') : null} />
+          <DetailRow label={t('results.detail.description')} value={result.request?.description} />
           {result.request?.preparationNotes ? (
-            <Text style={styles.prep}>Preparation: {result.request.preparationNotes}</Text>
+            <Text style={styles.prep}>{t('results.preparation', { notes: result.request.preparationNotes })}</Text>
           ) : null}
         </View>
       ) : null}
@@ -161,15 +163,15 @@ export default function LabResultDetailScreen() {
           {result.interpretation ? (
             <Text style={styles.notes}>{result.interpretation}</Text>
           ) : (
-            <Text style={styles.muted}>Your doctor hasn't added notes to this result yet.</Text>
+            <Text style={styles.muted}>{t('results.noNotes')}</Text>
           )}
         </View>
       ) : null}
 
       {ready && keys.length > 0 ? (
-        <Button title="Share Results" icon="share-outline" onPress={share} style={styles.share} />
+        <Button title={t('results.shareResults')} icon="share-outline" onPress={share} style={styles.share} />
       ) : null}
-      <Text style={styles.footnote}>Talk to your doctor about what these results mean for you.</Text>
+      <Text style={styles.footnote}>{t('results.footnote')}</Text>
     </ScrollView>
   );
 }
@@ -183,39 +185,40 @@ function SummaryBanner({
   cancelled: boolean;
   summary: ReturnType<typeof summarize>;
 }) {
+  const t = useT();
   let icon: IconName;
   let title: string;
   let text: string;
   let tone: { bg: string; fg: string };
   if (cancelled) {
     icon = 'close-circle';
-    title = 'This test was cancelled';
-    text = 'Contact your clinic if you think this is a mistake.';
+    title = t('results.banner.cancelled.title');
+    text = t('results.banner.cancelled.text');
     tone = { bg: colors.slateSoft, fg: colors.slate };
   } else if (!ready) {
     icon = 'time';
-    title = 'Results are being processed';
-    text = "We'll notify you as soon as they're ready.";
+    title = t('results.banner.processing.title');
+    text = t('results.banner.processing.text');
     tone = { bg: colors.warningSoft, fg: colors.warning };
   } else if (summary.total === 0) {
     icon = 'document-text';
-    title = 'Your result is ready';
-    text = "There are no individual values to show. See Doctor's Notes, or ask your clinic for the report.";
+    title = t('results.banner.noValues.title');
+    text = t('results.banner.noValues.text');
     tone = { bg: colors.primarySoft, fg: colors.primary };
   } else if (summary.outOfRange > 0) {
     icon = 'alert-circle';
-    title = `${summary.outOfRange} value${summary.outOfRange === 1 ? '' : 's'} outside the reference range`;
-    text = 'This is common and not always a concern. Please discuss these results with your doctor.';
+    title = t('results.banner.outOfRange.title', { count: summary.outOfRange });
+    text = t('results.banner.outOfRange.text');
     tone = { bg: colors.dangerSoft, fg: colors.danger };
   } else if (summary.unrated === 0) {
     icon = 'checkmark-circle';
-    title = 'Results are within the reference range';
-    text = 'Please discuss them with your doctor for a full interpretation.';
+    title = t('results.banner.inRange.title');
+    text = t('results.banner.inRange.text');
     tone = { bg: '#E3F5EC', fg: '#1F7A4A' };
   } else {
     icon = 'information-circle';
-    title = 'Your results are in';
-    text = "Some values don't have a reference range. Your doctor can explain them.";
+    title = t('results.banner.unrated.title');
+    text = t('results.banner.unrated.text');
     tone = { bg: colors.primarySoft, fg: colors.primary };
   }
   return (
