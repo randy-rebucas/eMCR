@@ -4,7 +4,7 @@
     "slug": "emcr",
     "description": "eMCR (Electronic MyClinic Record) — your appointments, results, prescriptions and bills from your MyClinicSoft clinic.",
     "scheme": "myclinicsoft",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -26,6 +26,11 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {

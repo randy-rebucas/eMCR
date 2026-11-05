@@ -1,5 +1,47 @@
 # eMCR release notes
 
+## 1.1.1
+
+1.1.0 production build (Android build 6, commit f57bc35) plus one change: removes the
+READ_MEDIA_IMAGES, READ_EXTERNAL_STORAGE and WRITE_EXTERNAL_STORAGE permissions. expo-screen-capture
+adds them for its screenshot listener, which eMCR doesn't use, and Google Play flags
+READ_MEDIA_IMAGES. The other notes below cover what build 6 added after the 1.1.0 notes were
+written. Patients on 1.0.2 also get everything under 1.1.0.
+
+Needs a new store build: moves to Expo SDK 58 and React Native 0.88. Deploy the backend first: the
+queue "away" states and the text message switch both need it. On an older server the switch stays
+hidden.
+
+### Google Play "What's new" (under 500 characters)
+
+```
+• Choose English or Filipino on the welcome screen, before you sign in
+• Filipino translation across the app
+• Live queue: if you're at the lab or miss your call, the app shows that your place in line is saved
+• Turn clinic text messages on or off in Notification settings
+• Bug fixes and improvements
+```
+
+### Full notes
+
+**Queue**
+- If you step out to the lab, the queue screen says so and shows that your place in line is saved.
+  When you're back, tell the front desk so you can rejoin the line.
+- If you weren't there when you were called, the app tells you your place is saved and asks you to
+  see the front desk.
+
+**Language**
+- Choose your language on the welcome screen, before you sign in.
+- Filipino translation now runs across the app, including error messages.
+
+**Notifications**
+- New switch in Notification settings for reminders and updates by text message, from every clinic.
+  Sign-in codes always arrive. The switch shows when your record has a mobile number.
+
+**Also**
+- Updated the app's underlying platform (Expo SDK 58, React Native 0.88).
+- Removed photo and file permissions the app didn't use.
+
 ## 1.1.0
 
 Needs a new store build: adds native modules (expo-local-authentication, expo-screen-capture,
