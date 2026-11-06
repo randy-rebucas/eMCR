@@ -1,5 +1,30 @@
 # eMCR release notes
 
+## 1.1.3
+
+1.1.2 plus two account security changes. Creating or resetting a password now signs you out on your
+other devices, and the app only offers a confirmation code to the record's own mobile number.
+
+No new native modules or permissions. There is no over-the-air update, so this reaches devices only
+through a new store build. Deploy the backend first: on an older server the app still works, but
+other devices stay signed in.
+
+### Google Play "What's new" (under 500 characters)
+
+```
+• Better account security: creating or resetting your password now signs you out on your other devices
+• Clearer message when your record has no mobile number for a confirmation code
+• Bug fixes and improvements
+```
+
+### Full notes
+
+**Privacy and security**
+- When you create or reset your password, your other devices are signed out. This phone stays signed
+  in. Accounts that only manage a family member's record aren't signed out on other devices yet.
+- Confirmation codes now go only to the mobile number on your own record. If your record has none,
+  the app asks you to see the front desk.
+
 ## 1.1.2
 
 1.1.1 plus one developer fix: the app no longer crashes after sign-in when run in Expo Go on
