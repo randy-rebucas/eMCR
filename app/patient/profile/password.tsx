@@ -44,7 +44,8 @@ export default function PasswordScreen() {
   const rulesMet = PASSWORD_RULES.every((r) => r.test(next));
   const matches = confirm.length > 0 && confirm === next;
   const differs = !hasPassword || !current || next !== current;
-  const phone = (data?.phone ?? data?.contacts?.phone ?? '').trim();
+  // The record's own phone only: the server doesn't take a code sent to a contact number as proof.
+  const phone = (data?.phone ?? '').trim();
   // Sent to this patient's own record, never another record that shares the phone number.
   const sendCode = () => apiRequest('/api/patients/me/phone-code', { method: 'POST' });
 

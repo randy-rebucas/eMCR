@@ -16,7 +16,7 @@ import { useT } from '@/lib/i18n';
  * person could only ever get back in by SMS code.
  */
 export default function CreatePasswordScreen() {
-  const { signedIn, signOut } = useAuth();
+  const { signedIn, signOut, applyRotatedTokens } = useAuth();
   const t = useT();
   const [step] = useState(getCredentialStep);
   const [password, setPassword] = useState('');
@@ -65,6 +65,7 @@ export default function CreatePasswordScreen() {
     setSaving(true);
     try {
       const result = await saveAccountPassword(password, step.mode === 'temp' ? step.currentPassword : undefined);
+      await applyRotatedTokens(result);
       setCredentialStep(null);
       // A first password comes with the structured login ID: show it once before going on.
       if (step.mode !== 'reset' && result.account?.loginId) {
