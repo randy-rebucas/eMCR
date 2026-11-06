@@ -1,5 +1,26 @@
 # eMCR release notes
 
+## 1.1.2
+
+1.1.1 plus one developer fix: the app no longer crashes after sign-in when run in Expo Go on
+Android. `lib/notifications.ts` now uses `isRunningInExpoGo()`, because Expo Go 58 reports its
+environment as `bare` and the old check never matched. Store builds took the same path before and
+after, so patients won't see a difference.
+
+No new native modules, permissions or backend changes. There is no over-the-air update, so this
+reaches devices only through a new store build.
+
+### Google Play "What's new" (under 500 characters)
+
+```
+• Bug fixes and improvements
+```
+
+### Full notes
+
+**Also**
+- Fixed a crash after sign-in that affected development testing only.
+
 ## 1.1.1
 
 1.1.0 production build (Android build 6, commit f57bc35) plus one change: removes the
