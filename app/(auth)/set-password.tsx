@@ -99,7 +99,8 @@ export default function SetPasswordScreen() {
 
   const rulesMet = PASSWORD_RULES.every((rule) => rule.test(password));
   const matches = confirm.length > 0 && confirm === password;
-  const phone = (profile?.phone ?? profile?.contacts?.phone ?? '').trim();
+  // The record's own phone only: the server doesn't take a code sent to a contact number as proof.
+  const phone = (profile?.phone ?? '').trim();
   const sendCode = () => requestOtp(phone);
 
   function save() {

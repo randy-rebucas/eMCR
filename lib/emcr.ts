@@ -1,4 +1,4 @@
-import { apiFetch, apiRequest, query } from './api';
+import { apiFetch, apiRequest, query, TokenPair } from './api';
 import { t } from './i18n';
 import {
   ClinicDirectoryEntry,
@@ -81,11 +81,17 @@ export function rememberIssuedLoginId(id: string | null | undefined): void {
   issuedLoginId = id ?? null;
 }
 
-/** Create or change the account's password (signed in). */
-export function saveAccountPassword(newPassword: string, currentPassword?: string): Promise<{ account: EmcrAccount | null }> {
-  return apiFetch<{ account: EmcrAccount | null }>(EMCR_ENDPOINTS.accountPassword, {
+/**
+ * Create or change the account's password (signed in). Other sessions are signed out, so the new
+ * tokens must be stored (`applyRotatedTokens`). Guardian-only sessions get none and keep theirs.
+ */
+export function saveAccountPassword(
+  newPassword: string,
+  currentPassword?: string
+): Promise<{ account: EmcrAccount | null } & Partial<TokenPair>> {
+  return apiFetch(EMCR_ENDPOINTS.accountPassword, {
     method: 'POST',
-    body: { newPassword, ...(currentPassword ? { currentPassword } : {}) },
+    body: { newPassword, rotate: true, ...(currentPassword ? { currentPassword } : {}) },
   });
 }
 
