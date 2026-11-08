@@ -1,23 +1,27 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import {
   apiFetch,
   apiRequest,
   ApiError,
   AUTH_ENDPOINTS,
+  onServerReachable,
   query,
   setActiveProfileId,
   setSessionExpiredHandler,
   storeTokens,
   tokenClaims,
+  tokenIdentity,
   TokenPair,
 } from './api';
 import { clearSession, getOrCreateDeviceId, getSession } from './storage';
 import { registerForPushNotifications, watchPushToken } from './push';
 import { clearDocumentCache } from './documents';
 import { noteFreshSignIn } from './appLock';
+import { emitRefresh } from './events';
 import { clearOfflineCache } from './offlineCache';
 import { t } from './i18n';
-import { clearMedicineReminders } from './medicineReminders';
+import { clearMedicineReminders, resumeMedicineReminders, suspendMedicineReminders } from './medicineReminders';
 import { EmcrSession, PatientProfile, PatientSummary } from './types';
 
 type AuthState =
@@ -59,7 +63,12 @@ interface AuthContextValue {
    */
   applySession: (session: EmcrSession) => Promise<void>;
 
-  /** Store the new token pair a password change returns (other devices are signed out). */
+  /**
+   * Store the new token pair a password change returns (other devices are signed out). Call it
+   * inside the same `withSessionHold` as the password request. Stored even if the session was
+   * cleared meanwhile (expired), as long as the new pair is for the same account and the patient
+   * didn't sign out.
+   */
   applyRotatedTokens: (pair: Partial<TokenPair>) => Promise<void>;
   setPatientSummary: (patient: PatientSummary) => void;
   /**
@@ -86,16 +95,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: 'loading' });
   const [notice, setNotice] = useState<string | null>(null);
   const signingOut = useRef(false);
+  /** Who the last session on this device signed in (token identity); null after a sign-out. */
+  const lastIdentity = useRef<string | null>(null);
+  /** The last signed-in summary, to come back to when an expired session is restored. */
+  const lastSignedIn = useRef<{ patient: PatientSummary | null; guardianOnly: boolean } | null>(null);
+  useEffect(() => {
+    if (state.status === 'signedIn') lastSignedIn.current = { patient: state.patient, guardianOnly: state.guardianOnly };
+  }, [state]);
 
-  // A rejected refresh token anywhere in the app lands here.
+  // A rejected refresh token anywhere in the app lands here. Not a sign-out: reminders stop, but
+  // their schedules are kept for when the same account signs in again.
   useEffect(() => {
     setSessionExpiredHandler((message) => {
       clearDocumentCache();
-      clearMedicineReminders().catch(() => {});
+      suspendMedicineReminders().catch(() => {});
       setState({ status: 'signedOut' });
       if (!signingOut.current) setNotice(message ?? t('common.sessionExpired'));
     });
     return () => setSessionExpiredHandler(null);
+  }, []);
+
+  /** `/api/patients/me` refused the stored session: 401 expired it, 403 deactivated the account. */
+  const endSessionAfterRefusal = useCallback(async (error: ApiError) => {
+    setActiveProfileId(null);
+    await clearSession();
+    clearDocumentCache();
+    if (error.status === 403) {
+      lastIdentity.current = null;
+      clearMedicineReminders().catch(() => {});
+    } else {
+      suspendMedicineReminders().catch(() => {});
+    }
+    setState({ status: 'signedOut' });
+    if (error.status === 403) setNotice(error.message);
   }, []);
 
   // Restore the stored session on launch.
@@ -106,6 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setState({ status: 'signedOut' });
         return;
       }
+      lastIdentity.current = tokenIdentity(session.accessToken);
       try {
         const profile = await apiRequest<PatientProfile>('/api/patients/me');
         const current = await getSession();
@@ -117,11 +150,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         registerForPushNotifications({ prompt: false }).catch(() => {});
       } catch (error) {
         if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-          // 401 here means even the refresh failed; 403 means the account was deactivated.
-          await clearSession();
-          clearMedicineReminders().catch(() => {});
-          setState({ status: 'signedOut' });
-          if (error.status === 403) setNotice(error.message);
+          // 401 here means even the refresh failed (expired: reminders are kept for the same
+          // account's next sign-in); 403 means the account was deactivated (everything goes).
+          await endSessionAfterRefusal(error);
           return;
         }
         // Offline or server error: keep the session; screens show their own errors.
@@ -131,23 +162,84 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signedIn = state.status === 'signedIn';
+  const summaryMissing = state.status === 'signedIn' && state.patient === null;
 
   useEffect(() => {
     if (!signedIn) return;
     return watchPushToken();
   }, [signedIn]);
 
+  // Opened offline on a stored session: who is signed in is fetched again when the app comes back
+  // to the foreground, when the server answers again, and every minute until it loads.
+  useEffect(() => {
+    if (!summaryMissing) return;
+    let inFlight = false;
+    let cancelled = false;
+    const retry = () => {
+      if (inFlight || cancelled) return;
+      inFlight = true;
+      apiRequest<PatientProfile>('/api/patients/me', { profile: false })
+        .then(async (profile) => {
+          const current = await getSession();
+          if (cancelled || !current) return;
+          setState((prev) =>
+            prev.status === 'signedIn' && prev.patient === null
+              ? { status: 'signedIn', patient: patientSummaryFromProfile(profile), guardianOnly: isGuardianToken(current.accessToken) }
+              : prev
+          );
+          registerForPushNotifications({ prompt: false }).catch(() => {});
+        })
+        .catch((error) => {
+          // Still offline: try again later. A 401 is handled by the api layer (session expired).
+          // A 403 without a family-profile code means the account was deactivated meanwhile.
+          if (
+            !cancelled &&
+            error instanceof ApiError &&
+            error.status === 403 &&
+            error.code !== 'PROFILE_FORBIDDEN' &&
+            error.code !== 'NOT_FOR_FAMILY_PROFILE'
+          ) {
+            endSessionAfterRefusal(error).catch(() => {});
+          }
+        })
+        .finally(() => {
+          inFlight = false;
+        });
+    };
+    const appState = AppState.addEventListener('change', (next) => {
+      if (next === 'active') retry();
+    });
+    const unsubscribe = onServerReachable(retry);
+    const timer = setInterval(retry, 60_000);
+    return () => {
+      cancelled = true;
+      appState.remove();
+      unsubscribe();
+      clearInterval(timer);
+    };
+  }, [summaryMissing, endSessionAfterRefusal]);
+
   const completeSignIn = useCallback(async (result: PatientTokenResponse) => {
     noteFreshSignIn();
-    // A sign-in can replace another person's session without a sign-out: start with no offline copies.
+    const identity = tokenIdentity(result.token);
+    const samePerson = identity !== null && identity === lastIdentity.current;
+    // A sign-in can replace another session without a sign-out, so nothing of the previous
+    // person's stays: offline copies, downloaded files, the family profile, the badge. Reminders
+    // are kept only when the same account signs in again.
     await clearOfflineCache();
+    clearDocumentCache();
+    setActiveProfileId(null);
+    if (result.patient?.id) await resumeMedicineReminders(result.patient.id).catch(() => {});
+    else if (!samePerson) await clearMedicineReminders().catch(() => {});
     await storeTokens(result);
+    lastIdentity.current = identity;
     setNotice(null);
     setState({
       status: 'signedIn',
       patient: result.patient,
       guardianOnly: result.guardianOnly ?? isGuardianToken(result.token),
     });
+    emitRefresh('notifications');
     registerForPushNotifications({ prompt: false }).catch(() => {});
   }, []);
 
@@ -204,13 +296,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const applyRotatedTokens = useCallback(async (pair: Partial<TokenPair>) => {
+    if (!pair.token) return;
+    const identity = tokenIdentity(pair.token);
     const session = await getSession();
-    if (!session || !pair.token) return;
+    if (session) {
+      // A different account signed in while the password was saving: its session stays.
+      const current = tokenIdentity(session.accessToken);
+      if (current && identity && current !== identity) return;
+    } else if (signingOut.current || !identity || identity !== lastIdentity.current) {
+      // Cleared meanwhile: a sign-out wins. An expired session (the change itself revoked the old
+      // refresh token) is replaced by the new pair when it is the same account.
+      return;
+    }
     await storeTokens({
       token: pair.token,
       expiresIn: pair.expiresIn,
       refreshToken: pair.refreshToken,
     });
+    lastIdentity.current = identity;
+    if (!session) {
+      const restored = lastSignedIn.current;
+      setNotice(null);
+      setState({
+        status: 'signedIn',
+        patient: restored?.patient ?? null,
+        guardianOnly: restored?.guardianOnly ?? isGuardianToken(pair.token),
+      });
+      if (restored?.patient?.id) resumeMedicineReminders(restored.patient.id).catch(() => {});
+    }
     // A password change drops the backend's device registrations; register this one again.
     registerForPushNotifications({ prompt: false }).catch(() => {});
   }, []);
@@ -247,6 +360,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       // Whatever the server said, this device is signed out.
       setActiveProfileId(null);
+      lastIdentity.current = null;
+      lastSignedIn.current = null;
       await clearSession();
       clearDocumentCache();
       await clearMedicineReminders().catch(() => {});

@@ -10,7 +10,7 @@ import { ApiError, errorMessage } from '@/lib/api';
 import { PatientProfile } from '@/lib/types';
 import { formatDate, humanize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Button, IconName, LoadingView, useBottomPadding } from '@/components/ui';
+import { Button, IconName, LoadingView, RefreshErrorBanner, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { t as translate, useT } from '@/lib/i18n';
 
@@ -47,7 +47,7 @@ function allergyText(a: NonNullable<PatientProfile['allergies']>[number]): strin
 export default function ProfileScreen() {
   const bottomPad = useBottomPadding();
   const t = useT();
-  const { signOut } = useAuth();
+  const { signOut, guardianOnly } = useAuth();
   const { viewing } = useProfile();
   const self = viewing?.self !== false;
   const { data, loading, refreshing, error, refresh } = useApiData<PatientProfile>('/api/patients/me', {
@@ -121,6 +121,7 @@ export default function ProfileScreen() {
     >
       {header}
 
+      <RefreshErrorBanner error={error} show={!!p} />
       {error && !p ? (
         <View style={[styles.card, styles.errorCard]}>
           <Text style={styles.muted}>{error}</Text>
@@ -197,7 +198,9 @@ export default function ProfileScreen() {
             />
           </Section>
 
-          {self ? (
+          {/* A guardian-only session has no password of its own, and the server refuses
+              "sign out everywhere" for it (as on the More tab). */}
+          {self && !guardianOnly ? (
           <Section title={t('profile.accountSecurity')}>
             <ActionRow
               icon="lock-closed-outline"

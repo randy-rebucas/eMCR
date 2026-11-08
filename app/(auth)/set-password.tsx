@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
-import { apiFetch, ApiError, errorMessage, TokenPair } from '@/lib/api';
+import { apiFetch, ApiError, errorMessage, TokenPair, withSessionHold } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { sendOwnPhoneCode } from '@/lib/emcr';
 import { emitRefresh } from '@/lib/events';
+import { getOrCreateDeviceId } from '@/lib/storage';
 import { useApiData } from '@/lib/useApiData';
 import { PatientProfile } from '@/lib/types';
 import { colors, spacing } from '@/lib/theme';
@@ -34,7 +36,7 @@ import { useT } from '@/lib/i18n';
  * Skipping either keeps the patient signed in and continues the normal flow.
  */
 export default function SetPasswordScreen() {
-  const { signedIn, applyRotatedTokens, requestOtp } = useAuth();
+  const { signedIn, applyRotatedTokens } = useAuth();
   const t = useT();
   const params = useLocalSearchParams<{ mode?: string }>();
   const reset = params.mode === 'reset';
@@ -50,6 +52,8 @@ export default function SetPasswordScreen() {
   // Code sign-in older than 15 minutes: the server asks for a fresh SMS code (OTP_REQUIRED).
   const [otpStep, setOtpStep] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
+  // Shown on the code step when an older server sent the code the sign-in way.
+  const [codeNote, setCodeNote] = useState<string | null>(null);
 
   // Android back would reach the sign-in screen, which only redirects past this step.
   useBlockHardwareBack();
@@ -101,7 +105,12 @@ export default function SetPasswordScreen() {
   const matches = confirm.length > 0 && confirm === password;
   // The record's own phone only: the server doesn't take a code sent to a contact number as proof.
   const phone = (profile?.phone ?? '').trim();
-  const sendCode = () => requestOtp(phone);
+  // To this patient's own record (never another record sharing the number); an older server
+  // without /me/phone-code gets the sign-in code request instead, and the code step says so.
+  const sendCode = async () => {
+    const { legacy } = await sendOwnPhoneCode(phone);
+    setCodeNote(legacy ? t('auth.otp.legacySent', { phone }) : null);
+  };
 
   function save() {
     if (inFlight.current) return;
@@ -119,20 +128,30 @@ export default function SetPasswordScreen() {
     setSaving(true);
     const withOtp = otp ? { otp } : {};
     try {
+      // `deviceId` keeps this phone's push registration when the other devices' are revoked.
+      const deviceId = await getOrCreateDeviceId().catch(() => undefined);
+      const withDevice = deviceId ? { deviceId } : {};
+      // Held: other calls don't refresh (and lose) the session while the token pair rotates.
       if (reset) {
-        const result = await apiFetch<Partial<TokenPair>>('/api/patients/me/change-password', {
-          method: 'POST',
-          body: { newPassword: password, ...withOtp },
+        await withSessionHold(async () => {
+          const result = await apiFetch<Partial<TokenPair>>('/api/patients/me/change-password', {
+            method: 'POST',
+            inSessionHold: true,
+            body: { newPassword: password, ...withOtp, ...withDevice },
+          });
+          await applyRotatedTokens(result);
         });
-        await applyRotatedTokens(result);
         emitRefresh('profile');
         setResetDone(true);
       } else {
-        const result = await apiFetch<Partial<TokenPair>>('/api/patients/auth/setup-credentials', {
-          method: 'POST',
-          body: { email: email.trim(), password, ...withOtp },
+        await withSessionHold(async () => {
+          const result = await apiFetch<Partial<TokenPair>>('/api/patients/auth/setup-credentials', {
+            method: 'POST',
+            inSessionHold: true,
+            body: { email: email.trim(), password, ...withOtp, ...withDevice },
+          });
+          await applyRotatedTokens(result);
         });
-        await applyRotatedTokens(result);
         router.replace('/all-set');
       }
     } catch (err) {
@@ -175,6 +194,7 @@ export default function SetPasswordScreen() {
     return (
       <AuthScreen>
         <AuthHeader title={t('auth.setPw.confirmTitle')} />
+        {codeNote ? <Banner tone="primary" message={codeNote} /> : null}
         <OtpConfirm
           phone={phone}
           sendCode={sendCode}

@@ -36,7 +36,7 @@ export default function HealthSummaryScreen() {
     setDownloading(true);
     try {
       const link = await apiRequest<{ url: string }>('/api/patients/me/health-summary/pdf-link', { method: 'POST' });
-      await openPdfLink(link.url, 'Health-summary', t('healthSummary.pdfTitle'));
+      await openPdfLink(link.url, t('healthSummary.pdfFileName'), t('healthSummary.pdfTitle'));
     } catch (err) {
       Alert.alert(t('healthSummary.pdfFailed'), errorMessage(err, t('healthSummary.pdfFailedFallback')));
     } finally {

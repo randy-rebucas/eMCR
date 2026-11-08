@@ -1,9 +1,9 @@
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { colors, spacing } from '@/lib/theme';
 import { BookingForm } from '@/components/BookingForm';
-import { useBottomPadding } from '@/components/ui';
+import { KeyboardAvoider, useBottomPadding } from '@/components/ui';
 
 /** Standalone booking (from the home screen's call to action, or a clinic on the Clinics screen). */
 export default function BookAppointmentScreen() {
@@ -12,11 +12,7 @@ export default function BookAppointmentScreen() {
   const headerHeight = useHeaderHeight();
   const bottomPad = useBottomPadding();
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={headerHeight}
-    >
+    <KeyboardAvoider style={styles.root} keyboardVerticalOffset={headerHeight}>
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
         keyboardShouldPersistTaps="handled"
@@ -30,7 +26,7 @@ export default function BookAppointmentScreen() {
           }}
         />
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoider>
   );
 }
 

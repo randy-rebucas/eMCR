@@ -66,6 +66,17 @@ export interface RequestOptions {
    * Default true; false for calls that are always about the signed-in person (the family list).
    */
   profile?: boolean;
+  /**
+   * Answer for this family profile instead of the app's current one: a record id, or null for the
+   * signed-in person (no header). Read when the call is made, so a profile switch meanwhile
+   * doesn't change who the call is about. Background work (reminder sync) always passes it.
+   */
+  profileId?: string | null;
+  /**
+   * The call is part of a session hold (`withSessionHold`, e.g. the password save itself): its own
+   * 401 recovery doesn't wait for the hold to end.
+   */
+  inSessionHold?: boolean;
   /** Give up after this long (default `REQUEST_TIMEOUT_MS`). */
   timeoutMs?: number;
 }
@@ -100,16 +111,110 @@ export function setActivationRequiredHandler(handler: ((message: string) => void
   activationRequiredHandler = handler;
 }
 
+/**
+ * For requests made outside `apiFetch` (file downloads) refused with 403: when a family profile
+ * is active, the server most likely no longer lets this account see it (PROFILE_FORBIDDEN).
+ * Returns true when the profile-lost handler ran.
+ */
+export function reportProfileLost(message = t('common.profileLost')): boolean {
+  if (!activeProfileId || !profileLostHandler) return false;
+  profileLostHandler(message);
+  return true;
+}
+
 /** For requests made outside `apiFetch` (file downloads) that came back 402. */
 export function reportActivationRequired(message = t('common.activateToUse')): void {
   activationRequiredHandler?.(message);
 }
 
-/** Headers for an authenticated request made outside `apiFetch` (e.g. file downloads). */
-export function authHeaders(token: string): Record<string, string> {
-  return activeProfileId
-    ? { Authorization: `Bearer ${token}`, 'X-Patient-Profile': activeProfileId }
+/**
+ * Headers for an authenticated request made outside `apiFetch` (e.g. file downloads). `profileId`
+ * defaults to the active family profile; null = the signed-in person.
+ */
+export function authHeaders(token: string, profileId: string | null = activeProfileId): Record<string, string> {
+  return profileId
+    ? { Authorization: `Bearer ${token}`, 'X-Patient-Profile': profileId }
     : { Authorization: `Bearer ${token}` };
+}
+
+// ── Server reachability ──────────────────────────────────────────────────────
+
+/** True after a call failed to reach the server, until one gets an answer again. */
+let serverUnreachable = false;
+const reachableListeners = new Set<() => void>();
+
+/**
+ * Called when a call gets an answer from the server after earlier calls couldn't reach it (the
+ * connection came back). The app has no network-state module; this is what the offline banners
+ * go by too: the next successful request.
+ */
+export function onServerReachable(listener: () => void): () => void {
+  reachableListeners.add(listener);
+  return () => {
+    reachableListeners.delete(listener);
+  };
+}
+
+function noteReachable(reachable: boolean): void {
+  if (!reachable) {
+    serverUnreachable = true;
+    return;
+  }
+  if (!serverUnreachable) return;
+  serverUnreachable = false;
+  reachableListeners.forEach((l) => {
+    try {
+      l();
+    } catch {
+      // A listener's failure is its own.
+    }
+  });
+}
+
+// ── Session hold (password changes) ──────────────────────────────────────────
+
+/**
+ * A password change signs every other session out and answers with a new token pair for this
+ * one. While it is in flight, another call can get a 401 for the old token; refreshing then would
+ * spend the (now revoked) refresh token and sign the patient out just before the new pair lands.
+ * During a hold, token refresh and 401 recovery wait for the hold to end (bounded), then use
+ * whatever session is stored by then.
+ */
+let sessionHolds = 0;
+let holdWaiters: (() => void)[] = [];
+/** A hold never keeps other calls waiting longer than this. */
+const MAX_HOLD_WAIT_MS = 45_000;
+
+export async function withSessionHold<T>(task: () => Promise<T>): Promise<T> {
+  sessionHolds++;
+  try {
+    return await task();
+  } finally {
+    sessionHolds--;
+    if (sessionHolds === 0) {
+      const waiters = holdWaiters;
+      holdWaiters = [];
+      waiters.forEach((w) => w());
+    }
+  }
+}
+
+/** Whether a session hold (password change) is in flight. */
+export function sessionHeld(): boolean {
+  return sessionHolds > 0;
+}
+
+function waitForSessionHold(): Promise<void> {
+  if (sessionHolds === 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, MAX_HOLD_WAIT_MS);
+    function done() {
+      clearTimeout(timer);
+      holdWaiters = holdWaiters.filter((w) => w !== done);
+      resolve();
+    }
+    holdWaiters.push(done);
+  });
 }
 
 // Functions, not constants, so the text follows the app language.
@@ -213,6 +318,17 @@ export function tokenClaims(token: string): Record<string, unknown> | null {
   }
 }
 
+/**
+ * Who a token signs in (the eMCR account, else the patient record), or null when unreadable.
+ * Used to tell "the same person again" from "someone else" without a server call.
+ */
+export function tokenIdentity(token: string | null | undefined): string | null {
+  if (!token) return null;
+  const claims = tokenClaims(token);
+  const id = claims?.acc ?? claims?.patientId ?? claims?.sub;
+  return typeof id === 'string' && id ? id : null;
+}
+
 /** The access token's `exp` claim as epoch ms, or null when the token isn't a readable JWT. */
 function jwtExpiresAt(token: string): number | null {
   const exp = tokenClaims(token)?.exp;
@@ -295,9 +411,15 @@ function isExpiringSoon(session: StoredSession): boolean {
  * A usable access token for an authenticated call made outside `apiFetch`
  * (e.g. file downloads). Refreshes first when the stored one is about to expire.
  */
-export async function getAccessToken(): Promise<string> {
-  const session = await getSession();
+export async function getAccessToken(options: { inSessionHold?: boolean } = {}): Promise<string> {
+  let session = await getSession();
   if (!session) return expireSession();
+  if (session.refreshToken && isExpiringSoon(session) && sessionHeld() && !options.inSessionHold) {
+    // A password change may be rotating the pair right now; its new tokens make this refresh moot.
+    await waitForSessionHold();
+    session = await getSession();
+    if (!session) return currentTokenAfterSupersede();
+  }
   if (session.refreshToken && isExpiringSoon(session)) {
     const { outcome, message } = await refreshSession();
     if (outcome === 'expired') return expireSession(message);
@@ -321,7 +443,9 @@ async function currentTokenAfterSupersede(): Promise<string> {
  * Called after a request made with `usedToken` came back 401. Returns a token
  * worth retrying with, or signs the user out when the refresh token is dead.
  */
-export async function recoverFromUnauthorized(usedToken: string): Promise<string> {
+export async function recoverFromUnauthorized(usedToken: string, options: { inSessionHold?: boolean } = {}): Promise<string> {
+  // The 401 may be the password change revoking the old token: wait for its new pair.
+  if (sessionHeld() && !options.inSessionHold) await waitForSessionHold();
   const current = await getSession();
   if (!current) return expireSession();
   // Another request already refreshed while this one was in flight.
@@ -346,13 +470,20 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
+/** The family profile a call is about: explicit `profileId`, else the active one (null = self). */
+function profileFor(options: RequestOptions): string | null {
+  if (options.profile === false) return null;
+  if (options.profileId !== undefined) return options.profileId;
+  return activeProfileId;
+}
+
 async function send(path: string, options: RequestOptions, token: string | null) {
   const { method = 'GET', body, bodyFactory } = options;
   const payload = bodyFactory ? await bodyFactory() : body;
 
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (payload !== undefined) headers['Content-Type'] = 'application/json';
-  if (token) Object.assign(headers, options.profile === false ? { Authorization: `Bearer ${token}` } : authHeaders(token));
+  if (token) Object.assign(headers, authHeaders(token, profileFor(options)));
 
   let response: Response;
   try {
@@ -362,8 +493,10 @@ async function send(path: string, options: RequestOptions, token: string | null)
       options.timeoutMs
     );
   } catch {
+    noteReachable(false);
     throw new ApiError(NETWORK_MESSAGE(), 0, 'NETWORK');
   }
+  noteReachable(true);
   return { response, json: (await readJson(response)) as Record<string, unknown> | null };
 }
 
@@ -377,18 +510,22 @@ async function send(path: string, options: RequestOptions, token: string | null)
  */
 export async function apiFetch<E = unknown>(path: string, options: RequestOptions = {}): Promise<E> {
   const auth = options.auth ?? true;
-  let token = auth ? await getAccessToken() : null;
+  // Fixed for the call (both attempts): a profile switch meanwhile doesn't change who it is about.
+  const profileId = profileFor(options);
+  const sendOptions: RequestOptions = { ...options, profileId };
+  let token = auth ? await getAccessToken({ inSessionHold: options.inSessionHold }) : null;
 
-  let { response, json } = await send(path, options, token);
+  let { response, json } = await send(path, sendOptions, token);
 
   if (auth && token && response.status === 401) {
-    token = await recoverFromUnauthorized(token);
-    ({ response, json } = await send(path, options, token));
+    token = await recoverFromUnauthorized(token, { inSessionHold: options.inSessionHold });
+    ({ response, json } = await send(path, sendOptions, token));
   }
 
   // The family member's profile is gone (unlinked, or a child turned 18): back to the signed-in
-  // person. The session itself is fine, so this is never treated like a 401.
-  if (response.status === 403 && json?.code === 'PROFILE_FORBIDDEN') {
+  // person. The session itself is fine, so this is never treated like a 401. Only when the call
+  // was about the profile on screen: background work for another profile handles it itself.
+  if (response.status === 403 && json?.code === 'PROFILE_FORBIDDEN' && profileId !== null && profileId === activeProfileId) {
     profileLostHandler?.(typeof json.error === 'string' ? json.error : t('common.profileLost'));
   }
 

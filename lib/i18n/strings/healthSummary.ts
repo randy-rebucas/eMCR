@@ -7,6 +7,8 @@ export default defineStrings({
   en: {
     title: 'Health Summary',
     pdfTitle: 'Health Summary',
+    // Saved PDF's file name (letters, digits, - and _ only).
+    pdfFileName: 'Health-Summary',
     pdfFailed: 'Couldn’t open the PDF',
     pdfFailedFallback: 'Check your connection and try again.',
     subtitleSelf:
@@ -36,6 +38,7 @@ export default defineStrings({
   fil: {
     title: 'Health Summary',
     pdfTitle: 'Health Summary',
+    pdfFileName: 'Health-Summary',
     pdfFailed: 'Hindi mabuksan ang PDF',
     pdfFailedFallback: 'Tingnan ang internet connection mo at subukan ulit.',
     subtitleSelf:

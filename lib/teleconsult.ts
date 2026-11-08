@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Alert, Linking } from 'react-native';
 import { Appointment } from './types';
 import { formatDate, formatTime } from './format';
@@ -17,6 +18,27 @@ export async function openVideoCall(url: string): Promise<void> {
   } catch {
     Alert.alert(translate('appointments.call.failedTitle'), translate('appointments.call.failedBody'));
   }
+}
+
+/**
+ * The video call's join link while it can be joined, else null. Re-renders when `closesAt`
+ * passes so a Join button disappears without a refresh. `cached`: the appointment is a saved
+ * offline copy (or not yet confirmed by the server), whose link may already be dead.
+ */
+export function useJoinUrl(a: Pick<Appointment, 'teleconsult'> | null | undefined, cached = false): string | null {
+  const tc = a?.teleconsult;
+  const closesAt = tc?.closesAt ? new Date(tc.closesAt).getTime() : NaN;
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!isFinite(closesAt)) return;
+    const wait = closesAt - Date.now();
+    if (wait <= 0 || wait > 24 * 60 * 60 * 1000) return;
+    const timer = setTimeout(() => setTick((n) => n + 1), wait + 500);
+    return () => clearTimeout(timer);
+  }, [closesAt]);
+  if (cached || !tc?.joinable || !tc.joinUrl) return null;
+  if (isFinite(closesAt) && closesAt <= Date.now()) return null;
+  return tc.joinUrl;
 }
 
 /** "Opens Tue, Oct 20 at 9:45 AM" while the call isn't open yet; null otherwise. */

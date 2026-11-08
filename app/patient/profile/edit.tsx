@@ -1,8 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,7 +16,7 @@ import { emitRefresh } from '@/lib/events';
 import { useApiData } from '@/lib/useApiData';
 import { PatientProfile, PatientProfileUpdate } from '@/lib/types';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, Button, IconName, LoadingView, useKeyboardVisible } from '@/components/ui';
+import { Banner, Button, IconName, KeyboardAvoider, LoadingView, useKeyboardVisible } from '@/components/ui';
 import { ErrorState } from '@/components/ErrorState';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { IconField } from '@/components/auth';
@@ -175,7 +173,7 @@ export default function EditProfileScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoider style={styles.root}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <SafeAreaView edges={['top']}>
           <AppHeader back />
@@ -302,7 +300,7 @@ export default function EditProfileScreen() {
           style={[styles.barButton, styles.barPrimary]}
         />
       </SafeAreaView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoider>
   );
 }
 

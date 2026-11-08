@@ -18,7 +18,7 @@ import { errorMessage, Pagination } from '@/lib/api';
 import { PatientDocument } from '@/lib/types';
 import { formatDate, formatFileSize, humanize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, Button, IconName, ListFooter, useBottomPadding } from '@/components/ui';
+import { Banner, Button, IconName, ListFooter, SearchMoreHint, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { PlainKey, t as translate, useT } from '@/lib/i18n';
 
@@ -198,7 +198,15 @@ export default function DocumentsScreen() {
       ListHeaderComponent={header}
       ListHeaderComponentStyle={styles.headerSpacing}
       ListEmptyComponent={empty}
-      ListFooterComponent={<ListFooter loadingMore={list.loadingMore} error={list.loadMoreError} onRetry={list.loadMore} />}
+      ListFooterComponent={
+        <>
+          <ListFooter loadingMore={list.loadingMore} error={list.loadMoreError} onRetry={list.loadMore} />
+          {/* The search runs on the loaded pages only (the API has no search parameter). */}
+          {q && list.hasMore && !list.loading && !list.loadingMore && !list.loadMoreError ? (
+            <SearchMoreHint onLoadMore={list.loadMore} />
+          ) : null}
+        </>
+      }
       contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"

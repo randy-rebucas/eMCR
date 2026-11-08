@@ -3,6 +3,7 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Keyboard,
+  KeyboardAvoidingView,
   Platform,
   StyleProp,
   StyleSheet,
@@ -104,6 +105,55 @@ export function DetailRow({ label, value }: { label: string; value: ReactNode })
  */
 export function useBottomPadding(base: number = spacing.xl) {
   return useSafeAreaInsets().bottom + base;
+}
+
+/**
+ * KeyboardAvoidingView with the app's per-platform behaviour. Android builds are edge-to-edge
+ * (SDK 58), so the window no longer shrinks for the keyboard (adjustResize has no effect there)
+ * and the view must make room itself. KeyboardAvoidingView only adds the part of the keyboard
+ * that overlaps it, so this can't double-pad if the OS ever does resize the window.
+ * `keyboardVerticalOffset`: height of anything above this view that its layout doesn't include
+ * (a native stack header).
+ */
+export function KeyboardAvoider({
+  children,
+  style,
+  keyboardVerticalOffset,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  keyboardVerticalOffset?: number;
+}) {
+  return (
+    <KeyboardAvoidingView
+      style={style}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={keyboardVerticalOffset}
+    >
+      {children}
+    </KeyboardAvoidingView>
+  );
+}
+
+/** Non-blocking notice that a refresh failed while the last good data stays on screen. */
+export function RefreshErrorBanner({ error, show = true }: { error: string | null | undefined; show?: boolean }) {
+  const t = useT();
+  if (!error || !show) return null;
+  return <Banner message={t('common.refreshFailed', { error })} />;
+}
+
+/**
+ * Under a client-side search of a paged list while older pages haven't loaded: says the search
+ * only covers what's loaded and offers to load the next page.
+ */
+export function SearchMoreHint({ onLoadMore }: { onLoadMore: () => void }) {
+  const t = useT();
+  return (
+    <View style={styles.searchMore}>
+      <Text style={styles.searchMoreText}>{t('common.search.olderNotSearched')}</Text>
+      <Button title={t('common.search.loadOlder')} variant="secondary" icon="time-outline" onPress={onLoadMore} />
+    </View>
+  );
 }
 
 /** True while the on-screen keyboard is up (so a pinned footer can drop its home-indicator inset). */
@@ -238,4 +288,6 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   footer: { paddingVertical: spacing.lg, alignItems: 'center' },
   footerError: { color: colors.danger, fontSize: 14, textAlign: 'center' },
+  searchMore: { paddingVertical: spacing.md, alignItems: 'stretch' },
+  searchMoreText: { fontSize: 13, color: colors.textMuted, textAlign: 'center' },
 });

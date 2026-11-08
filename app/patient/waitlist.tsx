@@ -9,7 +9,7 @@ import { useProfile } from '@/lib/profile';
 import { doctorName, formatDate } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { leaveWaitlist, WAITLIST_PATH, waitlistExplainer, WaitlistEntry, WaitlistList } from '@/lib/waitlist';
-import { Badge, Button, LoadingView, useBottomPadding } from '@/components/ui';
+import { Badge, Button, LoadingView, RefreshErrorBanner, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
 import { useT } from '@/lib/i18n';
@@ -110,6 +110,7 @@ export default function WaitlistScreen() {
         ))}
       </View>
 
+      <RefreshErrorBanner error={error} show={!!data} />
       {error && !data ? (
         <ErrorState message={error} onRetry={refresh} />
       ) : (

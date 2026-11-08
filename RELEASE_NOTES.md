@@ -2,17 +2,24 @@
 
 ## 1.1.3
 
-1.1.2 plus two account security changes. Creating or resetting a password now signs you out on your
-other devices, and the app only offers a confirmation code to the record's own mobile number.
+1.1.2 plus account security changes and the fixes from the 2026-11-08 audit. Changing or resetting
+a password signs you out on your other devices. The app only offers a confirmation code to the
+record's own mobile number. Medicine reminders are more reliable.
 
-No new native modules or permissions. There is no over-the-air update, so this reaches devices only
-through a new store build. Deploy the backend first: on an older server the app still works, but
-other devices stay signed in.
+There are no new native modules. **New permission:** `SCHEDULE_EXACT_ALARM`, so medicine reminders
+arrive on time. It needs no Play declaration (`USE_EXACT_ALARM` would). On Android 14+ the patient
+grants it from a hint on the Medicines screen. There is no over-the-air update, so this reaches
+devices only through a new store build.
+
+Deploy the backend first (branch `fix/patient-api-audit`). On an older server the app still works,
+but other devices stay signed in, and the code step falls back to the sign-in code with a notice.
 
 ### Google Play "What's new" (under 500 characters)
 
 ```
-• Better account security: creating or resetting your password now signs you out on your other devices
+• Better account security: changing or resetting your password signs you out on your other devices
+• Medicine reminders arrive on time and keep going for long-term medicines
+• Reminders come back when you sign in again after your session ends
 • Clearer message when your record has no mobile number for a confirmation code
 • Bug fixes and improvements
 ```
@@ -20,10 +27,35 @@ other devices stay signed in.
 ### Full notes
 
 **Privacy and security**
-- When you create or reset your password, your other devices are signed out. This phone stays signed
-  in. Accounts that only manage a family member's record aren't signed out on other devices yet.
-- Confirmation codes now go only to the mobile number on your own record. If your record has none,
-  the app asks you to see the front desk.
+- When you change or reset your password, your other devices are signed out. This phone stays
+  signed in. This now also covers accounts that only manage a family member's record. Creating a
+  first password doesn't sign anyone out.
+- Confirmation codes go only to the mobile number on your own record. If your record has none, the
+  app asks you to see the front desk.
+- App Lock now also covers screens opened from links, and it is in place from the first frame when
+  the app opens.
+- Sign-in tokens on iPhone stay on this device and are not included in backups.
+
+**Medicine reminders**
+- Medicines with no set duration keep their reminders until the clinic ends the prescription
+  (before, they stopped after 30 days).
+- If your session ends, reminders pause. They come back when you sign in again, and are removed if
+  someone else signs in.
+- Every family member's reminders stay in step with their prescriptions, not only the profile on
+  screen.
+- On Android, reminders can use exact alarms, so they aren't delayed by battery saving.
+
+**Also**
+- Opening the app offline and then reconnecting now loads your profile.
+- On Android, the keyboard no longer covers fields when booking, signing in, giving feedback or
+  sharing.
+- The visit feedback card no longer comes back after you send it.
+- Notification times and "Today/Yesterday" use clinic time.
+- Hardware Back on the booking form goes back to your appointments and asks before discarding.
+- The Join button for video consults disappears when the call window closes.
+- When a refresh fails, the screen shows a message instead of nothing.
+- Searches on results and documents say when older items haven't been loaded yet.
+- Accessibility labels and larger touch targets throughout.
 
 ## 1.1.2
 

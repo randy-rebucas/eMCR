@@ -9,7 +9,7 @@ import { useProfile } from '@/lib/profile';
 import { FAMILY_RELATIONSHIPS, FamilyMember, FamilyOverview, FamilyRelationship, FamilySuggestion } from '@/lib/types';
 import { formatDate, humanize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, Button, LoadingView, useBottomPadding } from '@/components/ui';
+import { Banner, Button, KeyboardAvoider, LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { OtpConfirm } from '@/components/auth';
 import { useT } from '@/lib/i18n';
@@ -136,145 +136,148 @@ export default function FamilyScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => reload()} tintColor={colors.primary} />}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-    >
-      <SafeAreaView edges={['top']}>
-        <AppHeader back />
-        <Text style={styles.title} accessibilityRole="header">
-          {t('family.title')}
-        </Text>
-        <Text style={styles.subtitle}>
-          {guardianOnly
-            ? t('family.subtitleGuardian')
-            : t('family.subtitle')}
-        </Text>
-      </SafeAreaView>
-
-      {error ? <Banner message={error} /> : null}
-
-      {overview ? (
-        <>
-          <View style={styles.card}>
-            {overview.self ? (
-              <PersonRow
-                name={`${overview.self.firstName} ${overview.self.lastName}`}
-                detail={t('family.you')}
-                active={!!viewing?.self}
-                onPress={() => switchTo(null)}
-                last={overview.members.length === 0}
-              />
-            ) : overview.members.length === 0 ? (
-              <Text style={styles.empty}>{t('family.noOne')}</Text>
-            ) : null}
-            {overview.members.map((m, i) => {
-              const years = age(m.dateOfBirth);
-              const detail = [
-                m.relationship
-                  ? isKnownRelationship(m.relationship)
-                    ? t(`common.relationship.${m.relationship}`)
-                    : humanize(m.relationship)
-                  : t('family.familyFallback'),
-                years !== null ? t('family.years', { count: years }) : null,
-                m.clinics.length ? m.clinics.join(', ') : null,
-              ]
-                .filter(Boolean)
-                .join(' · ');
-              return (
-                <PersonRow
-                  key={m.id}
-                  name={`${m.firstName} ${m.lastName}`}
-                  detail={detail}
-                  note={m.accessEndsAt ? t('family.accessEnds', { date: formatDate(m.accessEndsAt, { utc: true }) }) : null}
-                  active={viewing?.id === m.id}
-                  busy={busyKey === m.id}
-                  onPress={() => choose(m)}
-                  onRemove={guardianOnly ? undefined : () => confirmRemove(m)}
-                  last={i === overview.members.length - 1}
-                />
-              );
-            })}
-          </View>
-
-          <Button
-            title={t('family.addSomeone')}
-            icon="person-add-outline"
-            variant="secondary"
-            onPress={() => router.push('/phone?purpose=add')}
-            style={styles.addSomeone}
-          />
-          <Text style={styles.addNote}>
-            {t('family.addNote')}
+    // The child-OTP form sits low on the screen; keep it above the keyboard.
+    <KeyboardAvoider style={styles.root}>
+      <ScrollView
+        style={styles.root}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => reload()} tintColor={colors.primary} />}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <SafeAreaView edges={['top']}>
+          <AppHeader back />
+          <Text style={styles.title} accessibilityRole="header">
+            {t('family.title')}
           </Text>
+          <Text style={styles.subtitle}>
+            {guardianOnly
+              ? t('family.subtitleGuardian')
+              : t('family.subtitle')}
+          </Text>
+        </SafeAreaView>
 
-          {!guardianOnly && overview.suggestions.length ? (
-            <>
-              <Text style={styles.sectionTitle} accessibilityRole="header">
-                {t('family.childrenTitle')}
-              </Text>
-              <Text style={styles.sectionNote}>
-                {t('family.childrenNote')}
-              </Text>
-              <View style={styles.card}>
-                {overview.suggestions.map((s, i) =>
-                  otpFor?.suggestion.key === s.key ? (
-                    <View key={s.key} style={[styles.otp, i < overview.suggestions.length - 1 && styles.divider]}>
-                      <Text style={styles.otpTitle}>{t('family.confirmToAdd', { name: s.firstName })}</Text>
-                      <OtpConfirm
-                        phone={otpFor.phone}
-                        sendCode={sendCode}
-                        onVerify={(code) => add(s, code)}
-                        onCancel={() => {
-                          setOtpFor(null);
-                          setOtpError(null);
-                        }}
-                        verifying={busyKey === s.key}
-                        error={otpError}
-                      />
-                    </View>
-                  ) : (
-                    <View key={s.key} style={[styles.row, i < overview.suggestions.length - 1 && styles.divider]}>
-                      <View style={styles.avatar}>
-                        <Ionicons name="person-add-outline" size={20} color={colors.primary} />
-                      </View>
-                      <View style={styles.flex}>
-                        <Text style={styles.name}>
-                          {s.firstName} {s.lastInitial}
-                        </Text>
-                        <Text style={styles.detail}>
-                          {[s.birthYear ? t('family.born', { year: s.birthYear }) : null, s.clinics.join(', ') || null].filter(Boolean).join(' · ')}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        style={styles.addButton}
-                        onPress={() => add(s)}
-                        disabled={busyKey !== null}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('family.addA11y', { name: s.firstName })}
-                        accessibilityState={{ busy: busyKey === s.key, disabled: busyKey !== null }}
-                      >
-                        <Text style={styles.addText}>{busyKey === s.key ? t('family.adding') : t('family.add')}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )
-                )}
-              </View>
-            </>
-          ) : null}
+        {error ? <Banner message={error} /> : null}
 
-          <View style={styles.note}>
-            <Ionicons name="information-circle-outline" size={18} color={colors.slate} />
-            <Text style={styles.noteText}>
-              {t('family.adultNote')}
+        {overview ? (
+          <>
+            <View style={styles.card}>
+              {overview.self ? (
+                <PersonRow
+                  name={`${overview.self.firstName} ${overview.self.lastName}`}
+                  detail={t('family.you')}
+                  active={!!viewing?.self}
+                  onPress={() => switchTo(null)}
+                  last={overview.members.length === 0}
+                />
+              ) : overview.members.length === 0 ? (
+                <Text style={styles.empty}>{t('family.noOne')}</Text>
+              ) : null}
+              {overview.members.map((m, i) => {
+                const years = age(m.dateOfBirth);
+                const detail = [
+                  m.relationship
+                    ? isKnownRelationship(m.relationship)
+                      ? t(`common.relationship.${m.relationship}`)
+                      : humanize(m.relationship)
+                    : t('family.familyFallback'),
+                  years !== null ? t('family.years', { count: years }) : null,
+                  m.clinics.length ? m.clinics.join(', ') : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ');
+                return (
+                  <PersonRow
+                    key={m.id}
+                    name={`${m.firstName} ${m.lastName}`}
+                    detail={detail}
+                    note={m.accessEndsAt ? t('family.accessEnds', { date: formatDate(m.accessEndsAt, { utc: true }) }) : null}
+                    active={viewing?.id === m.id}
+                    busy={busyKey === m.id}
+                    onPress={() => choose(m)}
+                    onRemove={guardianOnly ? undefined : () => confirmRemove(m)}
+                    last={i === overview.members.length - 1}
+                  />
+                );
+              })}
+            </View>
+
+            <Button
+              title={t('family.addSomeone')}
+              icon="person-add-outline"
+              variant="secondary"
+              onPress={() => router.push('/phone?purpose=add')}
+              style={styles.addSomeone}
+            />
+            <Text style={styles.addNote}>
+              {t('family.addNote')}
             </Text>
-          </View>
-        </>
-      ) : null}
-    </ScrollView>
+
+            {!guardianOnly && overview.suggestions.length ? (
+              <>
+                <Text style={styles.sectionTitle} accessibilityRole="header">
+                  {t('family.childrenTitle')}
+                </Text>
+                <Text style={styles.sectionNote}>
+                  {t('family.childrenNote')}
+                </Text>
+                <View style={styles.card}>
+                  {overview.suggestions.map((s, i) =>
+                    otpFor?.suggestion.key === s.key ? (
+                      <View key={s.key} style={[styles.otp, i < overview.suggestions.length - 1 && styles.divider]}>
+                        <Text style={styles.otpTitle}>{t('family.confirmToAdd', { name: s.firstName })}</Text>
+                        <OtpConfirm
+                          phone={otpFor.phone}
+                          sendCode={sendCode}
+                          onVerify={(code) => add(s, code)}
+                          onCancel={() => {
+                            setOtpFor(null);
+                            setOtpError(null);
+                          }}
+                          verifying={busyKey === s.key}
+                          error={otpError}
+                        />
+                      </View>
+                    ) : (
+                      <View key={s.key} style={[styles.row, i < overview.suggestions.length - 1 && styles.divider]}>
+                        <View style={styles.avatar}>
+                          <Ionicons name="person-add-outline" size={20} color={colors.primary} />
+                        </View>
+                        <View style={styles.flex}>
+                          <Text style={styles.name}>
+                            {s.firstName} {s.lastInitial}
+                          </Text>
+                          <Text style={styles.detail}>
+                            {[s.birthYear ? t('family.born', { year: s.birthYear }) : null, s.clinics.join(', ') || null].filter(Boolean).join(' · ')}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.addButton}
+                          onPress={() => add(s)}
+                          disabled={busyKey !== null}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('family.addA11y', { name: s.firstName })}
+                          accessibilityState={{ busy: busyKey === s.key, disabled: busyKey !== null }}
+                        >
+                          <Text style={styles.addText}>{busyKey === s.key ? t('family.adding') : t('family.add')}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )
+                  )}
+                </View>
+              </>
+            ) : null}
+
+            <View style={styles.note}>
+              <Ionicons name="information-circle-outline" size={18} color={colors.slate} />
+              <Text style={styles.noteText}>
+                {t('family.adultNote')}
+              </Text>
+            </View>
+          </>
+        ) : null}
+      </ScrollView>
+    </KeyboardAvoider>
   );
 }
 

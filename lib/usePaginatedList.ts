@@ -221,7 +221,7 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
       setPage(page + 1);
       setTotalPages(json.pagination?.totalPages ?? json.pagination?.pages ?? page + 1);
     } catch (err) {
-      if (mounted.current && gen === generation.current) setLoadMoreError(errorMessage(err, "Couldn't load more."));
+      if (mounted.current && gen === generation.current) setLoadMoreError(errorMessage(err, t('common.loadMoreFailed')));
     } finally {
       loadingMoreRef.current = false;
       if (mounted.current) setLoadingMore(false);

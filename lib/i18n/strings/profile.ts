@@ -99,6 +99,10 @@ export default defineStrings({
     'pw.codeFailed': "That code didn't work. Please try again.",
     'pw.wrongCurrent': 'Your current password is incorrect.',
     'pw.saveFailed': "Couldn't save your password. Please try again.",
+    'pw.loadFailed': "Couldn't load your account details, so we can't tell yet whether you have a password.",
+    'pw.guardianTitle': 'Password not available here',
+    'pw.guardianBody':
+      "You're signed in to a record you look after, which has no password of its own. To set or change your password, sign in with your own mobile number.",
     'pw.changeTitle': 'Change Password',
     'pw.setTitle': 'Set a Password',
     'pw.changeSubtitle': 'Keep your account secure with a strong password.',
@@ -216,6 +220,10 @@ export default defineStrings({
     'pw.codeFailed': 'Hindi gumana ang code na iyon. Pakisubukan ulit.',
     'pw.wrongCurrent': 'Mali ang kasalukuyang password mo.',
     'pw.saveFailed': 'Hindi na-save ang password mo. Pakisubukan ulit.',
+    'pw.loadFailed': 'Hindi ma-load ang detalye ng account mo, kaya hindi pa namin alam kung may password ka na.',
+    'pw.guardianTitle': 'Hindi available dito ang password',
+    'pw.guardianBody':
+      'Naka-sign in ka sa record ng taong inaalagaan mo, na walang sariling password. Para mag-set o magpalit ng password mo, mag-sign in gamit ang sarili mong mobile number.',
     'pw.changeTitle': 'Palitan ang Password',
     'pw.setTitle': 'Mag-set ng Password',
     'pw.changeSubtitle': 'Panatilihing ligtas ang account mo gamit ang matibay na password.',

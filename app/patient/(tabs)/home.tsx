@@ -9,7 +9,7 @@ import { useApiData } from '@/lib/useApiData';
 import { useUnread } from '@/lib/unread';
 import { Appointment, EmcrAccount, InvoiceListEnvelope, LabResult, QueueEntry } from '@/lib/types';
 import { EMCR_ENDPOINTS } from '@/lib/emcr';
-import { clinicTodayYmd, clinicYmd, formatDate, formatMoney } from '@/lib/format';
+import { clinicHour, clinicTodayYmd, clinicYmd, formatDate, formatMoney } from '@/lib/format';
 import { appointmentStart, isUpcoming } from '@/lib/appointments';
 import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from '@/components/ui';
@@ -23,7 +23,8 @@ import { PlainKey, TFunction, useT } from '@/lib/i18n';
 const ACTIVE_QUEUE = new Set(['waiting', 'in-progress', 'away']);
 
 function greeting(t: TFunction): string {
-  const h = new Date().getHours();
+  // Clinic (Manila) time, so a phone set to another timezone still says the right thing.
+  const h = clinicHour();
   return h < 12 ? t('home.greeting.morning') : h < 18 ? t('home.greeting.afternoon') : t('home.greeting.evening');
 }
 
@@ -218,7 +219,7 @@ export default function HomeScreen() {
                       <Text style={styles.meta}>{t('home.queue.yourNumber')}</Text>
                       <Text style={styles.queueNumber}>{queueEntry.queueNumber}</Text>
                       {queueEntry.status === 'away' ? <Text style={styles.queueLine}>{queueEntry.awayReason === 'missed' ? t('home.queue.missed') : t('home.queue.atLab')}</Text> : null}
-                      {queueEntry.position !== null ? (
+                      {typeof queueEntry.position === 'number' ? (
                         <Text style={styles.queueLine}>
                           {queueEntry.position <= 1
                             ? t('home.queue.next')

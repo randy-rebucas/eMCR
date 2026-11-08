@@ -85,6 +85,7 @@ export function ChipPicker<T extends string>({
               key={option}
               style={[styles.chip, selected && styles.chipSelected]}
               onPress={() => onChange(option)}
+              hitSlop={{ top: 4, bottom: 4 }}
               accessibilityRole="radio"
               accessibilityState={{ selected }}
             >

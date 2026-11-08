@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Linking,
   RefreshControl,
   ScrollView,
   SectionList,
@@ -19,6 +18,7 @@ import { usePaginatedList } from '@/lib/usePaginatedList';
 import { useUnread } from '@/lib/unread';
 import { NotificationScreen, NotificationsEnvelope, PatientNotification } from '@/lib/types';
 import { colors, radius, spacing } from '@/lib/theme';
+import { clinicTodayYmd, clinicYmd, formatDate, formatTime } from '@/lib/format';
 import { Banner, Button, IconName, ListFooter, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { PlainKey, useT } from '@/lib/i18n';
@@ -50,8 +50,9 @@ const TYPE_STYLE: Record<PatientNotification['type'], { icon: IconName; bg: stri
   message: { icon: 'chatbubble-ellipses-outline', bg: '#FDF1E3', fg: '#9A5B13' },
 };
 
-function startOfDay(d: Date): number {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+/** Days since the epoch of a YYYY-MM-DD calendar date (for whole-day differences). */
+function dayNumber(ymd: string): number {
+  return Math.round(Date.parse(`${ymd}T00:00:00Z`) / (24 * 60 * 60 * 1000));
 }
 
 type Group = 'today' | 'yesterday' | 'week' | 'earlier';
@@ -63,23 +64,23 @@ const GROUP_LABEL: Record<Group, PlainKey> = {
   earlier: 'notifications.group.earlier',
 };
 
+/** Today / Yesterday / … by the clinic's calendar (Asia/Manila), not the phone's timezone. */
 function groupLabel(date: string): Group {
-  const day = startOfDay(new Date(date));
-  const today = startOfDay(new Date());
-  const DAY = 24 * 60 * 60 * 1000;
-  if (day >= today) return 'today';
-  if (day >= today - DAY) return 'yesterday';
-  if (day >= today - 6 * DAY) return 'week';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return 'earlier';
+  const ago = dayNumber(clinicTodayYmd()) - dayNumber(clinicYmd(d));
+  if (ago <= 0) return 'today';
+  if (ago === 1) return 'yesterday';
+  if (ago <= 6) return 'week';
   return 'earlier';
 }
 
+/** Clinic-time "2:30 PM" for today and yesterday, otherwise "Oct 18" in the app language. */
 function timeLabel(date: string): string {
   const d = new Date(date);
   if (isNaN(d.getTime())) return '';
   const group = groupLabel(date);
-  return group === 'today' || group === 'yesterday'
-    ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return group === 'today' || group === 'yesterday' ? formatTime(d) : formatDate(d, { month: 'short', day: 'numeric' });
 }
 
 export default function NotificationsScreen() {
@@ -261,8 +262,8 @@ export default function NotificationsScreen() {
           <ListFooter loadingMore={list.loadingMore} error={list.loadMoreError} onRetry={list.loadMore} />
           <TouchableOpacity
             style={styles.settings}
-            onPress={() => Linking.openSettings()}
-            accessibilityRole="link"
+            onPress={() => router.push('/patient/notification-settings')}
+            accessibilityRole="button"
             accessibilityLabel={t('notifications.settingsA11y')}
           >
             <View style={styles.settingsIcon}>
@@ -272,7 +273,7 @@ export default function NotificationsScreen() {
               <Text style={styles.rowTitle}>{t('notifications.settingsTitle')}</Text>
               <Text style={styles.rowMessage}>{t('notifications.settingsText')}</Text>
             </View>
-            <Ionicons name="open-outline" size={18} color={colors.textMuted} />
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </TouchableOpacity>
         </>
       }

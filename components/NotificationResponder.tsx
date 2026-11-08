@@ -26,8 +26,9 @@ function Responder({ Notifications }: { Notifications: NonNullable<typeof MaybeN
   const { viewing, switchToId } = useProfile();
   const { patient } = useAuth();
 
-  // Local medicine reminders follow prescription changes even when their screen isn't open.
-  useMedicineReminderSync(patient?.id, viewing ? { id: viewing.id, who: viewing.self ? null : viewing.firstName } : null);
+  // Local medicine reminders follow prescription changes even when their screen isn't open, for
+  // every profile that has reminders (not only the one on screen).
+  useMedicineReminderSync(patient?.id);
 
   useEffect(() => {
     if (!lastResponse || lastResponse.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;

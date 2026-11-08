@@ -131,8 +131,11 @@ export function BookingForm({
   onBooked,
   tenantId,
   reschedule,
+  onDirtyChange,
 }: {
   onBooked: (booked: BookedSummary) => void;
+  /** Told whether the patient has started filling the form in (to confirm before dropping it). */
+  onDirtyChange?: (dirty: boolean) => void;
   /** Clinic to book at (a `tenantId` from `/me/clinics`); the patient's first clinic when omitted. */
   tenantId?: string;
   /**
@@ -169,6 +172,11 @@ export function BookingForm({
   const [error, setError] = useState<string | null>(null);
   // Guards a second tap before `submitting` re-renders.
   const inFlight = useRef(false);
+
+  const dirty = !moving && (!!doctorId || !!time || reason.trim() !== '' || video);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   useEffect(() => {
     setTime(null);
@@ -540,7 +548,7 @@ export function BookingForm({
         {slotsLoading ? (
           <ActivityIndicator color={colors.primary} style={styles.slotsLoading} />
         ) : slotsError ? (
-          <TouchableOpacity onPress={() => setSlotsVersion((v) => v + 1)} accessibilityRole="button">
+          <TouchableOpacity onPress={() => setSlotsVersion((v) => v + 1)} accessibilityRole="button" hitSlop={12}>
             <Text style={styles.error}>{t('common.tapToRetry', { error: slotsError })}</Text>
           </TouchableOpacity>
         ) : grouped.length > 0 ? (

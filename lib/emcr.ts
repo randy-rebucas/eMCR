@@ -1,4 +1,5 @@
-import { apiFetch, apiRequest, query, TokenPair } from './api';
+import { apiFetch, ApiError, apiRequest, query, TokenPair } from './api';
+import { getOrCreateDeviceId } from './storage';
 import { t } from './i18n';
 import {
   ClinicDirectoryEntry,
@@ -84,15 +85,37 @@ export function rememberIssuedLoginId(id: string | null | undefined): void {
 /**
  * Create or change the account's password (signed in). Other sessions are signed out, so the new
  * tokens must be stored (`applyRotatedTokens`). Guardian-only sessions get none and keep theirs.
+ * Run it and `applyRotatedTokens` inside one `withSessionHold`. `deviceId` keeps this phone's
+ * push registration when the other devices' are revoked.
  */
-export function saveAccountPassword(
+export async function saveAccountPassword(
   newPassword: string,
   currentPassword?: string
 ): Promise<{ account: EmcrAccount | null } & Partial<TokenPair>> {
+  const deviceId = await getOrCreateDeviceId().catch(() => undefined);
   return apiFetch(EMCR_ENDPOINTS.accountPassword, {
     method: 'POST',
-    body: { newPassword, rotate: true, ...(currentPassword ? { currentPassword } : {}) },
+    inSessionHold: true,
+    body: { newPassword, rotate: true, ...(currentPassword ? { currentPassword } : {}), ...(deviceId ? { deviceId } : {}) },
   });
+}
+
+/**
+ * Text a confirmation code to the signed-in patient's own record (POST /api/patients/me/phone-code),
+ * for actions that need phone proof (set or change a password). Servers from before that endpoint
+ * answer 404; then the code goes through the sign-in code request for `phone` instead, and
+ * `legacy` is true so the screen can say so.
+ */
+export async function sendOwnPhoneCode(phone: string): Promise<{ legacy: boolean }> {
+  try {
+    await apiRequest('/api/patients/me/phone-code', { method: 'POST' });
+    return { legacy: false };
+  } catch (error) {
+    // A missing route (not a JSON error from the endpoint itself, which always has a code).
+    if (!(error instanceof ApiError && error.status === 404 && !error.code) || !phone) throw error;
+  }
+  await apiFetch('/api/patients/auth/otp/request', { method: 'POST', auth: false, body: { phone } });
+  return { legacy: true };
 }
 
 // ── Clinic invites ───────────────────────────────────────────────────────────

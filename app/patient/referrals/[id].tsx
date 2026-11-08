@@ -16,7 +16,7 @@ import {
   URGENCY_LABEL,
 } from '@/lib/referrals';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Badge, Banner, Button, DetailRow, LoadingView, useBottomPadding } from '@/components/ui';
+import { Badge, Banner, Button, DetailRow, LoadingView, RefreshErrorBanner, useBottomPadding } from '@/components/ui';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorState } from '@/components/ErrorState';
 import { softShadow } from '@/components/AppHeader';
@@ -69,6 +69,7 @@ export default function ReferralDetailScreen() {
       contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
     >
+      <RefreshErrorBanner error={error} />
       <View style={styles.card}>
         <View style={styles.header}>
           <View style={styles.icon}>
