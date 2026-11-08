@@ -7,7 +7,7 @@ import { useApiData } from '@/lib/useApiData';
 import { Appointment } from '@/lib/types';
 import { doctorName, formatDate, formatTime } from '@/lib/format';
 import { colors } from '@/lib/theme';
-import { isVideoVisit, openVideoCall, opensLabel } from '@/lib/teleconsult';
+import { isVideoVisit, openVideoCall, opensLabel, useJoinUrl } from '@/lib/teleconsult';
 import { Banner, Button, Card, DetailRow, LoadingView, screenStyles, useBottomPadding } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -18,7 +18,7 @@ export default function AppointmentDetailScreen() {
   const t = useT();
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, loading, refreshing, error, refresh, poll, offline, updatedAt } = useApiData<Appointment>(
+  const { data, loading, refreshing, error, refresh, poll, offline, stale, updatedAt } = useApiData<Appointment>(
     id ? `/api/patients/me/appointments/${encodeURIComponent(id)}` : null,
     { refreshOn: ['appointments'], offline: true }
   );
@@ -35,6 +35,9 @@ export default function AppointmentDetailScreen() {
     return () => clearTimeout(timer);
   }, [opensAt, refresh]);
 
+  // No Join from a saved copy, and none once the call has closed.
+  const joinUrl = useJoinUrl(data, offline || stale);
+
   if (loading) return <LoadingView />;
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
   if (!data) return <ErrorState message={t('appointments.notFound')} onRetry={refresh} />;
@@ -43,7 +46,6 @@ export default function AppointmentDetailScreen() {
   const cancellable = canCancel(appointment);
   const movable = canReschedule(appointment);
   const video = isVideoVisit(appointment);
-  const joinUrl = appointment.teleconsult?.joinable ? appointment.teleconsult.joinUrl : null;
   const opens = video ? opensLabel(appointment) : null;
 
   function confirmCancel() {

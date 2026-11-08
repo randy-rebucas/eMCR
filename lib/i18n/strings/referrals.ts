@@ -51,6 +51,8 @@ export default defineStrings({
     'urgency.stat': 'As soon as possible',
     aSpecialist: 'A specialist',
     letterTitle: 'Referral letter',
+    // Saved PDF's file name (letters, digits, - and _ only).
+    letterFileName: 'Referral-Letter-{code}',
   },
   fil: {
     title: 'Mga Referral',
@@ -97,5 +99,6 @@ export default defineStrings({
     'urgency.stat': 'Sa lalong madaling panahon',
     aSpecialist: 'Isang specialist',
     letterTitle: 'Referral letter',
+    letterFileName: 'Referral-Letter-{code}',
   },
 });

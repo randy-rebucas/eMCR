@@ -1,6 +1,13 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { ApiError, authHeaders, getAccessToken, recoverFromUnauthorized, reportActivationRequired } from './api';
+import {
+  ApiError,
+  authHeaders,
+  getAccessToken,
+  recoverFromUnauthorized,
+  reportActivationRequired,
+  apiRequest,
+} from './api';
 import { API_BASE_URL } from './config';
 import { t } from './i18n';
 import { PatientDocument } from './types';
@@ -107,8 +114,17 @@ function toApiError(error: unknown): ApiError {
     reportActivationRequired();
     return new ApiError(t('documents.activationRequired'), 402, 'ACTIVATION_REQUIRED');
   }
-  if (status === 404) return new ApiError(t('documents.gone'), 404);
+  if (status === 403) {
+    // The download can't read the JSON code, so a plain API call with the same profile asks
+    // again: if the server refuses the family profile (PROFILE_FORBIDDEN) or the account
+    // (ACCOUNT_INACTIVE), the api layer's own handlers take over from there.
+    apiRequest('/api/patients/me').catch(() => {});
+    return new ApiError(t('documents.downloadFailed'), 403);
+  }
+  if (status === 404 || status === 410) return new ApiError(t('documents.gone'), status);
   if (status === 401) return new ApiError(t('documents.sessionExpired'), 401);
   if (status === 429) return new ApiError(t('documents.tooMany'), 429);
+  // 502/503/504: the server is up but couldn't fetch the stored file. Worth another try.
+  if (status === 502 || status === 503 || status === 504) return new ApiError(t('documents.fetchFailed'), status);
   return new ApiError(t('documents.downloadFailed'), status ?? 0);
 }

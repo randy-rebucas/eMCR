@@ -123,5 +123,5 @@ export function referredByText(r: Referral): string | null {
 /** Download the letter into the app cache and open the share sheet (never the browser). */
 export async function openReferralLetter(r: Referral): Promise<void> {
   const link = await apiRequest<{ url: string }>(`${REFERRALS_PATH}/${encodeURIComponent(r._id)}/pdf-link`, { method: 'POST' });
-  await openPdfLink(link.url, `Referral-Letter-${r.referralCode ?? r._id}`, t('referrals.letterTitle'));
+  await openPdfLink(link.url, t('referrals.letterFileName', { code: r.referralCode ?? r._id }), t('referrals.letterTitle'));
 }

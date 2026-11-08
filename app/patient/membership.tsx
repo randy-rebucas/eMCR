@@ -7,12 +7,15 @@ import { useApiData } from '@/lib/useApiData';
 import { formatDate } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { MEMBERSHIP_PATH, PatientMembership, STATE_LABEL, tierColors } from '@/lib/membership';
-import { Badge, LoadingView, useBottomPadding } from '@/components/ui';
+import { Badge, LoadingView, RefreshErrorBanner, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
 import { t as translate, useT } from '@/lib/i18n';
 
-const points = (n: number) => translate('membership.points', { amount: n.toLocaleString('en-PH'), count: Math.abs(n) });
+/** Point counts from the server can be missing on older records. */
+const num = (n: number | null | undefined) => (typeof n === 'number' && isFinite(n) ? n : 0);
+const points = (n: number | null | undefined) =>
+  translate('membership.points', { amount: num(n).toLocaleString('en-PH'), count: Math.abs(num(n)) });
 
 /**
  * The patient's loyalty memberships, one card per clinic: tier, points, discount, expiry, the
@@ -41,6 +44,7 @@ export default function MembershipScreen() {
             {t('membership.title')}
           </Text>
           <Text style={styles.subtitle}>{t('membership.subtitle')}</Text>
+          <RefreshErrorBanner error={error} show={memberships.length > 0} />
         </SafeAreaView>
       }
       ListEmptyComponent={
@@ -65,6 +69,8 @@ function MembershipCard({ membership: m }: { membership: PatientMembership }) {
   const t = useT();
   const [showHistory, setShowHistory] = useState(false);
   const tone = tierColors(m.tier);
+  const benefits = Array.isArray(m.benefits) ? m.benefits : [];
+  const history = Array.isArray(m.history) ? m.history : [];
   const stateTone = m.state === 'active' ? 'primary' : m.state === 'due' ? 'warning' : m.state === 'expired' || m.state === 'suspended' ? 'danger' : 'neutral';
 
   return (
@@ -84,7 +90,7 @@ function MembershipCard({ membership: m }: { membership: PatientMembership }) {
         <View style={styles.cardMiddle}>
           <View style={styles.flex}>
             <Text style={[styles.cardLabel, { color: tone.accent }]}>{t('membership.pointsLabel')}</Text>
-            <Text style={[styles.points, { color: tone.fg }]}>{m.points.toLocaleString('en-PH')}</Text>
+            <Text style={[styles.points, { color: tone.fg }]}>{num(m.points).toLocaleString('en-PH')}</Text>
           </View>
           {m.membershipNumber ? (
             <View style={styles.qr} accessible accessibilityLabel={t('membership.qrA11y', { number: m.membershipNumber })}>
@@ -124,9 +130,9 @@ function MembershipCard({ membership: m }: { membership: PatientMembership }) {
         ) : m.state === 'expired' ? (
           <Text style={styles.note}>{t('membership.expiredNote')}</Text>
         ) : null}
-        {m.benefits.length ? (
+        {benefits.length ? (
           <View style={styles.benefits}>
-            {m.benefits.map((b) => (
+            {benefits.map((b) => (
               <View key={b} style={styles.benefit}>
                 <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
                 <Text style={styles.benefitText}>{b}</Text>
@@ -139,7 +145,7 @@ function MembershipCard({ membership: m }: { membership: PatientMembership }) {
           {m.joinDate ? t('membership.memberSince', { date: formatDate(m.joinDate) }) : ''}
         </Text>
 
-        {m.history.length ? (
+        {history.length ? (
           <>
             <TouchableOpacity
               style={styles.historyToggle}
@@ -151,8 +157,8 @@ function MembershipCard({ membership: m }: { membership: PatientMembership }) {
               <Ionicons name={showHistory ? 'chevron-up' : 'chevron-down'} size={18} color={colors.primary} />
             </TouchableOpacity>
             {showHistory
-              ? m.history.map((h, i) => {
-                  const plus = h.points > 0;
+              ? history.map((h, i) => {
+                  const plus = num(h.points) > 0;
                   return (
                     <View key={`${h.createdAt}-${i}`} style={styles.historyRow}>
                       <View style={styles.flex}>
@@ -163,7 +169,7 @@ function MembershipCard({ membership: m }: { membership: PatientMembership }) {
                       </View>
                       <Text style={[styles.historyPoints, { color: plus ? colors.success : colors.textMuted }]}>
                         {plus ? '+' : ''}
-                        {h.points.toLocaleString('en-PH')}
+                        {num(h.points).toLocaleString('en-PH')}
                       </Text>
                     </View>
                   );

@@ -1,8 +1,6 @@
 import { ComponentRef, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   BackHandler,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleProp,
@@ -22,7 +20,7 @@ import { ApiError } from '@/lib/api';
 import { colors, radius, spacing } from '@/lib/theme';
 import { t as translate, useT } from '@/lib/i18n';
 import { rich } from '@/lib/i18n/rich';
-import { Button, IconName, useAnnounce } from './ui';
+import { Button, IconName, KeyboardAvoider, useAnnounce } from './ui';
 
 // Building blocks for the signed-out and onboarding screens, so they share
 // one layout, field and full-screen-state look.
@@ -44,7 +42,7 @@ export function AuthScreen({
   const onBack = typeof back === 'function' ? back : back ? () => router.back() : null;
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
+      <KeyboardAvoider style={styles.flex}>
         {onBack ? (
           <TouchableOpacity
             style={styles.back}
@@ -64,7 +62,7 @@ export function AuthScreen({
           {children}
         </ScrollView>
         {footer ? <View style={styles.footer}>{footer}</View> : null}
-      </KeyboardAvoidingView>
+      </KeyboardAvoider>
     </SafeAreaView>
   );
 }

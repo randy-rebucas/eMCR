@@ -129,7 +129,7 @@ export default function InvoiceDetailScreen() {
           ) : null}
           <Button title={t('invoices.payOnline')} icon="card-outline" onPress={payOnline} loading={paying} />
           <Text style={styles.payHint}>
-            {offer.methods.includes('online')
+            {offer.methods?.includes('online')
               ? t('invoices.payHintOnline')
               : t('invoices.payHintManual')}
           </Text>

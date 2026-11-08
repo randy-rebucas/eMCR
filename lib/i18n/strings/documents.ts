@@ -42,6 +42,7 @@ export default defineStrings({
     sessionExpired: 'Your session has expired. Please sign in again.',
     tooMany: 'Too many requests. Please wait a moment and try again.',
     downloadFailed: "Couldn't download the document. Check your connection and try again.",
+    fetchFailed: "The server couldn't get this file right now. Please try again in a moment.",
   },
   fil: {
     title: 'Mga Dokumento',
@@ -80,5 +81,6 @@ export default defineStrings({
     sessionExpired: 'Nag-expire na ang session mo. Mag-sign in ulit.',
     tooMany: 'Masyadong maraming request. Maghintay sandali at subukan ulit.',
     downloadFailed: 'Hindi ma-download ang dokumento. Tingnan ang internet connection mo at subukan ulit.',
+    fetchFailed: 'Hindi makuha ng server ang file na ito ngayon. Subukan ulit maya-maya.',
   },
 });

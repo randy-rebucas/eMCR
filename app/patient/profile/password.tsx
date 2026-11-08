@@ -1,15 +1,17 @@
-import { useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ReactNode, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { apiFetch, ApiError, apiRequest, errorMessage, TokenPair } from '@/lib/api';
+import { apiFetch, ApiError, errorMessage, TokenPair, withSessionHold } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { sendOwnPhoneCode } from '@/lib/emcr';
 import { emitRefresh } from '@/lib/events';
+import { getOrCreateDeviceId } from '@/lib/storage';
 import { useApiData } from '@/lib/useApiData';
 import { PatientProfile } from '@/lib/types';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, Button, LoadingView, useBottomPadding } from '@/components/ui';
+import { Banner, Button, KeyboardAvoider, LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ChecklistItem, IconField, OtpConfirm, PASSWORD_RULES } from '@/components/auth';
 import { useT } from '@/lib/i18n';
@@ -22,8 +24,8 @@ import { useT } from '@/lib/i18n';
 export default function PasswordScreen() {
   const bottomPad = useBottomPadding();
   const t = useT();
-  const { applyRotatedTokens } = useAuth();
-  const { data, loading } = useApiData<PatientProfile>('/api/patients/me');
+  const { applyRotatedTokens, guardianOnly } = useAuth();
+  const { data, loading, error: loadError, refresh } = useApiData<PatientProfile>(guardianOnly ? null : '/api/patients/me');
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -36,18 +38,43 @@ export default function PasswordScreen() {
   const [otpError, setOtpError] = useState<string | null>(null);
   // Keyboard "Done" and the button can both fire before `saving` re-renders.
   const inFlight = useRef(false);
+  // Shown on the code step when an older server sent the code the sign-in way.
+  const [codeNote, setCodeNote] = useState<string | null>(null);
+
+  // Guardian-only eMCR sessions have no password of their own (the server refuses credential actions).
+  if (guardianOnly) {
+    return (
+      <Shell bottomPad={bottomPad} title={t('profile.pw.guardianTitle')} subtitle={t('profile.pw.guardianBody')}>
+        <Button title={t('common.done')} onPress={() => router.back()} style={styles.save} />
+      </Shell>
+    );
+  }
 
   if (loading) return <LoadingView />;
 
+  // Without the account details we can't tell whether there is a current password to ask for.
+  if (!data) {
+    return (
+      <Shell bottomPad={bottomPad} title={t('profile.pw.changeTitle')}>
+        <Banner message={loadError ? `${t('profile.pw.loadFailed')} ${loadError}` : t('profile.pw.loadFailed')} />
+        <Button title={t('common.tryAgainTitle')} variant="secondary" icon="refresh" onPress={refresh} style={styles.save} />
+      </Shell>
+    );
+  }
+
   // Patients who only ever used a code or QR have no password yet, so "current" isn't asked for.
-  const hasPassword = data?.hasPassword !== false;
+  const hasPassword = data.hasPassword !== false;
   const rulesMet = PASSWORD_RULES.every((r) => r.test(next));
   const matches = confirm.length > 0 && confirm === next;
   const differs = !hasPassword || !current || next !== current;
   // The record's own phone only: the server doesn't take a code sent to a contact number as proof.
-  const phone = (data?.phone ?? '').trim();
-  // Sent to this patient's own record, never another record that shares the phone number.
-  const sendCode = () => apiRequest('/api/patients/me/phone-code', { method: 'POST' });
+  const phone = (data.phone ?? '').trim();
+  // Sent to this patient's own record, never another record that shares the phone number. An older
+  // server without that endpoint gets the sign-in code request instead, and the screen says so.
+  const sendCode = async () => {
+    const { legacy } = await sendOwnPhoneCode(phone);
+    setCodeNote(legacy ? t('auth.otp.legacySent', { phone }) : null);
+  };
 
   function submit() {
     if (inFlight.current) return;
@@ -66,11 +93,22 @@ export default function PasswordScreen() {
     setWrongCurrent(false);
     setSaving(true);
     try {
-      const result = await apiFetch<Partial<TokenPair>>('/api/patients/me/change-password', {
-        method: 'POST',
-        body: { ...(hasPassword ? { currentPassword: current } : {}), newPassword: next, ...(otp ? { otp } : {}) },
+      const deviceId = await getOrCreateDeviceId().catch(() => undefined);
+      // Held: other calls don't refresh (and lose) the session while the pair rotates.
+      await withSessionHold(async () => {
+        const result = await apiFetch<Partial<TokenPair>>('/api/patients/me/change-password', {
+          method: 'POST',
+          inSessionHold: true,
+          body: {
+            ...(hasPassword ? { currentPassword: current } : {}),
+            newPassword: next,
+            ...(otp ? { otp } : {}),
+            // Keeps this phone's push registration when the other devices' are revoked.
+            ...(deviceId ? { deviceId } : {}),
+          },
+        });
+        await applyRotatedTokens(result);
       });
-      await applyRotatedTokens(result);
       emitRefresh('profile');
       setOtpStep(false);
       setDone(true);
@@ -104,7 +142,7 @@ export default function PasswordScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoider style={styles.root}>
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
         keyboardShouldPersistTaps="handled"
@@ -148,6 +186,7 @@ export default function PasswordScreen() {
 
             {error ? <Banner message={error} /> : null}
 
+            {otpStep && codeNote ? <Banner tone="primary" message={codeNote} /> : null}
             {otpStep ? (
               <View style={styles.card}>
                 <OtpConfirm
@@ -236,7 +275,33 @@ export default function PasswordScreen() {
           </>
         )}
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoider>
+  );
+}
+
+/** Header-only layout for the states without the form (guardian-only, couldn't load). */
+function Shell({
+  bottomPad,
+  title,
+  subtitle,
+  children,
+}: {
+  bottomPad: number;
+  title: string;
+  subtitle?: string;
+  children: ReactNode;
+}) {
+  return (
+    <ScrollView style={styles.root} contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}>
+      <SafeAreaView edges={['top']}>
+        <AppHeader back />
+        <Text style={styles.title} accessibilityRole="header">
+          {title}
+        </Text>
+        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      </SafeAreaView>
+      {children}
+    </ScrollView>
   );
 }
 

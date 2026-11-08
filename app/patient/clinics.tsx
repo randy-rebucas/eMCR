@@ -6,7 +6,7 @@ import { useApiData } from '@/lib/useApiData';
 import { PatientClinic } from '@/lib/types';
 import { formatDate } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Button, LoadingView, useBottomPadding } from '@/components/ui';
+import { Button, LoadingView, RefreshErrorBanner, useBottomPadding } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
 import { t as translate, useT } from '@/lib/i18n';
@@ -48,6 +48,7 @@ export default function ClinicsScreen() {
             {t('clinics.title')}
           </Text>
           <Text style={styles.subtitle}>{t('clinics.subtitle')}</Text>
+          <RefreshErrorBanner error={error} show={clinics.length > 0} />
         </SafeAreaView>
       }
       ListEmptyComponent={

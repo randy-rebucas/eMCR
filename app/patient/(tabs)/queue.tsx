@@ -21,7 +21,7 @@ import { ApiError, apiRequest, errorMessage } from '@/lib/api';
 import { emitRefresh } from '@/lib/events';
 import { CheckInResult, QueueEntry } from '@/lib/types';
 import { QrScanner } from '@/components/QrScanner';
-import { doctorName, formatTime } from '@/lib/format';
+import { clinicTodayYmd, clinicYmd, doctorName, formatTime } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName } from '@/components/ui';
 import { OfflineBanner, savedAtLabel } from '@/components/OfflineBanner';
@@ -119,7 +119,19 @@ export default function QueueScreen() {
     }, [poll])
   );
 
-  const active = entry && (entry.status === 'waiting' || entry.status === 'in-progress' || entry.status === 'away') ? entry : null;
+  // A saved copy from an earlier clinic day (shown before / instead of the server's answer) is
+  // over: that queue has closed, so don't present it as today's position.
+  const fromEarlierDay =
+    !!entry &&
+    (stale || offline) &&
+    (() => {
+      const at = entry.queuedAt ? new Date(entry.queuedAt) : updatedAt ? new Date(updatedAt) : null;
+      return !!at && !isNaN(at.getTime()) && clinicYmd(at) !== clinicTodayYmd();
+    })();
+  const active =
+    entry && !fromEarlierDay && (entry.status === 'waiting' || entry.status === 'in-progress' || entry.status === 'away')
+      ? entry
+      : null;
   const serving = active?.status === 'in-progress';
   const away = active?.status === 'away';
   const missed = away && active?.awayReason === 'missed';
@@ -171,7 +183,10 @@ export default function QueueScreen() {
             <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={refresh} style={styles.stretch} />
           </View>
         ) : !active ? (
-          <NotInQueue onScan={() => setScanning(true)} checkingIn={checkingIn} />
+          <>
+            <OfflineBanner offline={offline} updatedAt={updatedAt} />
+            <NotInQueue onScan={() => setScanning(true)} checkingIn={checkingIn} />
+          </>
         ) : (
           <>
             {/* A saved copy from an earlier visit: the position has almost certainly moved on. */}
@@ -236,7 +251,7 @@ export default function QueueScreen() {
                     <HeroStat
                       icon="people-outline"
                       label={t('queue.hero.patientsAhead')}
-                      value={active.position !== null ? String(Math.max(0, active.position - 1)) : '—'}
+                      value={typeof active.position === 'number' && isFinite(active.position) ? String(Math.max(0, active.position - 1)) : '—'}
                     />
                   </>
                 )}

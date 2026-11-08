@@ -1,4 +1,6 @@
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { randomUUID } from 'expo-crypto';
 import { clearOfflineCache } from './offlineCache';
 
 /**
@@ -25,6 +27,16 @@ const KEYS = {
   /** Builds before refresh tokens stored a patient token under this key. */
   legacyPatient: 'patient_token',
 } as const;
+
+/**
+ * iOS keychain class for credentials: readable after the first unlock since boot (so a refresh
+ * started while the phone is locked still works) and never moved to another device by a backup
+ * restore. Android ignores it (Keystore). The keychain lookup doesn't match on this attribute, so
+ * items written by earlier builds (default "when unlocked") still read; they are rewritten once.
+ */
+const SECURE: SecureStore.SecureStoreOptions = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY };
+/** Set once the stored session has been rewritten with `SECURE`. */
+const KEYCHAIN_MIGRATED_KEY = 'session_keychain_v2';
 
 // In-memory mirror so every request doesn't hit the keychain. `undefined` = not loaded yet.
 let cache: StoredSession | null | undefined;
@@ -57,11 +69,13 @@ export async function getSession(): Promise<StoredSession | null> {
   }
 
   if (accessToken) {
-    cache = {
+    const loaded: StoredSession = {
       accessToken,
       refreshToken,
       accessExpiresAt: expiresAt ? Number(expiresAt) || null : null,
     };
+    cache = loaded;
+    await migrateKeychainClass(loaded);
     return cache;
   }
 
@@ -84,6 +98,25 @@ export async function getSession(): Promise<StoredSession | null> {
 }
 
 /**
+ * One-time rewrite of a session stored by an earlier build, so it gets the `SECURE` keychain
+ * class (an update with the option changes the item's class in place). Skipped when the session
+ * changed meanwhile, so it can never write back a session that was replaced or cleared.
+ */
+async function migrateKeychainClass(session: StoredSession): Promise<void> {
+  if (Platform.OS !== 'ios') return;
+  try {
+    if ((await SecureStore.getItemAsync(KEYCHAIN_MIGRATED_KEY)) === '1') return;
+    const at = generation;
+    await setSession(session, { ifGeneration: at });
+    // App Lock follows the session's keychain class, so both read in the same device states.
+    if ((await SecureStore.getItemAsync('app_lock')) === '1') await SecureStore.setItemAsync('app_lock', '1', SECURE);
+    if (generation === at) await SecureStore.setItemAsync(KEYCHAIN_MIGRATED_KEY, '1');
+  } catch {
+    // Retried on the next launch; the session still reads either way.
+  }
+}
+
+/**
  * Store a session. With `ifGeneration` (token refresh), nothing is written and false is
  * returned when the session was replaced or cleared since that generation was read.
  */
@@ -92,13 +125,13 @@ export async function setSession(session: StoredSession, options: { ifGeneration
   else if (options.ifGeneration !== generation) return false;
   cache = session;
   await Promise.all([
-    SecureStore.setItemAsync(KEYS.audience, 'patient'),
-    SecureStore.setItemAsync(KEYS.access, session.accessToken),
+    SecureStore.setItemAsync(KEYS.audience, 'patient', SECURE),
+    SecureStore.setItemAsync(KEYS.access, session.accessToken, SECURE),
     session.refreshToken
-      ? SecureStore.setItemAsync(KEYS.refresh, session.refreshToken)
+      ? SecureStore.setItemAsync(KEYS.refresh, session.refreshToken, SECURE)
       : SecureStore.deleteItemAsync(KEYS.refresh),
     session.accessExpiresAt
-      ? SecureStore.setItemAsync(KEYS.accessExpiresAt, String(session.accessExpiresAt))
+      ? SecureStore.setItemAsync(KEYS.accessExpiresAt, String(session.accessExpiresAt), SECURE)
       : SecureStore.deleteItemAsync(KEYS.accessExpiresAt),
   ]);
   return true;
@@ -152,21 +185,32 @@ export async function getAppLockEnabled(): Promise<boolean> {
 }
 
 export async function setAppLockEnabled(enabled: boolean): Promise<void> {
-  if (enabled) await SecureStore.setItemAsync('app_lock', '1');
+  if (enabled) await SecureStore.setItemAsync('app_lock', '1', SECURE);
   else await SecureStore.deleteItemAsync('app_lock');
 }
 
 /**
  * Stable per-install identifier sent as `deviceId` to the devices and session
- * endpoints. Expo has no persistent hardware id, so one is generated once.
+ * endpoints. Expo has no persistent hardware id, so one is generated once (a random UUID; ids
+ * stored by earlier builds are kept as they are, since the server knows the device by them).
  */
-export async function getOrCreateDeviceId(): Promise<string> {
-  const KEY = 'device_id';
-  let id = await SecureStore.getItemAsync(KEY);
-  if (!id) {
-    const rand = () => Math.random().toString(36).slice(2, 10);
-    id = `${Date.now().toString(36)}-${rand()}-${rand()}`;
-    await SecureStore.setItemAsync(KEY, id);
+let deviceIdPromise: Promise<string> | null = null;
+
+export function getOrCreateDeviceId(): Promise<string> {
+  // One read per launch, and two first-time callers can't each create a different id.
+  if (!deviceIdPromise) {
+    deviceIdPromise = (async () => {
+      const KEY = 'device_id';
+      let id = await SecureStore.getItemAsync(KEY);
+      if (!id) {
+        id = randomUUID();
+        await SecureStore.setItemAsync(KEY, id, SECURE);
+      }
+      return id;
+    })().catch((error) => {
+      deviceIdPromise = null;
+      throw error;
+    });
   }
-  return id;
+  return deviceIdPromise;
 }

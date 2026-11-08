@@ -17,6 +17,8 @@ export default defineStrings({
     'otp.resend': 'Resend code',
     'otp.resendIn': 'Resend code (00:{seconds})',
     'otp.resendFailed': "Couldn't send a new code. Please try again.",
+    // lib/emcr.ts sendOwnPhoneCode: an older server without /me/phone-code
+    'otp.legacySent': 'Your clinic’s server is on an older version, so we sent the code the usual sign-in way to {phone}. If it doesn’t arrive, ask the front desk.',
     'otp.sentTo': 'We sent a 6-digit code to\n<b>{phone}</b>',
     'otp.enterTitle': 'Enter Your Code',
     'otp.enterSixDigits': 'Enter the 6-digit code from the SMS.',
@@ -266,6 +268,7 @@ export default defineStrings({
     'otp.resend': 'Ipadala ulit ang code',
     'otp.resendIn': 'Ipadala ulit ang code (00:{seconds})',
     'otp.resendFailed': 'Hindi maipadala ang bagong code. Pakisubukan ulit.',
+    'otp.legacySent': 'Luma pa ang bersyon ng server ng clinic mo, kaya ipinadala namin ang code sa {phone} gaya ng sa pag-sign in. Kung hindi dumating, magtanong sa front desk.',
     'otp.sentTo': 'Nagpadala kami ng 6-digit na code sa\n<b>{phone}</b>',
     'otp.enterTitle': 'Ilagay ang Code',
     'otp.enterSixDigits': 'Ilagay ang 6-digit na code mula sa SMS.',

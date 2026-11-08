@@ -5,14 +5,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { usePaginatedList } from '@/lib/usePaginatedList';
 import { Invoice, InvoiceListEnvelope, InvoiceStatus } from '@/lib/types';
-import { formatDate, formatMoney } from '@/lib/format';
+import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { balanceOf, invoiceLook, itemsSummary, lastPaymentDate } from '@/lib/invoices';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { InvoiceStatusPill } from '@/components/InvoiceStatusPill';
-import { useT } from '@/lib/i18n';
+import { MessageKey, useT } from '@/lib/i18n';
+import { catalogs } from '@/lib/i18n/registry';
 
 type Filter = 'all' | InvoiceStatus;
 
@@ -157,7 +158,11 @@ function InvoiceRow({ invoice }: { invoice: Invoice }) {
       accessibilityLabel={t('invoices.rowA11y', {
         number: invoice.invoiceNumber ?? '',
         amount: formatMoney(invoice.total),
-        status: t(`common.invoice.${invoice.status}`),
+        // A status this build doesn't know yet is read out as the server's word (like StatusBadge).
+        status:
+          `invoice.${invoice.status}` in catalogs.common.en
+            ? t(`common.invoice.${invoice.status}` as MessageKey & `common.invoice.${string}`)
+            : humanize(invoice.status),
       })}
     >
       <View style={[styles.tile, { backgroundColor: look.bg }]}>

@@ -115,6 +115,18 @@ export default defineStrings({
     'offline.yourRecords': 'your records',
     'offline.banner': 'Offline. Showing {subject}. Pull down to try again.',
     'offline.bannerWhen': 'Offline. Showing {subject} from {when}. Pull down to try again.',
+    // Refresh failed while older data stays on screen (pull-to-refresh, background poll).
+    'refreshFailed': "Couldn't refresh. {error}",
+    // Leaving a form with unsaved input (feedback sheet, booking form).
+    'discard.title': 'Discard changes?',
+    'discard.body': "What you've entered won't be saved.",
+    'discard.keep': 'Keep editing',
+    'discard.confirm': 'Discard',
+    // Search over a paged list only covers what has loaded (SearchMoreHint).
+    'search.olderNotSearched': 'Only the items loaded so far are searched.',
+    'search.loadOlder': 'Load older to search',
+    // usePaginatedList: loading the next page failed and the server sent no message.
+    loadMoreFailed: "Couldn't load more.",
 
     // Family relationships (lib/types FAMILY_RELATIONSHIPS)
     'relationship.child': 'Child',
@@ -239,6 +251,14 @@ export default defineStrings({
     'offline.yourRecords': 'records mo',
     'offline.banner': 'Offline. Ipinapakita ang {subject}. Hilahin pababa para subukan ulit.',
     'offline.bannerWhen': 'Offline. Ipinapakita ang {subject} (naka-save noong {when}). Hilahin pababa para subukan ulit.',
+    'refreshFailed': 'Hindi ma-refresh. {error}',
+    'discard.title': 'Itapon ang mga pagbabago?',
+    'discard.body': 'Hindi mase-save ang mga inilagay mo.',
+    'discard.keep': 'Ituloy ang pag-edit',
+    'discard.confirm': 'Itapon',
+    'search.olderNotSearched': 'Ang mga na-load pa lang ang hinahanap.',
+    'search.loadOlder': 'Mag-load ng mas luma para hanapin',
+    loadMoreFailed: 'Hindi ma-load ang iba pa.',
 
     'relationship.child': 'Anak',
     'relationship.parent': 'Magulang',

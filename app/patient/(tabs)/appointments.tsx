@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
+  Alert,
+  BackHandler,
   FlatList,
-  KeyboardAvoidingView,
-  Platform,
   RefreshControl,
   StyleSheet,
   Text,
@@ -10,13 +10,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { usePaginatedList } from '@/lib/usePaginatedList';
 import { appointmentStart, isUpcoming } from '@/lib/appointments';
 import { Appointment } from '@/lib/types';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, Button, ListFooter } from '@/components/ui';
+import { Banner, Button, KeyboardAvoider, ListFooter } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppHeader } from '@/components/AppHeader';
 import { AppointmentCard } from '@/components/AppointmentCard';
@@ -35,6 +35,7 @@ export default function AppointmentsScreen() {
   const t = useT();
   const [segment, setSegment] = useState<Segment>('upcoming');
   const [booked, setBooked] = useState<BookedSummary | null>(null);
+  const [bookDirty, setBookDirty] = useState(false);
   // One newest-first list, split client-side: upcoming visits sort to the top of it anyway.
   const list = usePaginatedList<Appointment>('/api/patients/me/appointments', {
     limit: 20,
@@ -55,6 +56,31 @@ export default function AppointmentsScreen() {
     // The first page can be all upcoming visits; fetch further back so History isn't empty.
     if (next === 'history' && history.length === 0 && list.hasMore) list.loadMore();
   }
+
+  // Android Back on the Book segment returns to the list instead of leaving the tab (and the
+  // half-filled form); asks first when something has been entered.
+  useFocusEffect(
+    useCallback(() => {
+      if (segment !== 'book') return;
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        const leave = () => {
+          setBookDirty(false);
+          setBooked(null);
+          setSegment('upcoming');
+        };
+        if (bookDirty && !booked) {
+          Alert.alert(t('common.discard.title'), t('common.discard.body'), [
+            { text: t('common.discard.keep'), style: 'cancel' },
+            { text: t('common.discard.confirm'), style: 'destructive', onPress: leave },
+          ]);
+        } else {
+          leave();
+        }
+        return true;
+      });
+      return () => sub.remove();
+    }, [segment, bookDirty, booked, t])
+  );
 
   const data = segment === 'upcoming' ? upcoming : segment === 'history' ? history : [];
 
@@ -114,7 +140,7 @@ export default function AppointmentsScreen() {
             onBookAnother={() => setBooked(null)}
           />
         ) : (
-          <BookingForm onBooked={setBooked} />
+          <BookingForm onBooked={setBooked} onDirtyChange={setBookDirty} />
         )
       ) : null}
       {segment !== 'book' ? <OfflineBanner offline={list.offline} updatedAt={list.updatedAt} /> : null}
@@ -155,12 +181,17 @@ export default function AppointmentsScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoider style={styles.root}>
       <FlatList
         data={data}
         keyExtractor={(item) => item._id}
+        extraData={list.offline || list.stale}
         renderItem={({ item }) =>
-          segment === 'upcoming' ? <AppointmentCard appointment={item} actions /> : <AppointmentCard appointment={item} compact />
+          segment === 'upcoming' ? (
+            <AppointmentCard appointment={item} actions cached={list.offline || list.stale} />
+          ) : (
+            <AppointmentCard appointment={item} compact />
+          )
         }
         ListHeaderComponent={header ?? undefined}
         ListHeaderComponentStyle={styles.headerSpacing}
@@ -179,7 +210,7 @@ export default function AppointmentsScreen() {
           ) : undefined
         }
       />
-    </KeyboardAvoidingView>
+    </KeyboardAvoider>
   );
 }
 

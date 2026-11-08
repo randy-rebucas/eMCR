@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView,
+  Alert,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,7 +25,7 @@ import {
   PendingFeedback,
   submitVisitFeedback,
 } from '@/lib/visitFeedback';
-import { Banner, Button } from '@/components/ui';
+import { Banner, Button, KeyboardAvoider } from '@/components/ui';
 import { softShadow } from '@/components/AppHeader';
 import { t as translate, useT } from '@/lib/i18n';
 
@@ -48,6 +47,8 @@ export function VisitFeedbackPrompt() {
   const pending = useApiData<PendingFeedback[]>(PENDING_FEEDBACK_PATH);
   const [, setHiddenCount] = useState(0);
   const [open, setOpen] = useState<PendingFeedback | null>(null);
+  // The form's own close logic (busy / sent / unsaved checks), so Android Back goes through it too.
+  const requestClose = useRef<(() => void) | null>(null);
 
   const visit = (pending.data ?? []).find((v) => !isFeedbackPromptDismissed(v.visitId));
   if (!visit && !open) return null;
@@ -91,11 +92,14 @@ export function VisitFeedbackPrompt() {
         visible={!!open}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setOpen(null)}
+        onRequestClose={() => (requestClose.current ? requestClose.current() : setOpen(null))}
       >
         {open ? (
           <FeedbackForm
             visit={open}
+            requestCloseRef={requestClose}
+            // Hide the card the moment the server accepts it, however the sheet is closed after.
+            onSent={() => hide(open.visitId)}
             onClose={(answered) => {
               if (answered) {
                 hide(open.visitId);
@@ -110,27 +114,56 @@ export function VisitFeedbackPrompt() {
   );
 }
 
-function FeedbackForm({ visit, onClose }: { visit: PendingFeedback; onClose: (answered: boolean) => void }) {
+function FeedbackForm({
+  visit,
+  onClose,
+  onSent,
+  requestCloseRef,
+}: {
+  visit: PendingFeedback;
+  onClose: (answered: boolean) => void;
+  onSent: () => void;
+  requestCloseRef: { current: (() => void) | null };
+}) {
   const t = useT();
   const [answers, setAnswers] = useState<Partial<FeedbackAnswers>>({});
   const [comments, setComments] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const sendingRef = useRef(false);
+
+  const dirty = Object.values(answers).some((v) => v !== undefined) || comments.trim() !== '';
+
+  /** Close button and Android Back: ignored while sending; asks before dropping a filled-in form. */
+  function requestClose() {
+    if (sendingRef.current) return;
+    if (done) return onClose(true);
+    if (!dirty) return onClose(false);
+    Alert.alert(t('common.discard.title'), t('common.discard.body'), [
+      { text: t('common.discard.keep'), style: 'cancel' },
+      { text: t('common.discard.confirm'), style: 'destructive', onPress: () => onClose(false) },
+    ]);
+  }
+  requestCloseRef.current = requestClose;
 
   async function send() {
+    if (sendingRef.current) return;
     if (!answers.overallRating) {
       setError(t('patient.feedback.chooseStars'));
       return;
     }
+    sendingRef.current = true;
     setSending(true);
     setError(null);
     try {
       await submitVisitFeedback(visit.visitId, { ...answers, overallRating: answers.overallRating, comments });
+      onSent();
       setDone(true);
     } catch (err) {
       setError(errorMessage(err, t('patient.feedback.sendFailed')));
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
@@ -156,12 +189,18 @@ function FeedbackForm({ visit, onClose }: { visit: PendingFeedback; onClose: (an
 
   return (
     <SafeAreaView style={styles.sheet} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoider style={styles.flex}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle} accessibilityRole="header">
             {t('patient.feedback.title')}
           </Text>
-          <TouchableOpacity onPress={() => onClose(false)} accessibilityRole="button" accessibilityLabel={t('patient.feedback.close')} hitSlop={8}>
+          <TouchableOpacity
+            onPress={requestClose}
+            disabled={sending}
+            accessibilityRole="button"
+            accessibilityLabel={t('patient.feedback.close')}
+            hitSlop={12}
+          >
             <Ionicons name="close" size={26} color={colors.text} />
           </TouchableOpacity>
         </View>
@@ -227,7 +266,7 @@ function FeedbackForm({ visit, onClose }: { visit: PendingFeedback; onClose: (an
           <Button title={t('patient.feedback.send')} onPress={send} loading={sending} style={styles.gapTop} />
           <Text style={[styles.meta, styles.center, styles.gapTop]}>{t('patient.feedback.private')}</Text>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoider>
     </SafeAreaView>
   );
 }

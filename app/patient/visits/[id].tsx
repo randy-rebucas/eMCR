@@ -17,7 +17,7 @@ import {
   vitalRows,
 } from '@/lib/visits';
 import { colors, radius, spacing } from '@/lib/theme';
-import { IconName, LoadingView, useBottomPadding } from '@/components/ui';
+import { IconName, LoadingView, RefreshErrorBanner, useBottomPadding } from '@/components/ui';
 import { ErrorState } from '@/components/ErrorState';
 import { softShadow } from '@/components/AppHeader';
 import { useT } from '@/lib/i18n';
@@ -74,6 +74,7 @@ export default function VisitDetailScreen() {
           {visit.visitCode ? <Text style={styles.meta}>{t('visits.ref', { code: visit.visitCode })}</Text> : null}
         </View>
       </View>
+      <RefreshErrorBanner error={error} />
 
       {visit.status === 'cancelled' ? (
         <View style={styles.note}>

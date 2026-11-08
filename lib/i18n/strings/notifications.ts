@@ -27,9 +27,9 @@ export default defineStrings({
     noneTitle: 'No notifications',
     noneText: 'Nothing here from the last 90 days.',
 
-    settingsA11y: "Notification settings, opens your phone's settings",
+    settingsA11y: 'Notification settings',
     settingsTitle: 'Notification Settings',
-    settingsText: "Turn alerts on or off in your phone's settings",
+    settingsText: 'Choose which reminders and alerts you get',
 
     rowA11y: '{title}. {message}',
     rowA11yUnread: 'Unread. {title}. {message}',
@@ -60,9 +60,9 @@ export default defineStrings({
     noneTitle: 'Walang notifications',
     noneText: 'Walang notification sa nakaraang 90 araw.',
 
-    settingsA11y: 'Settings ng notification, bubuksan ang Settings ng phone mo',
+    settingsA11y: 'Settings ng notification',
     settingsTitle: 'Settings ng Notification',
-    settingsText: 'I-on o i-off ang alerts sa Settings ng phone mo',
+    settingsText: 'Piliin kung aling mga paalala at alerts ang matatanggap mo',
 
     rowA11y: '{title}. {message}',
     rowA11yUnread: 'Hindi pa nababasa. {title}. {message}',

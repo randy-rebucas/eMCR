@@ -6,7 +6,6 @@ import { colors } from '@/lib/theme';
 import { ProfileProvider, useProfile } from '@/lib/profile';
 import { UnreadProvider } from '@/lib/unread';
 import { NotificationResponder } from '@/components/NotificationResponder';
-import { PrivacyGuard } from '@/components/PrivacyGuard';
 import { TourProvider } from '@/components/QuickTour';
 import { useT } from '@/lib/i18n';
 
@@ -22,7 +21,7 @@ export default function PatientLayout() {
       <NotificationResponder />
       <ActivationPrompt />
       <ProfileScreens />
-      <PrivacyGuard />
+      {/* PrivacyGuard (screenshots, App Lock) is mounted at the root while signed in. */}
     </ProfileProvider>
   );
 }

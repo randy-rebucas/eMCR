@@ -42,3 +42,6 @@ yarn-error.*
 
 # local env (never commit; .env.example is the template)
 .env
+
+# Firebase/Google service account key: never upload to EAS Build
+ServiceAccountEMCR.json

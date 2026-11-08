@@ -6,7 +6,7 @@ import { Appointment } from '@/lib/types';
 import { cancelAppointment, canCancel } from '@/lib/appointments';
 import { errorMessage } from '@/lib/api';
 import { doctorName, formatDate, formatTime } from '@/lib/format';
-import { isVideoVisit, openVideoCall } from '@/lib/teleconsult';
+import { isVideoVisit, openVideoCall, useJoinUrl } from '@/lib/teleconsult';
 import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from './ui';
 import { StatusBadge } from './StatusBadge';
@@ -21,13 +21,17 @@ export function AppointmentCard({
   appointment: a,
   actions = false,
   compact = false,
+  cached = false,
 }: {
   appointment: Appointment;
   actions?: boolean;
   compact?: boolean;
+  /** The list is a saved offline copy: hide the video Join link, which may be out of date. */
+  cached?: boolean;
 }) {
   const t = useT();
   const [cancelling, setCancelling] = useState(false);
+  const joinUrl = useJoinUrl(a, cached);
   const when = new Date(a.appointmentDate ?? a.scheduledAt ?? '');
   const valid = !isNaN(when.getTime());
   // formatDate reads the parts on the clinic's clock (dates are stored as clinic-midnight instants).
@@ -124,8 +128,8 @@ export function AppointmentCard({
               loading={cancelling}
             />
           ) : null}
-          {a.teleconsult?.joinable && a.teleconsult.joinUrl ? (
-            <ActionButton icon="videocam-outline" label={t('appointments.card.join')} tone="primary" onPress={() => openVideoCall(a.teleconsult!.joinUrl!)} />
+          {joinUrl ? (
+            <ActionButton icon="videocam-outline" label={t('appointments.card.join')} tone="primary" onPress={() => openVideoCall(joinUrl)} />
           ) : null}
           <ActionButton icon="document-text-outline" label={t('appointments.card.viewDetails')} onPress={open} />
         </View>

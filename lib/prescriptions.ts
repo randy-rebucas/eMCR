@@ -51,6 +51,18 @@ export function isCurrent(p: Prescription): boolean {
   return end.getTime() + DAY > Date.now();
 }
 
+/**
+ * Whether medicine reminders may keep running for this prescription: not closed by the clinic
+ * and, when durations are given, the course hasn't ended. Unlike `isCurrent`, a prescription
+ * without durations (maintenance medicine) stays eligible until the clinic closes it, so its
+ * reminders don't stop 30 days after it was issued.
+ */
+export function isOpenForReminders(p: Prescription): boolean {
+  if (CLOSED.has(p.status ?? '')) return false;
+  const end = courseEnd(p);
+  return end === null || end.getTime() + DAY > Date.now();
+}
+
 /** "Oct 10 – Oct 15, 2024" for a medication's course, when it has a duration. */
 export function courseRange(p: Prescription, med: Medication): string | null {
   if (!med.durationDays) return null;

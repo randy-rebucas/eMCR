@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
-import { ApiError, errorMessage } from '@/lib/api';
+import { ApiError, errorMessage, withSessionHold } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { getCredentialStep, rememberIssuedLoginId, saveAccountPassword, setCredentialStep } from '@/lib/emcr';
 import { colors, spacing } from '@/lib/theme';
@@ -64,8 +64,12 @@ export default function CreatePasswordScreen() {
     setError(null);
     setSaving(true);
     try {
-      const result = await saveAccountPassword(password, step.mode === 'temp' ? step.currentPassword : undefined);
-      await applyRotatedTokens(result);
+      // Held: other calls don't refresh (and lose) the session while the token pair rotates.
+      const result = await withSessionHold(async () => {
+        const saved = await saveAccountPassword(password, step.mode === 'temp' ? step.currentPassword : undefined);
+        await applyRotatedTokens(saved);
+        return saved;
+      });
       setCredentialStep(null);
       // A first password comes with the structured login ID: show it once before going on.
       if (step.mode !== 'reset' && result.account?.loginId) {

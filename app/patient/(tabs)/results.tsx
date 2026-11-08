@@ -19,7 +19,7 @@ import { isReady, summarize } from '@/lib/labResults';
 import { LabResult, PatientDocument } from '@/lib/types';
 import { formatDate, formatFileSize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, Button, IconName, ListFooter } from '@/components/ui';
+import { Banner, Button, IconName, ListFooter, SearchMoreHint } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ResultStatusPill } from '@/components/ResultStatusPill';
@@ -221,7 +221,16 @@ export default function ResultsScreen() {
     );
   }
 
-  const footer = <ListFooter loadingMore={active.loadingMore} error={active.loadMoreError} onRetry={active.loadMore} />;
+  // Search and the lab filter run on the loaded pages only (the API has no search parameter).
+  const narrowing = !!q || (segment === 'lab' && labFilter !== 'all');
+  const footer = (
+    <>
+      <ListFooter loadingMore={active.loadingMore} error={active.loadMoreError} onRetry={active.loadMore} />
+      {narrowing && active.hasMore && !active.loading && !active.loadingMore && !active.loadMoreError ? (
+        <SearchMoreHint onLoadMore={active.loadMore} />
+      ) : null}
+    </>
+  );
   const refreshControl = (
     <RefreshControl refreshing={active.refreshing} onRefresh={active.refresh} tintColor={colors.primary} />
   );

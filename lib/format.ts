@@ -93,6 +93,11 @@ export function clinicYmd(date: Date): string {
   return `${y}-${pad2(m)}-${pad2(d)}`;
 }
 
+/** Hour of day (0-23) at the clinic, e.g. for a time-of-day greeting. */
+export function clinicHour(date: Date = new Date()): number {
+  return clinicParts(date).h;
+}
+
 /** Today in the clinic timezone as YYYY-MM-DD. */
 export function clinicTodayYmd(): string {
   return clinicYmd(new Date());

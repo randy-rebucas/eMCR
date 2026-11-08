@@ -29,7 +29,16 @@ import {
   ShareLinkList,
   STATUS_LABEL,
 } from '@/lib/shareLinks';
-import { Badge, Banner, Button, IconName, LoadingView, useBottomPadding } from '@/components/ui';
+import {
+  Badge,
+  Banner,
+  Button,
+  IconName,
+  KeyboardAvoider,
+  LoadingView,
+  RefreshErrorBanner,
+  useBottomPadding,
+} from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
 import { possessiveName, useT } from '@/lib/i18n';
@@ -147,100 +156,103 @@ export default function ShareScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-    >
-      {header}
+    <KeyboardAvoider style={styles.root}>
+      <ScrollView
+        style={styles.root}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {header}
 
-      <View style={styles.explain}>
-        <Info icon="document-text-outline">
-          {other ? t('share.infoPdfOther', { whose: possessiveName(other) }) : t('share.infoPdfSelf')}
-        </Info>
-        <Info icon="people-outline" warn>
-          {t('share.infoAnyone')}
-        </Info>
-        <Info icon="eye-outline">{t('share.infoTracked')}</Info>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.label}>{t('share.howLong')}</Text>
-        <View style={styles.chips} accessibilityRole="radiogroup">
-          {DURATIONS.map((d) => {
-            const selected = d.value === duration;
-            return (
-              <TouchableOpacity
-                key={d.value}
-                style={[styles.chip, selected && styles.chipSelected]}
-                onPress={() => setDuration(d.value)}
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-              >
-                <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{d.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
+        <View style={styles.explain}>
+          <Info icon="document-text-outline">
+            {other ? t('share.infoPdfOther', { whose: possessiveName(other) }) : t('share.infoPdfSelf')}
+          </Info>
+          <Info icon="people-outline" warn>
+            {t('share.infoAnyone')}
+          </Info>
+          <Info icon="eye-outline">{t('share.infoTracked')}</Info>
         </View>
 
-        <Text style={[styles.label, { marginTop: spacing.md }]}>{t('share.whoFor')}</Text>
-        <TextInput
-          style={styles.input}
-          value={label}
-          onChangeText={setLabel}
-          placeholder={t('share.whoForPlaceholder')}
-          placeholderTextColor={colors.textMuted}
-          maxLength={LABEL_MAX}
-          autoCapitalize="words"
-          returnKeyType="done"
-          accessibilityLabel={t('share.whoForA11y')}
-        />
-        <Text style={styles.hint}>{t('share.whoForHint')}</Text>
+        <View style={styles.card}>
+          <Text style={styles.label}>{t('share.howLong')}</Text>
+          <View style={styles.chips} accessibilityRole="radiogroup">
+            {DURATIONS.map((d) => {
+              const selected = d.value === duration;
+              return (
+                <TouchableOpacity
+                  key={d.value}
+                  style={[styles.chip, selected && styles.chipSelected]}
+                  onPress={() => setDuration(d.value)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                >
+                  <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{d.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-        {createError ? <Banner message={createError} /> : null}
-        <Button
-          title={t('share.create')}
-          icon="share-outline"
-          onPress={create}
-          loading={creating}
-          disabled={atLimit}
-          style={{ marginTop: spacing.md }}
-        />
-        {atLimit ? (
-          <Text style={styles.hint}>{t('share.atLimit', { count: activeCount })}</Text>
+          <Text style={[styles.label, { marginTop: spacing.md }]}>{t('share.whoFor')}</Text>
+          <TextInput
+            style={styles.input}
+            value={label}
+            onChangeText={setLabel}
+            placeholder={t('share.whoForPlaceholder')}
+            placeholderTextColor={colors.textMuted}
+            maxLength={LABEL_MAX}
+            autoCapitalize="words"
+            returnKeyType="done"
+            accessibilityLabel={t('share.whoForA11y')}
+          />
+          <Text style={styles.hint}>{t('share.whoForHint')}</Text>
+
+          {createError ? <Banner message={createError} /> : null}
+          <Button
+            title={t('share.create')}
+            icon="share-outline"
+            onPress={create}
+            loading={creating}
+            disabled={atLimit}
+            style={{ marginTop: spacing.md }}
+          />
+          {atLimit ? (
+            <Text style={styles.hint}>{t('share.atLimit', { count: activeCount })}</Text>
+          ) : null}
+        </View>
+
+        {fresh && fresh.link.status === 'active' ? (
+          <View style={styles.fresh}>
+            <Text style={styles.freshText}>{t('share.created')}</Text>
+            <Button title={t('share.shareAgain')} variant="secondary" icon="share-outline" onPress={() => share(fresh.url, fresh.link)} />
+          </View>
         ) : null}
-      </View>
 
-      {fresh && fresh.link.status === 'active' ? (
-        <View style={styles.fresh}>
-          <Text style={styles.freshText}>{t('share.created')}</Text>
-          <Button title={t('share.shareAgain')} variant="secondary" icon="share-outline" onPress={() => share(fresh.url, fresh.link)} />
-        </View>
-      ) : null}
-
-      <Text style={styles.sectionTitle} accessibilityRole="header">
-        {t('share.sharedLinks')}
-      </Text>
-      {error && !data ? (
-        <ErrorState message={error} onRetry={refresh} />
-      ) : links.length ? (
-        <View style={[styles.card, styles.list]}>
-          {links.map((link, i) => (
-            <LinkRow
-              key={link.id}
-              link={link}
-              last={i === links.length - 1}
-              revoking={revoking === link.id}
-              onRevoke={() => confirmRevoke(link)}
-            />
-          ))}
-        </View>
-      ) : (
-        <Text style={styles.empty}>{t('share.empty')}</Text>
-      )}
-    </ScrollView>
+        <Text style={styles.sectionTitle} accessibilityRole="header">
+          {t('share.sharedLinks')}
+        </Text>
+        <RefreshErrorBanner error={error} show={!!data} />
+        {error && !data ? (
+          <ErrorState message={error} onRetry={refresh} />
+        ) : links.length ? (
+          <View style={[styles.card, styles.list]}>
+            {links.map((link, i) => (
+              <LinkRow
+                key={link.id}
+                link={link}
+                last={i === links.length - 1}
+                revoking={revoking === link.id}
+                onRevoke={() => confirmRevoke(link)}
+              />
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.empty}>{t('share.empty')}</Text>
+        )}
+      </ScrollView>
+    </KeyboardAvoider>
   );
 }
 
@@ -306,6 +318,8 @@ const styles = StyleSheet.create({
   chip: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
     paddingVertical: spacing.sm + 2,
     borderRadius: radius.md,
     borderWidth: 1,

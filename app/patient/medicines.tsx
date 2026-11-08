@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/lib/auth';
@@ -28,12 +29,15 @@ import {
   DoseStatus,
   formatSlot,
   fromMinutes,
+  getExactAlarmAllowed,
   loadSchedule,
   MEDICINE_PRESCRIPTIONS_PATH,
   ProfileSchedule,
   ReminderPermission,
   getReminderPermission,
   requestReminderPermission,
+  reminderKeys,
+  requestExactAlarms,
   rescheduleAll,
   setDoseTaken,
   setMedicineReminder,
@@ -49,6 +53,8 @@ import { PlainKey, possessiveName, useT } from '@/lib/i18n';
 
 const MAX_TIMES = 6;
 const STEP_MIN = 30;
+/** Set once the patient hid the Android "reminders on time" tip. Not PHI. */
+const EXACT_HINT_DISMISSED_KEY = 'medrem_exact_hint_dismissed';
 
 const STATUS: Record<DoseStatus, { label: PlainKey; fg: string; bg: string; icon: keyof typeof Ionicons.glyphMap }> = {
   taken: { label: 'medicines.status.taken', fg: colors.primaryOnSoft, bg: colors.primarySoft, icon: 'checkmark-circle' },
@@ -77,14 +83,22 @@ export default function MedicinesScreen() {
   const { data, loading, refreshing, error, refresh } = useApiData<Prescription[]>(MEDICINE_PRESCRIPTIONS_PATH, {
     refreshOn: ['prescriptions'],
   });
-  const medicines = useMemo(() => activeMedicines(data ?? []), [data]);
-
   const [schedule, setSchedule] = useState<ProfileSchedule | null>(null);
+  // Medicines with reminders stay listed while their prescription is open (maintenance medicines
+  // without a duration), so their reminders can still be changed or turned off.
+  const scheduledKeys = useMemo(() => [...reminderKeys(schedule)].sort().join('|'), [schedule]);
+  const medicines = useMemo(
+    () => activeMedicines(data ?? [], Date.now(), new Set(scheduledKeys ? scheduledKeys.split('|') : [])),
+    [data, scheduledKeys]
+  );
   const [permission, setPermission] = useState<ReminderPermission | null>(null);
   const [editing, setEditing] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
+  // Android: reminders can only fire on the minute with "Alarms & reminders" allowed.
+  const [exactAllowed, setExactAllowed] = useState<boolean | null>(null);
+  const [exactHintDismissed, setExactHintDismissed] = useState(true);
 
   // Stored schedule first (fast), then reconciled with the prescriptions once they load.
   useEffect(() => {
@@ -100,14 +114,41 @@ export default function MedicinesScreen() {
   }, [data, owner, profile]);
 
   const lastPermission = useRef<ReminderPermission | null>(null);
+  const lastExact = useRef<boolean | null>(null);
   const checkPermission = useCallback(async () => {
     const next = await getReminderPermission().catch((): ReminderPermission => 'unavailable');
     const prev = lastPermission.current;
     lastPermission.current = next;
-    // Turned on in the phone's Settings app: schedule what was saved meanwhile.
-    if (prev && prev !== 'granted' && next === 'granted') rescheduleAll().catch(() => {});
+    const exact = await getExactAlarmAllowed();
+    const prevExact = lastExact.current;
+    lastExact.current = exact;
+    // Turned on in the phone's Settings app: schedule what was saved meanwhile (alarms set
+    // without the exact-alarm permission stay inexact until they are scheduled again).
+    if ((prev && prev !== 'granted' && next === 'granted') || (prevExact === false && exact === true)) {
+      rescheduleAll().catch(() => {});
+    }
     setPermission(next);
+    setExactAllowed(exact);
   }, []);
+
+  useEffect(() => {
+    SecureStore.getItemAsync(EXACT_HINT_DISMISSED_KEY)
+      .then((v) => setExactHintDismissed(v === '1'))
+      .catch(() => setExactHintDismissed(false));
+  }, []);
+
+  function dismissExactHint() {
+    setExactHintDismissed(true);
+    SecureStore.setItemAsync(EXACT_HINT_DISMISSED_KEY, '1').catch(() => {});
+  }
+
+  async function allowExact() {
+    const granted = await requestExactAlarms();
+    if (granted !== null) {
+      lastExact.current = granted;
+      setExactAllowed(granted);
+    }
+  }
 
   useEffect(() => {
     checkPermission();
@@ -127,7 +168,11 @@ export default function MedicinesScreen() {
   const reminderFor = useCallback((key: string) => schedule?.meds.find((m) => m.key === key) ?? null, [schedule]);
 
   async function save(medicine: ActiveMedicine, times: string[]) {
-    if (!owner || !profile) return;
+    // Opened offline: who is signed in isn't known yet, and schedules are saved per account.
+    if (!owner || !profile) {
+      setSaveError(t('medicines.notReady'));
+      return;
+    }
     setBusy(medicine.key);
     setSaveError(null);
     try {
@@ -153,7 +198,10 @@ export default function MedicinesScreen() {
   }
 
   async function markTaken(key: string, time: string, taken: boolean) {
-    if (!owner || !profile) return;
+    if (!owner || !profile) {
+      setSaveError(t('medicines.notReady'));
+      return;
+    }
     try {
       setSchedule(await setDoseTaken(owner, profile.id, key, time, taken));
     } catch {
@@ -201,6 +249,9 @@ export default function MedicinesScreen() {
 
       {hasReminders && permission && permission !== 'granted' ? (
         <PermissionCard permission={permission} onTurnOn={turnOn} />
+      ) : null}
+      {hasReminders && permission === 'granted' && exactAllowed === false && !exactHintDismissed ? (
+        <ExactAlarmHint onAllow={allowExact} onDismiss={dismissExactHint} />
       ) : null}
       {saveError ? <Banner message={saveError} /> : null}
       {error && data ? <Banner message={error} /> : null}
@@ -471,6 +522,37 @@ function TimeEditor({
   );
 }
 
+/**
+ * Android 12+ without "Alarms & reminders": reminders may come a few minutes late. Opens the
+ * system screen for it (expo-notifications' requestExactAlarmPermissionsAsync); hidden for good
+ * with "Not now".
+ */
+function ExactAlarmHint({ onAllow, onDismiss }: { onAllow: () => void; onDismiss: () => void }) {
+  const t = useT();
+  return (
+    <View style={[styles.status, styles.statusOff]}>
+      <Ionicons name="alarm-outline" size={22} color={colors.slate} />
+      <View style={styles.flex}>
+        <Text style={styles.statusTitle}>{t('medicines.exact.title')}</Text>
+        <Text style={styles.bodyText}>{t('medicines.exact.body')}</Text>
+        <View style={styles.hintActions}>
+          <TouchableOpacity onPress={onAllow} accessibilityRole="button" hitSlop={8}>
+            <Text style={styles.linkText}>{t('medicines.exact.allow')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onDismiss}
+            accessibilityRole="button"
+            accessibilityLabel={t('medicines.exact.dismissA11y')}
+            hitSlop={8}
+          >
+            <Text style={styles.mutedLink}>{t('medicines.exact.dismiss')}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function PermissionCard({ permission, onTurnOn }: { permission: ReminderPermission; onTurnOn: () => void }) {
   const t = useT();
   if (permission === 'unavailable') {
@@ -565,6 +647,8 @@ const styles = StyleSheet.create({
   hint: { fontSize: 13, lineHeight: 19, color: colors.textMuted, marginTop: spacing.sm + 4 },
   savedRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm + 4 },
   linkText: { fontSize: 14, fontWeight: '600', color: colors.primary },
+  mutedLink: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
+  hintActions: { flexDirection: 'row', gap: spacing.lg, marginTop: spacing.sm },
   editor: { marginTop: spacing.xs },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
   stepBtn: {

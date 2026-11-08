@@ -1,5 +1,6 @@
+import { Platform } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { getAppLockEnabled, setAppLockEnabled } from './storage';
+import { getAppLockEnabled as readAppLockEnabled, setAppLockEnabled } from './storage';
 import { t } from './i18n';
 
 /**
@@ -11,7 +12,34 @@ import { t } from './i18n';
 /** Lock again after this long in the background. */
 export const LOCK_AFTER_MS = 30_000;
 
-export { getAppLockEnabled };
+/**
+ * The App Lock setting, read once before the first screen (`loadAppLockSetting`, awaited by the
+ * root layout) so the lock can cover the records on the very first render. null = not read yet.
+ */
+let lockEnabledCache: boolean | null = null;
+
+export async function getAppLockEnabled(): Promise<boolean> {
+  try {
+    lockEnabledCache = await readAppLockEnabled();
+  } catch {
+    // Keychain unavailable: keep the last known value; unknown counts as on (fail closed).
+    if (lockEnabledCache === null) return true;
+  }
+  return lockEnabledCache;
+}
+
+/** Read the setting into memory. Safe to call more than once; never rejects. */
+export function loadAppLockSetting(): Promise<void> {
+  return getAppLockEnabled().then(
+    () => {},
+    () => {}
+  );
+}
+
+/** The setting as last read: true/false, or null before `loadAppLockSetting` finished. */
+export function appLockEnabledSync(): boolean | null {
+  return lockEnabledCache;
+}
 
 /** Whether the phone has a screen lock (biometric, PIN, pattern or passcode) App Lock can use. */
 export async function canUseAppLock(): Promise<boolean> {
@@ -55,22 +83,36 @@ export async function setAppLock(enabled: boolean): Promise<UnlockResult> {
     if (!check.ok) return check;
   }
   await setAppLockEnabled(enabled);
+  lockEnabledCache = enabled;
   return { ok: true };
 }
 
 /** Until when coming back from the background doesn't lock (an in-app flow such as paying). */
 let lockDeferredUntil = 0;
 
+/** Long enough for an e-wallet hop (GCash/Maya app, OTP); short enough not to leave the app open. */
+export const LOCK_DEFER_MS = 5 * 60_000;
+
 /**
  * Call before handing the patient to an in-app browser they're expected to spend time in, so
- * returning from it doesn't ask them to unlock. Lapses after `forMs`.
+ * returning from it doesn't ask them to unlock. Lapses after `forMs`, and on Android also on the
+ * first return to the app (the pay page is a Custom Tab: the app only comes back when it closes).
+ * On iOS the pay page is shown inside the app, so hopping out to an e-wallet and back to it can
+ * happen more than once; there the window simply lapses.
  */
-export function deferLock(forMs = 15 * 60_000): void {
-  lockDeferredUntil = Date.now() + forMs;
+export function deferLock(forMs = LOCK_DEFER_MS): void {
+  lockDeferredUntil = Date.now() + Math.min(forMs, LOCK_DEFER_MS);
 }
 
 export function lockDeferred(): boolean {
   return Date.now() < lockDeferredUntil;
+}
+
+/** On return to the app: whether the lock is deferred. On Android this ends the deferral. */
+export function takeLockDeferral(): boolean {
+  const deferred = lockDeferred();
+  if (deferred && Platform.OS === 'android') lockDeferredUntil = 0;
+  return deferred;
 }
 
 /**
@@ -89,4 +131,9 @@ export function takeLaunchLock(): boolean {
   if (launchLockChecked) return false;
   launchLockChecked = true;
   return !signedInThisLaunch;
+}
+
+/** Like `takeLaunchLock`, without using it up (for the guard's first render). */
+export function launchLockPending(): boolean {
+  return !launchLockChecked && !signedInThisLaunch;
 }
