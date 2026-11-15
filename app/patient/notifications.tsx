@@ -19,9 +19,10 @@ import { useUnread } from '@/lib/unread';
 import { NotificationScreen, NotificationsEnvelope, PatientNotification } from '@/lib/types';
 import { colors, radius, spacing } from '@/lib/theme';
 import { clinicTodayYmd, clinicYmd, formatDate, formatTime } from '@/lib/format';
-import { Banner, Button, IconName, ListFooter, useBottomPadding } from '@/components/ui';
+import { Banner, IconName, ListFooter, useBottomPadding } from '@/components/ui';
 import { AppHeader } from '@/components/AppHeader';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { ErrorView, SkeletonCards } from '@/components/StateView';
 import { PlainKey, useT } from '@/lib/i18n';
 
 /** Where each kind opens: its detail with an id, else its list (never a dead tap). */
@@ -263,15 +264,13 @@ export default function NotificationsScreen() {
   );
 
   let empty;
-  if (list.loading || (list.hasMore && !list.loadMoreError)) {
+  if (list.loading) {
+    empty = <SkeletonCards />;
+  } else if (list.hasMore && !list.loadMoreError) {
+    // A filter with no matches yet while older pages are still coming in.
     empty = <ActivityIndicator color={colors.primary} style={styles.loading} />;
   } else if (list.error && list.items.length === 0) {
-    empty = (
-      <View style={styles.empty}>
-        <Text style={styles.emptyText}>{list.error}</Text>
-        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={list.reload} style={styles.stretch} />
-      </View>
-    );
+    empty = <ErrorView message={list.error} onRetry={list.reload} />;
   } else {
     empty = (
       <View style={styles.empty}>
@@ -373,7 +372,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.md + 4, paddingBottom: spacing.xl },
   flex: { flex: 1 },
-  stretch: { alignSelf: 'stretch' },
   loading: { marginVertical: spacing.xl },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },

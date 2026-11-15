@@ -13,6 +13,7 @@ import { Banner, Button, LoadingView, useBottomPadding } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { statusLabel } from '@/components/StatusBadge';
 import { ErrorState } from '@/components/ErrorState';
+import { isUnavailable, UnavailableView } from '@/components/StateView';
 import { MedicationCard } from '@/components/MedicationCard';
 import { useT } from '@/lib/i18n';
 
@@ -20,10 +21,11 @@ export default function PrescriptionDetailScreen() {
   const t = useT();
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, loading, refreshing, error, refresh, offline, stale, updatedAt } = useApiData<Prescription>(
+  const record = useApiData<Prescription>(
     id ? `/api/patients/me/prescriptions/${encodeURIComponent(id)}` : null,
     { refreshOn: ['prescriptions'], offline: true }
   );
+  const { data, loading, refreshing, error, refresh, offline, stale, updatedAt } = record;
   const [opening, setOpening] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
 
@@ -43,8 +45,9 @@ export default function PrescriptionDetailScreen() {
   }
 
   if (loading) return <LoadingView />;
-  if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data) return <ErrorState message={t('prescriptions.notFound')} onRetry={refresh} />;
+  // Gone, or another profile's record (often a push for a deleted record): Back, not Try Again.
+  if (error && !data) return isUnavailable(record) ? <UnavailableView /> : <ErrorState message={error} onRetry={refresh} />;
+  if (!data) return <UnavailableView />;
 
   const visit = visitOf(data);
   const dispenses = (data.pharmacyDispenses ?? []).filter((d) => d.pharmacyName || d.dispensedAt);

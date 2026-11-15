@@ -20,6 +20,7 @@ import {
   OfflineScreen,
   OtpInput,
   PhPhoneField,
+  TermsConsent,
   TextLink,
   toPhE164,
   toPhLocal,
@@ -139,7 +140,7 @@ export default function PhoneScreen() {
     setRetryAction(() => () => verify(value));
     setSubmitting(true);
     try {
-      const result = await verifyPhoneCode(phone, value);
+      const result = await verifyPhoneCode(phone, value, { termsAccepted: purpose === 'signin' });
       if (purpose === 'forgot') {
         if (!result.session) {
           setCode('');
@@ -203,8 +204,13 @@ export default function PhoneScreen() {
       <AuthScreen back>
         <AuthHeader title={copy.title} subtitle={copy.subtitle} />
         <PhPhoneField
+          label={t('auth.phoneLabel')}
           value={local}
-          onChange={setLocal}
+          onChange={(v) => {
+            setLocal(v);
+            if (failure) setFailure(null);
+          }}
+          error={!!errorText}
           returnKeyType="send"
           onSubmitEditing={sendCode}
           autoFocus
@@ -228,6 +234,8 @@ export default function PhoneScreen() {
       <OtpInput value={code} onChange={onCodeChange} error={!!errorText} />
       {errorText ? <InlineError message={errorText} style={styles.error} /> : null}
 
+      {/* A first code sign-in creates the eMCR account (emcr/auth/otp/verify). */}
+      {purpose === 'signin' ? <TermsConsent /> : null}
       <Button title={t('auth.verify')} onPress={() => verify()} loading={submitting} />
 
       <View style={styles.resend}>

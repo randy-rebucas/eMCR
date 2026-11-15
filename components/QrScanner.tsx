@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, radius, spacing } from '@/lib/theme';
+import { colors, radius, spacing, typography } from '@/lib/theme';
 import { useT } from '@/lib/i18n';
 import { Button, LoadingView } from './ui';
 
@@ -78,26 +78,26 @@ export function QrScanner({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: colors.black },
   overlay: { flex: 1, alignItems: 'center', justifyContent: 'space-between', padding: spacing.lg },
   overlayText: {
-    color: '#fff',
-    fontSize: 16,
+    color: colors.white,
+    fontSize: typography.button,
     textAlign: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: colors.cameraScrim,
     padding: spacing.sm,
     borderRadius: radius.sm,
     marginTop: spacing.lg,
   },
-  frame: { width: 240, height: 240, borderWidth: 3, borderColor: '#fff', borderRadius: radius.lg },
+  frame: { width: 240, height: 240, borderWidth: 3, borderColor: colors.white, borderRadius: radius.lg },
   cancel: {
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: colors.cameraScrimStrong,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     borderRadius: radius.md,
     marginBottom: spacing.lg,
   },
-  cancelText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  cancelText: { color: colors.white, fontSize: typography.button, fontWeight: '600' },
   permission: { flex: 1, justifyContent: 'center', padding: spacing.lg, backgroundColor: colors.background },
   permissionTitle: { fontSize: 22, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
   permissionText: { fontSize: 15, color: colors.textMuted, marginBottom: spacing.lg },

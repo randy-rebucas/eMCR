@@ -15,6 +15,7 @@ import {
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName, LoadingView, useBottomPadding } from '@/components/ui';
 import { AppHeader } from '@/components/AppHeader';
+import { ErrorView } from '@/components/StateView';
 import { PlainKey, t as translate, useT } from '@/lib/i18n';
 
 const SMS_ENDPOINT = '/api/patients/me/sms-preference';
@@ -187,10 +188,7 @@ export default function NotificationSettingsScreen() {
         </View>
       ) : null}
       {loadError ? (
-        <View style={styles.card}>
-          <Text style={styles.errorText}>{loadError}</Text>
-          <Button title={t('common.tryAgainTitle')} variant="secondary" icon="refresh" onPress={loadPrefs} style={styles.retry} />
-        </View>
+        <ErrorView message={loadError} onRetry={loadPrefs} />
       ) : prefs ? (
         <View style={[styles.card, styles.list, !pushOn && styles.dimmed]}>
           {CATEGORIES.map((c, i) => (
@@ -375,8 +373,6 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 16, fontWeight: '600', color: colors.text },
   rowDetail: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   spinner: { marginRight: -spacing.xs },
-  errorText: { fontSize: 14, color: colors.text },
-  retry: { marginTop: spacing.md },
   footnote: { fontSize: 13, lineHeight: 19, color: colors.textMuted, marginTop: spacing.md },
   link: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm, minHeight: 44 },
   offNote: { fontSize: 13, lineHeight: 18, color: colors.warning, fontWeight: '600', marginBottom: spacing.sm },

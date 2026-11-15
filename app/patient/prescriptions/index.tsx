@@ -9,8 +9,9 @@ import { formatDate, humanize } from '@/lib/format';
 import { statusLabel } from '@/components/StatusBadge';
 import { groupByVisit, isCurrent, PrescriptionGroup } from '@/lib/prescriptions';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
+import { Banner, ListFooter, useBottomPadding } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { ErrorView, SkeletonCards } from '@/components/StateView';
 import { AppHeader } from '@/components/AppHeader';
 import { MedicationCard } from '@/components/MedicationCard';
 import { PlainKey, useT } from '@/lib/i18n';
@@ -102,15 +103,13 @@ export default function PrescriptionsScreen() {
   );
 
   let empty;
-  if (list.loading || (tab === 'past' && list.hasMore && !list.loadMoreError)) {
+  if (list.loading) {
+    empty = <SkeletonCards />;
+  } else if (tab === 'past' && list.hasMore && !list.loadMoreError) {
+    // Past prescriptions are further back: older pages are still coming in.
     empty = <ActivityIndicator color={colors.primary} style={styles.loading} />;
   } else if (list.error && list.items.length === 0) {
-    empty = (
-      <View style={styles.empty}>
-        <Text style={styles.emptyText}>{list.error}</Text>
-        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={list.reload} style={styles.stretch} />
-      </View>
-    );
+    empty = <ErrorView message={list.error} onRetry={list.reload} />;
   } else {
     empty = (
       <View style={styles.empty}>
@@ -210,7 +209,6 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.md + 4, paddingBottom: spacing.xl },
   headerSpacing: { marginBottom: spacing.md },
   flex: { flex: 1 },
-  stretch: { alignSelf: 'stretch' },
   loading: { marginVertical: spacing.xl },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },

@@ -48,6 +48,9 @@ export default function ClaimDetailsScreen() {
   const [relationship, setRelationship] = useState<FamilyRelationship | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [failure, setFailure] = useState<AuthFailure | null>(null);
+  // Checks on this screen's own fields, shown under the field they are about.
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [dobError, setDobError] = useState<string | null>(null);
   const [expired, setExpired] = useState(!context);
   const [done, setDone] = useState<Done | null>(null);
   const inFlight = useRef(false);
@@ -89,10 +92,10 @@ export default function ClaimDetailsScreen() {
   async function submit() {
     if (inFlight.current) return;
     const name = firstName.trim();
-    if (!name) return setFailure({ kind: 'message', message: t('auth.claim.enterFirstName'), status: 0 });
-    if (!isValidBirthDate(dob)) {
-      return setFailure({ kind: 'message', message: t('auth.claim.enterBirthDate'), status: 0 });
-    }
+    setFailure(null);
+    setNameError(name ? null : t('auth.claim.enterFirstName'));
+    setDobError(isValidBirthDate(dob) ? null : t('auth.claim.enterBirthDate'));
+    if (!name || !isValidBirthDate(dob)) return;
     const ctx = getClaimContext();
     if (!ctx) {
       setExpired(true);
@@ -154,8 +157,13 @@ export default function ClaimDetailsScreen() {
       <IconField
         icon="person-outline"
         label={relation === 'self' ? t('auth.claim.yourFirstName') : t('auth.claim.theirFirstName')}
+        showLabel
+        errorText={nameError}
         value={firstName}
-        onChangeText={setFirstName}
+        onChangeText={(v) => {
+          setFirstName(v);
+          if (nameError) setNameError(null);
+        }}
         autoCapitalize="words"
         autoCorrect={false}
         autoComplete={relation === 'self' ? 'name-given' : 'off'}
@@ -164,7 +172,11 @@ export default function ClaimDetailsScreen() {
       />
       <BirthDateField
         value={dob}
-        onChange={setDob}
+        onChange={(v) => {
+          setDob(v);
+          if (dobError) setDobError(null);
+        }}
+        errorText={dobError}
         label={relation === 'self' ? t('auth.claim.yourBirthDate') : t('auth.claim.theirBirthDate')}
         onSubmitEditing={relation === 'self' ? submit : undefined}
       />

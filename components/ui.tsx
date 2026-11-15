@@ -178,6 +178,23 @@ export function useAnnounce(message: string | null | undefined) {
   }, [message]);
 }
 
+/** True while the phone's "Reduce motion" / "Remove animations" setting is on; follows changes live. */
+export function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    let live = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((on) => live && setReduced(on))
+      .catch(() => {});
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
+    return () => {
+      live = false;
+      sub.remove();
+    };
+  }, []);
+  return reduced;
+}
+
 export function Banner({ message, tone = 'danger' }: { message: string; tone?: Tone }) {
   const palette = badgeTones[tone];
   useAnnounce(message);

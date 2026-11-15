@@ -130,6 +130,7 @@ export default function CreatePasswordScreen() {
         <IconField
           icon="key-outline"
           label={t('auth.createPw.tempField')}
+          showLabel
           value={current}
           onChangeText={setCurrent}
           secureTextEntry
@@ -141,6 +142,7 @@ export default function CreatePasswordScreen() {
       <IconField
         icon="lock-closed-outline"
         label={step.mode === 'create' ? t('auth.pw.create') : t('auth.pw.new')}
+        showLabel
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -151,6 +153,7 @@ export default function CreatePasswordScreen() {
       <IconField
         icon="lock-closed-outline"
         label={t('auth.pw.confirm')}
+        showLabel
         value={confirm}
         onChangeText={setConfirm}
         secureTextEntry

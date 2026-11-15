@@ -36,7 +36,39 @@ export const colors = {
   warningLine: '#F1D9A6',
   /** Fill of the eMCR renewal card: lighter than `warningSoft`, so its tile still shows. */
   warningTint: '#FFFBF2',
+  /** Unread-count dot on the header bell: white 10pt text on it is 4.5:1 (the lighter #E5484D was 3.9:1). */
+  badgeRed: '#D93036',
+  /** A day that can't be booked in the date picker: faint on purpose (it is also struck through). */
+  textDisabled: '#B8C3CC',
+  /** Filled rating stars (visit feedback). */
+  star: '#E0A400',
+  /** Dimmed page behind a bottom sheet (language picker): a darker navy at 45%. */
+  sheetBackdrop: 'rgba(6, 24, 38, 0.45)',
+  /** The quick tour's dark layer around the highlighted control. */
+  tourScrim: 'rgba(6, 24, 38, 0.72)',
+  /** Camera screens (QR scanner): black page, white text and frame, black scrims for legibility over video. */
+  black: '#000000',
+  white: '#FFFFFF',
+  cameraScrim: 'rgba(0,0,0,0.55)',
+  cameraScrimStrong: 'rgba(0,0,0,0.6)',
 };
+
+/**
+ * Font sizes, named after the sizes the screens already use most: a screen's big title (28), a
+ * card or empty-state heading (20), a section heading (17), button text (16), body copy (15), labels and buttons'
+ * secondary text (14), meta lines (13) and small print (12). New and touched styles use these;
+ * older styles still carry raw numbers.
+ */
+export const typography = {
+  title: 28,
+  heading: 20,
+  section: 17,
+  button: 16,
+  body: 15,
+  label: 14,
+  caption: 13,
+  small: 12,
+} as const;
 
 export const spacing = {
   xs: 4,

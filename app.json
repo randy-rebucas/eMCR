@@ -4,12 +4,12 @@
     "slug": "emcr",
     "description": "eMCR (Electronic MyClinic Record) — your appointments, results, prescriptions and bills from your MyClinicSoft clinic.",
     "scheme": "myclinicsoft",
-    "version": "1.1.5",
+    "version": "1.1.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "solutions.myclinicsoft.emcr",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false

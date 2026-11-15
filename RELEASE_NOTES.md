@@ -1,5 +1,54 @@
 # eMCR release notes
 
+## 1.1.6
+
+Store-readiness fixes from the second 2026-11-15 audit: account deletion and contact support inside
+the app, a crash screen, a not-found screen, an update check, Android push setup, consent at sign-up,
+clearer "record not available" and offline states, and accessibility fixes.
+
+**Deploy the backend first** (clinic-management `feat/patient-store-readiness`), then run
+`pnpm prod db:indexes --apply`. New routes: `GET /api/patients/app-config` (public),
+`GET`/`POST /api/patients/me/deletion-request`, `POST /api/patients/me/support`. The sign-up calls
+now send `termsAccepted: true`; `POST /api/emcr/access-requests` rejects unknown fields, so **an
+older backend refuses access requests from this app**. On an older backend the other new screens
+show their error state and the update check does nothing.
+
+**New direct dependency:** `expo-application` (it was already in the build as a dependency of
+another package). **iPad is now off** (`supportsTablet: false`): if an iPad build was ever
+published, put it back instead. **Android push** needs the `GOOGLE_SERVICES_JSON` EAS file
+variable and FCM V1 credentials: see clinic-management `docs/EMCR_STORE_READINESS.md`, which also
+lists the store, privacy-form and voucher decisions still open.
+
+### Google Play "What's new" (under 500 characters)
+
+```
+• Ask for account deletion and contact support right in the app
+• Clearer messages when a record is no longer available or you're offline
+• Home works offline and shows when a section couldn't load
+• Sign-in fields keep their labels while you type
+• Respects your Reduce Motion setting
+• Bug fixes and improvements
+```
+
+### Full notes
+
+- **Account:** More → Delete account files a deletion request (reviewed by a person, finished within
+  30 days) and shows its status; More → Contact support sends a message with the app version and
+  device attached; new About screen with version and build.
+- **Reliability:** crash screen instead of a closed app; branded not-found screen for bad links;
+  required/optional update check (`EMCR_MIN_VERSION`, `EMCR_LATEST_VERSION` on the server); the splash
+  stays up until the first screen is ready; a notification tapped while signed out opens after sign-in;
+  after a session expires, sign-in returns you to the screen you were on.
+- **States:** Home keeps an offline copy and shows section errors with retry; detail screens show
+  "This record isn't available" for deleted or inaccessible records instead of a retry that can't work;
+  reschedule explains why an appointment can't be moved; one shared error and skeleton style across lists;
+  plain messages instead of "Request failed (500)".
+- **Sign-up:** visible field labels; Terms and Privacy consent line on the sign-in code, invite and
+  access-request steps; pasting a code from an SMS works.
+- **Accessibility:** tab labels scale with text size (capped); Reduce Motion respected on the welcome
+  carousel and the Quick Tour; App Lock is announced as a switch; status bar icons stay dark.
+- **Design:** remaining raw colors moved to theme tokens; a typography scale added to the theme.
+
 ## 1.1.5
 
 1.1.4 with a new look across the app, a profile picture for you and your family members, more

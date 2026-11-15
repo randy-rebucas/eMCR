@@ -14,6 +14,8 @@ import { appointmentStart, isUpcoming } from '@/lib/appointments';
 import { doseStatus, DoseStatus, formatSlot, loadSchedule, ProfileSchedule, setDoseTaken, toMinutes } from '@/lib/medicineReminders';
 import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from '@/components/ui';
+import { OfflineBanner } from '@/components/OfflineBanner';
+import { SectionError } from '@/components/StateView';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { AppointmentCard } from '@/components/AppointmentCard';
 import { photos, ScrimPhoto } from '@/components/Photo';
@@ -49,21 +51,25 @@ export default function HomeScreen() {
   const { patient: me } = useAuth();
   const { viewing: patient } = useProfile();
   const { refreshUnread } = useUnread();
+  // Saved copies (offline: true) so Home still shows the last summary without a connection.
   const appointments = useApiData<Appointment[]>('/api/patients/me/appointments?limit=20', {
     refreshOn: ['appointments'],
+    offline: true,
   });
-  const account = useApiData<EmcrAccount>(EMCR_ENDPOINTS.account, { refreshOn: ['activation'] });
+  const account = useApiData<EmcrAccount>(EMCR_ENDPOINTS.account, { refreshOn: ['activation'], offline: true });
   const activation = account.data?.activation ?? null;
   // The queue needs an active eMCR year once the server enforces it; don't call it (and get sent
   // to the activation screen) just for opening Home. Wait for the account so we know.
   const locked = !!activation && activation.enforced && !activation.active;
+  // No saved copy for the queue: an old position on Home would read as live (the Queue tab labels its copy).
   const queue = useApiData<QueueEntry | null>(account.loading || locked ? null : '/api/patients/me/queue', {
     refreshOn: ['queue'],
   });
-  const results = useApiData<LabResult[]>('/api/patients/me/lab-results?limit=1', { refreshOn: ['lab-results'] });
+  const results = useApiData<LabResult[]>('/api/patients/me/lab-results?limit=1', { refreshOn: ['lab-results'], offline: true });
   const invoices = useApiData<InvoiceListEnvelope>('/api/patients/me/invoices?limit=1', {
     envelope: true,
     refreshOn: ['invoices'],
+    offline: true,
   });
 
   const next = useMemo(() => {
@@ -86,6 +92,15 @@ export default function HomeScreen() {
   const refreshing =
     appointments.refreshing || queue.refreshing || results.refreshing || invoices.refreshing || account.refreshing;
   const appointmentsFailed = !!appointments.error && !appointments.data;
+  // A failed results/balance load must not look like "no results" or "nothing due".
+  const resultsFailed = !!results.error && !results.data;
+  const balanceFailed = !!invoices.error && !invoices.data;
+  // Offline banner: any section showing a saved copy, dated by the oldest copy on screen.
+  const offlineLoads = [appointments, account, results, invoices].filter((l) => l.offline);
+  const offlineSince = offlineLoads.reduce<number | null>(
+    (oldest, l) => (l.updatedAt !== null && (oldest === null || l.updatedAt < oldest) ? l.updatedAt : oldest),
+    null
+  );
 
   // Today's doses come from the reminders saved on this phone (no server call). Re-read whenever
   // Home comes back into view: the Medicines screen changes them.
@@ -129,6 +144,8 @@ export default function HomeScreen() {
         </SafeAreaView>
 
         <View style={styles.body}>
+          <OfflineBanner offline={offlineLoads.length > 0} updatedAt={offlineSince} />
+
           {/* The day, over a photo of a routine check-up. */}
           <ScrimPhoto source={photos.checkup} style={styles.band} top={0.3} bottom={0.95}>
             <View style={styles.bandInner}>
@@ -224,7 +241,7 @@ export default function HomeScreen() {
               {appointments.loading ? (
                 <LoadingCard />
               ) : appointmentsFailed ? (
-                <MessageCard text={appointments.error!} />
+                <SectionError message={appointments.error!} onRetry={appointments.refresh} />
               ) : (
                 <AppointmentCard appointment={next!} />
               )}
@@ -270,7 +287,11 @@ export default function HomeScreen() {
           </View>
 
           {/* Latest result */}
-          {latestResult ? (
+          {resultsFailed ? (
+            <Section title={t('home.results.title')} action={t('home.viewAll')} onAction={() => router.push('/patient/results')}>
+              <SectionError message={t('home.results.failed')} onRetry={results.refresh} />
+            </Section>
+          ) : latestResult ? (
             <Section title={t('home.results.title')} action={t('home.viewAll')} onAction={() => router.push('/patient/results')}>
               <TouchableOpacity
                 style={[styles.card, styles.rowCard]}
@@ -293,7 +314,11 @@ export default function HomeScreen() {
           ) : null}
 
           {/* Balance */}
-          {balance > 0 ? (
+          {balanceFailed ? (
+            <Section title={t('home.balance.title')} action={t('home.balance.view')} onAction={() => router.push('/patient/invoices')}>
+              <SectionError message={t('home.balance.failed')} onRetry={invoices.refresh} />
+            </Section>
+          ) : balance > 0 ? (
             <Section title={t('home.balance.title')} action={t('home.balance.view')} onAction={() => router.push('/patient/invoices')}>
               <TouchableOpacity style={[styles.card, styles.rowCard]} onPress={() => router.push('/patient/invoices')} accessibilityRole="button">
                 <View style={styles.tile}>
@@ -565,14 +590,6 @@ function LoadingCard() {
   return (
     <View style={[styles.card, styles.centerCard]}>
       <ActivityIndicator color={colors.primary} />
-    </View>
-  );
-}
-
-function MessageCard({ text }: { text: string }) {
-  return (
-    <View style={[styles.card, styles.centerCard]}>
-      <Text style={styles.meta}>{text}</Text>
     </View>
   );
 }

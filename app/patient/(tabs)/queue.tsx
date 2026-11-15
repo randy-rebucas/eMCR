@@ -24,6 +24,7 @@ import { clinicTodayYmd, clinicYmd, doctorName, formatTime } from '@/lib/format'
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName } from '@/components/ui';
 import { OfflineBanner, savedAtLabel } from '@/components/OfflineBanner';
+import { ErrorView } from '@/components/StateView';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { photos, ScrimPhoto } from '@/components/Photo';
 import { PlainKey, useT } from '@/lib/i18n';
@@ -163,10 +164,7 @@ export default function QueueScreen() {
             <ActivityIndicator color={colors.primary} />
           </View>
         ) : error && !entry ? (
-          <View style={[styles.card, styles.emptyCard]}>
-            <Text style={styles.muted}>{error}</Text>
-            <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={refresh} style={styles.stretch} />
-          </View>
+          <ErrorView message={error} onRetry={refresh} />
         ) : !active ? (
           <>
             <OfflineBanner offline={offline} updatedAt={updatedAt} />
@@ -439,7 +437,6 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.md + 4, paddingBottom: spacing.xl },
   flex: { flex: 1 },
   stretch: { alignSelf: 'stretch' },
-  muted: { fontSize: 14, color: colors.textMuted, textAlign: 'center' },
   loading: { paddingVertical: spacing.xl * 2 },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2, marginBottom: spacing.lg },
@@ -561,7 +558,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   noteText: { flex: 1, fontSize: 12, lineHeight: 17, color: colors.slate },
-  emptyCard: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.xs },
 
   notIn: { minHeight: 420, borderRadius: radius.lg },
   notInInner: { flex: 1, justifyContent: 'flex-end', padding: spacing.md + 4 },

@@ -18,6 +18,7 @@ import {
   MaintenanceScreen,
   OfflineScreen,
   OtpInput,
+  TermsConsent,
   TextLink,
 } from '@/components/auth';
 import { QrScanner } from '@/components/QrScanner';
@@ -222,6 +223,8 @@ export default function InviteScreen() {
         </View>
         <OtpInput value={otp} onChange={onOtpChange} error={!!errorText} />
         {errorText ? <InlineError message={errorText} style={styles.error} /> : null}
+        {/* Redeeming the invite creates the eMCR account (emcr/invite/redeem). */}
+        <TermsConsent />
         <Button title={t('auth.verify')} onPress={() => verify()} loading={submitting} />
         <View style={styles.resend}>
           <Text style={styles.muted}>{t('auth.otp.didntReceive')}</Text>
@@ -241,6 +244,8 @@ export default function InviteScreen() {
       <IconField
         icon="ticket-outline"
         label={t('auth.invite.codeLabel')}
+        showLabel
+        error={!!errorText}
         value={typed}
         onChangeText={(v) => {
           setTyped(v);

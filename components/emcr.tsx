@@ -28,18 +28,21 @@ export function ClaimExpiredScreen({ signedIn, mode = 'signin' }: { signedIn: bo
   );
 }
 
-/** Birth date typed as digits and shown as YYYY-MM-DD. */
+/** Birth date typed as digits and shown as YYYY-MM-DD, under a visible label (with the format). */
 export function BirthDateField({
   value,
   onChange,
   label,
   error,
+  errorText,
   onSubmitEditing,
 }: {
   value: string;
   onChange: (value: string) => void;
   label?: string;
   error?: boolean;
+  /** Shown under the field and announced. */
+  errorText?: string | null;
   onSubmitEditing?: () => void;
 }) {
   const t = useT();
@@ -47,6 +50,10 @@ export function BirthDateField({
     <IconField
       icon="calendar-outline"
       label={label ?? t('auth.birthDate')}
+      showLabel
+      // An example only; the label says the format.
+      placeholder="1990-04-25"
+      errorText={errorText}
       value={value}
       onChangeText={(text) => onChange(maskBirthDate(text))}
       keyboardType="number-pad"

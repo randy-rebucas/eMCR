@@ -236,6 +236,7 @@ export default function LoginScreen() {
           <IconField
             icon="person-outline"
             label={t('auth.login.idLabel')}
+            showLabel
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -248,6 +249,7 @@ export default function LoginScreen() {
           <IconField
             icon="lock-closed-outline"
             label={t('auth.login.password')}
+            showLabel
             value={password}
             onChangeText={setPassword}
             secureTextEntry

@@ -24,6 +24,7 @@ import { OfflineBanner } from '@/components/OfflineBanner';
 import { statusLabel } from '@/components/StatusBadge';
 import { countdown } from '@/components/AppointmentCard';
 import { ErrorState } from '@/components/ErrorState';
+import { isUnavailable, UnavailableView } from '@/components/StateView';
 import { t as translate, TFunction, useT } from '@/lib/i18n';
 
 function addressLine(address: PatientClinic['address']): string | null {
@@ -65,10 +66,11 @@ export default function AppointmentDetailScreen() {
   const t = useT();
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, loading, refreshing, error, refresh, poll, offline, stale, updatedAt } = useApiData<Appointment>(
+  const record = useApiData<Appointment>(
     id ? `/api/patients/me/appointments/${encodeURIComponent(id)}` : null,
     { refreshOn: ['appointments'], offline: true }
   );
+  const { data, loading, refreshing, error, refresh, poll, offline, stale, updatedAt } = record;
   // Where the appointment is: name, address and phone of the clinic it belongs to.
   const clinics = useApiData<PatientClinic[]>('/api/patients/me/clinics', { offline: true });
   const [cancelling, setCancelling] = useState(false);
@@ -88,8 +90,9 @@ export default function AppointmentDetailScreen() {
   const joinUrl = useJoinUrl(data, offline || stale);
 
   if (loading) return <LoadingView />;
-  if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data) return <ErrorState message={t('appointments.notFound')} onRetry={refresh} />;
+  // Gone, or another profile's record (often a push for a deleted record): Back, not Try Again.
+  if (error && !data) return isUnavailable(record) ? <UnavailableView /> : <ErrorState message={error} onRetry={refresh} />;
+  if (!data) return <UnavailableView />;
 
   const a = data;
   const cancellable = canCancel(a);

@@ -20,6 +20,7 @@ import {
 import { colors, radius, spacing } from '@/lib/theme';
 import { LoadingView, RefreshErrorBanner, useBottomPadding } from '@/components/ui';
 import { ErrorState } from '@/components/ErrorState';
+import { isUnavailable, UnavailableView } from '@/components/StateView';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { useT } from '@/lib/i18n';
 
@@ -27,15 +28,17 @@ export default function VisitDetailScreen() {
   const t = useT();
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<Visit>(
+  const record = useApiData<Visit>(
     id ? `/api/patients/me/visits/${encodeURIComponent(id)}` : null,
     { offline: true }
   );
+  const { data, loading, refreshing, error, refresh, offline, updatedAt } = record;
   const clinics = useApiData<PatientClinic[]>('/api/patients/me/clinics', { offline: true });
 
   if (loading) return <LoadingView />;
-  if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data) return <ErrorState message={t('visits.notFound')} onRetry={refresh} />;
+  // Gone, or another profile's record (often a push for a deleted record): Back, not Try Again.
+  if (error && !data) return isUnavailable(record) ? <UnavailableView /> : <ErrorState message={error} onRetry={refresh} />;
+  if (!data) return <UnavailableView />;
 
   const visit = data;
   const type = visitTypeLabel(visit.visitType);

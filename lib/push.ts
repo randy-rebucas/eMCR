@@ -62,7 +62,9 @@ export async function registerForPushNotifications({ prompt = true }: { prompt?:
       // Throws without an EAS projectId (run `eas init`) or when the push service is unreachable.
       pushToken = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
     } catch (error) {
-      if (__DEV__) console.warn('[push] Could not get an Expo push token; registering device without one.', error);
+      // Logged in release too: a release build without google-services.json (Android) or a push
+      // entitlement (iOS) fails here, and staying silent hid that pushes never arrive.
+      console.warn('[push] Could not get an Expo push token; registering device without one.', error);
     }
   }
 

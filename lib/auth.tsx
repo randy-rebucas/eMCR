@@ -106,6 +106,37 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// ── Coming back after an expired session ─────────────────────────────────────
+
+/** Home is where every sign-in lands anyway, so it is never worth remembering. */
+const HOME_HREF = '/patient/home';
+
+/** The patient screen on show (app/patient/_layout.tsx keeps it current); null outside it. */
+let currentPatientRoute: string | null = null;
+/** Where to go after the next sign-in, and for whom: only the same account goes back there. */
+let resumeAfterSignIn: { href: string; identity: string } | null = null;
+
+/**
+ * Called by the patient area on every route change (null when it unmounts). Only the path is kept,
+ * never a form's contents.
+ */
+export function notePatientRoute(href: string | null): void {
+  currentPatientRoute = href && href.startsWith('/patient/') && href !== HOME_HREF ? href : null;
+}
+
+/** The screen to reopen after a sign-in that followed an expired session, once. */
+export function takeResumeRoute(): string | null {
+  const href = resumeAfterSignIn?.href ?? null;
+  resumeAfterSignIn = null;
+  return href;
+}
+
+/** The session ended under the patient: remember the screen they were on, for the same account. */
+function rememberResumeRoute(identity: string | null): void {
+  // Never cleared here: a second report of the same expiry can arrive after the screen unmounted.
+  if (currentPatientRoute && identity) resumeAfterSignIn = { href: currentPatientRoute, identity };
+}
+
 function patientSummaryFromProfile(p: PatientProfile): PatientSummary {
   return {
     id: p._id,
@@ -139,6 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearDocumentCache();
       clearEmcrSignInState();
       suspendMedicineReminders().catch(() => {});
+      if (!signingOut.current) rememberResumeRoute(lastIdentity.current);
       setState({ status: 'signedOut' });
       if (!signingOut.current) setNotice(message ?? t('common.sessionExpired'));
     });
@@ -170,8 +202,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearEmcrSignInState();
     if (error.status === 403) {
       lastIdentity.current = null;
+      resumeAfterSignIn = null;
       clearMedicineReminders().catch(() => {});
     } else {
+      rememberResumeRoute(lastIdentity.current);
       suspendMedicineReminders().catch(() => {});
     }
     setState({ status: 'signedOut' });
@@ -285,6 +319,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     noteFreshSignIn();
     const identity = tokenIdentity(result.token);
     const samePerson = identity !== null && identity === lastIdentity.current;
+    // Someone else signing in doesn't reopen the previous person's screen.
+    if (resumeAfterSignIn && resumeAfterSignIn.identity !== identity) resumeAfterSignIn = null;
     // A sign-in can replace another session without a sign-out, so nothing of the previous
     // person's stays: offline copies, downloaded files, the family profile, the badge. Reminders
     // are kept only when the same account signs in again.
@@ -441,6 +477,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setActiveProfileId(null);
       lastIdentity.current = null;
       lastSignedIn.current = null;
+      resumeAfterSignIn = null;
       await clearSession();
       clearDocumentCache();
       clearEmcrSignInState();

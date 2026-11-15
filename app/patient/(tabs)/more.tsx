@@ -1,9 +1,8 @@
 import { ReactNode, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import Constants from 'expo-constants';
 import { useAuth } from '@/lib/auth';
 import { useProfile } from '@/lib/profile';
 import { useUnread } from '@/lib/unread';
@@ -13,13 +12,14 @@ import { formatDate } from '@/lib/format';
 import { EmcrAccount } from '@/lib/types';
 import { useApiData } from '@/lib/useApiData';
 import { canUseAppLock, getAppLockEnabled, setAppLock } from '@/lib/appLock';
+import { openWebPage, PRIVACY_URL, TERMS_URL, versionLabel } from '@/lib/support';
 import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from '@/components/ui';
 import { Avatar } from '@/components/Avatar';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { useTour } from '@/components/QuickTour';
 import { LanguagePicker, useLanguageSummary } from '@/components/LanguagePicker';
-import { t as translate, useT } from '@/lib/i18n';
+import { useT } from '@/lib/i18n';
 
 /**
  * Icon tiles carry meaning, not decoration: teal for everything ordinary, amber when something
@@ -33,16 +33,6 @@ const TONES: Record<Tone, { bg: string; fg: string }> = {
   danger: { bg: colors.dangerSoft, fg: colors.danger },
 };
 
-const PRIVACY_URL = 'https://www.myclinicsoft.solutions/privacy';
-const TERMS_URL = 'https://www.myclinicsoft.solutions/terms';
-const DELETE_ACCOUNT_URL = 'https://www.myclinicsoft.solutions/delete-account';
-
-function openWebPage(url: string) {
-  Linking.openURL(url).catch(() =>
-    Alert.alert(translate('more.couldntOpen'), translate('more.checkConnection'))
-  );
-}
-
 export default function MoreScreen() {
   const { patient: me, signOut, guardianOnly } = useAuth();
   const t = useT();
@@ -50,12 +40,21 @@ export default function MoreScreen() {
   const [pickingLanguage, setPickingLanguage] = useState(false);
   const account = useApiData<EmcrAccount>(EMCR_ENDPOINTS.account, { refreshOn: ['activation'] });
   const activation = account.data?.activation ?? null;
+  // Only say "enter a code" when the server said eMCR isn't active: a failed check must not send an
+  // activated patient off to buy another voucher.
+  const activationUnknown = !activation && !!account.error && !account.loading;
   const activationDetail = !activation
-    ? t('more.activation.enter')
-    : activation.active && activation.expiresAt
-      ? t('more.activation.activeUntil', {
-          date: formatDate(activation.expiresAt, { month: 'long', day: 'numeric', year: 'numeric' }),
-        })
+    ? account.loading
+      ? t('more.activation.checking')
+      : account.error
+        ? t('more.activation.couldntCheck')
+        : t('more.activation.view')
+    : activation.active
+      ? activation.expiresAt
+        ? t('more.activation.activeUntil', {
+            date: formatDate(activation.expiresAt, { month: 'long', day: 'numeric', year: 'numeric' }),
+          })
+        : t('more.activation.active')
       : activation.expiresAt
         ? t('more.activation.ended')
         : t('more.activation.enter');
@@ -281,7 +280,8 @@ export default function MoreScreen() {
           tone={needsActivation ? 'attention' : 'default'}
           label={t('more.activation.label')}
           detail={activationDetail}
-          onPress={() => router.push('/patient/activate')}
+          onPress={activationUnknown ? account.refresh : () => router.push('/patient/activate')}
+          retry={activationUnknown}
         />
         {self && !guardianOnly ? (
           <Row
@@ -297,6 +297,7 @@ export default function MoreScreen() {
             label={t('more.appLock.label')}
             detail={appLock ? t('more.appLock.on') : t('more.appLock.off')}
             onPress={toggleAppLock}
+            switchValue={appLock}
           />
         ) : null}
         <Row
@@ -317,6 +318,13 @@ export default function MoreScreen() {
           label={t('more.notificationSettings.label')}
           detail={t('more.notificationSettings.detail')}
           onPress={() => router.push('/patient/notification-settings')}
+        />
+        <Row
+          icon="trash-outline"
+          tone="danger"
+          label={t('more.deleteAccount.label')}
+          detail={t('more.deleteAccount.detail')}
+          onPress={() => router.push('/patient/delete-account')}
           last
         />
       </Group>
@@ -327,6 +335,18 @@ export default function MoreScreen() {
           label={t('more.tour.label')}
           detail={t('more.tour.detail')}
           onPress={replayTour}
+        />
+        <Row
+          icon="chatbubble-ellipses-outline"
+          label={t('more.support.label')}
+          detail={t('more.support.detail')}
+          onPress={() => router.push('/patient/support')}
+        />
+        <Row
+          icon="information-circle-outline"
+          label={t('more.about.label')}
+          detail={t('more.about.detail', { version: versionLabel() })}
+          onPress={() => router.push('/patient/about')}
           last
         />
       </Group>
@@ -345,14 +365,6 @@ export default function MoreScreen() {
           detail={t('more.terms.detail')}
           external
           onPress={() => openWebPage(TERMS_URL)}
-        />
-        <Row
-          icon="trash-outline"
-          tone="danger"
-          label={t('more.deleteAccount.label')}
-          detail={t('more.deleteAccount.detail')}
-          external
-          onPress={() => openWebPage(DELETE_ACCOUNT_URL)}
           last
         />
       </Group>
@@ -371,7 +383,9 @@ export default function MoreScreen() {
         {signingOut ? <ActivityIndicator color={colors.danger} /> : <Ionicons name="chevron-forward" size={20} color={colors.danger} />}
       </TouchableOpacity>
 
-      <Text style={styles.version}>eMCR {Constants.expoConfig?.version ?? ''}</Text>
+      <Text style={styles.version} selectable>
+        eMCR {versionLabel()}
+      </Text>
       <LanguagePicker visible={pickingLanguage} onClose={() => setPickingLanguage(false)} />
     </ScrollView>
   );
@@ -396,6 +410,8 @@ function Row({
   onPress,
   badge,
   external,
+  retry,
+  switchValue,
   last,
 }: {
   icon: IconName;
@@ -405,14 +421,20 @@ function Row({
   onPress: () => void;
   badge?: number;
   external?: boolean;
+  /** The detail is a failed check: tapping retries it. */
+  retry?: boolean;
+  /** An on/off setting (App Lock): read out as a switch with its state. */
+  switchValue?: boolean | null;
   last?: boolean;
 }) {
   const t = TONES[tone];
+  const isSwitch = switchValue !== undefined && switchValue !== null;
   return (
     <TouchableOpacity
       style={[styles.row, !last && styles.rowDivider]}
       onPress={onPress}
-      accessibilityRole={external ? 'link' : 'button'}
+      accessibilityRole={isSwitch ? 'switch' : external ? 'link' : 'button'}
+      accessibilityState={isSwitch ? { checked: switchValue } : undefined}
       accessibilityLabel={`${label}. ${detail}`}
     >
       <View style={[styles.rowIcon, { backgroundColor: t.bg }]}>
@@ -427,7 +449,7 @@ function Row({
           <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
         </View>
       ) : null}
-      <Ionicons name={external ? 'open-outline' : 'chevron-forward'} size={18} color={colors.textMuted} />
+      <Ionicons name={retry ? 'refresh' : external ? 'open-outline' : 'chevron-forward'} size={18} color={colors.textMuted} />
     </TouchableOpacity>
   );
 }

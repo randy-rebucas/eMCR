@@ -221,6 +221,8 @@ export default function SetPasswordScreen() {
         <IconField
           icon="mail-outline"
           label={t('auth.setPw.email')}
+          showLabel
+          placeholder="name@example.com"
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
@@ -234,6 +236,7 @@ export default function SetPasswordScreen() {
       <IconField
         icon="lock-closed-outline"
         label={reset ? t('auth.pw.new') : t('auth.pw.create')}
+        showLabel
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -244,6 +247,7 @@ export default function SetPasswordScreen() {
       <IconField
         icon="lock-closed-outline"
         label={t('auth.pw.confirm')}
+        showLabel
         value={confirm}
         onChangeText={setConfirm}
         secureTextEntry

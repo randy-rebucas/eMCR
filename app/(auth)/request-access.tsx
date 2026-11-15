@@ -17,11 +17,15 @@ import {
   MaintenanceScreen,
   OfflineScreen,
   StatusScreen,
+  TermsConsent,
 } from '@/components/auth';
 import { BirthDateField } from '@/components/emcr';
 import { useT } from '@/lib/i18n';
 
 const SEARCH_DELAY_MS = 350;
+
+/** The field a validation message is about, outlined in red while the message shows. */
+type Field = 'clinic' | 'name' | 'dob' | 'contact' | 'email';
 
 function clinicPlace(c: ClinicDirectoryEntry): string {
   return [c.city, c.state].filter(Boolean).join(', ');
@@ -46,6 +50,7 @@ export default function RequestAccessScreen() {
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [failure, setFailure] = useState<AuthFailure | null>(null);
+  const [badField, setBadField] = useState<Field | null>(null);
   const [sentMessage, setSentMessage] = useState<string | null>(null);
   const inFlight = useRef(false);
 
@@ -94,16 +99,21 @@ export default function RequestAccessScreen() {
 
   async function submit() {
     if (inFlight.current) return;
-    const fail = (message: string) => setFailure({ kind: 'message', message, status: 0 });
-    if (!clinic) return fail(t('auth.request.chooseClinic'));
-    if (!firstName.trim() || !lastName.trim()) return fail(t('auth.request.enterName'));
-    if (!isValidBirthDate(dob)) return fail(t('auth.request.enterBirthDate'));
+    // The message stays by the button (the field may be scrolled away); the field is outlined.
+    const fail = (field: Field, message: string) => {
+      setBadField(field);
+      setFailure({ kind: 'message', message, status: 0 });
+    };
+    if (!clinic) return fail('clinic', t('auth.request.chooseClinic'));
+    if (!firstName.trim() || !lastName.trim()) return fail('name', t('auth.request.enterName'));
+    if (!isValidBirthDate(dob)) return fail('dob', t('auth.request.enterBirthDate'));
     const contactPhone = phone.trim();
     const contactEmail = email.trim();
-    if (!contactPhone && !contactEmail) return fail(t('auth.request.needContact'));
-    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) return fail(t('auth.invalidEmail'));
+    if (!contactPhone && !contactEmail) return fail('contact', t('auth.request.needContact'));
+    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) return fail('email', t('auth.invalidEmail'));
 
     inFlight.current = true;
+    setBadField(null);
     setFailure(null);
     setSubmitting(true);
     try {
@@ -131,6 +141,15 @@ export default function RequestAccessScreen() {
     return <MaintenanceScreen onRetry={submit} onBack={() => setFailure(null)} retrying={submitting} />;
   }
   const errorText = failure?.kind === 'message' ? failure.message : null;
+  const flagged = (field: Field) => !!errorText && badField === field;
+  /** Typing in a flagged field clears its outline and message. */
+  const edit = (field: Field, set: (v: string) => void) => (v: string) => {
+    set(v);
+    if (badField === field) {
+      setBadField(null);
+      setFailure(null);
+    }
+  };
 
   return (
     <AuthScreen back>
@@ -162,7 +181,8 @@ export default function RequestAccessScreen() {
             icon="search-outline"
             label={t('auth.request.search')}
             value={search}
-            onChangeText={setSearch}
+            onChangeText={edit('clinic', setSearch)}
+            error={flagged('clinic')}
             autoCorrect={false}
             returnKeyType="search"
           />
@@ -200,8 +220,10 @@ export default function RequestAccessScreen() {
       <IconField
         icon="person-outline"
         label={t('auth.request.firstName')}
+        showLabel
         value={firstName}
-        onChangeText={setFirstName}
+        onChangeText={edit('name', setFirstName)}
+        error={flagged('name') && !firstName.trim()}
         autoCapitalize="words"
         autoComplete="name-given"
         textContentType="givenName"
@@ -210,22 +232,27 @@ export default function RequestAccessScreen() {
       <IconField
         icon="person-outline"
         label={t('auth.request.lastName')}
+        showLabel
         value={lastName}
-        onChangeText={setLastName}
+        onChangeText={edit('name', setLastName)}
+        error={flagged('name') && !lastName.trim()}
         autoCapitalize="words"
         autoComplete="name-family"
         textContentType="familyName"
         returnKeyType="next"
       />
-      <BirthDateField value={dob} onChange={setDob} />
+      <BirthDateField value={dob} onChange={edit('dob', setDob)} error={flagged('dob')} />
 
       <Text style={[styles.label, styles.section]}>{t('auth.request.reach')}</Text>
       <Text style={styles.hint}>{t('auth.request.atLeastOne')}</Text>
       <IconField
         icon="call-outline"
         label={t('auth.request.mobile')}
+        showLabel
+        placeholder="0917 123 4567"
         value={phone}
-        onChangeText={setPhone}
+        onChangeText={edit('contact', setPhone)}
+        error={flagged('contact')}
         keyboardType="phone-pad"
         autoComplete="tel"
         textContentType="telephoneNumber"
@@ -234,8 +261,17 @@ export default function RequestAccessScreen() {
       <IconField
         icon="mail-outline"
         label={t('auth.setPw.email')}
+        showLabel
+        placeholder="name@example.com"
         value={email}
-        onChangeText={setEmail}
+        onChangeText={(v) => {
+          setEmail(v);
+          if (badField === 'email' || badField === 'contact') {
+            setBadField(null);
+            setFailure(null);
+          }
+        }}
+        error={flagged('contact') || flagged('email')}
         autoCapitalize="none"
         autoCorrect={false}
         autoComplete="email"
@@ -246,6 +282,7 @@ export default function RequestAccessScreen() {
       />
 
       {errorText ? <Banner message={errorText} /> : null}
+      <TermsConsent />
       <Button title={t('auth.request.send')} onPress={submit} loading={submitting} />
     </AuthScreen>
   );

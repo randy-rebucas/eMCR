@@ -11,6 +11,7 @@ import { Appointment, BookingDoctor, BookingOptions, PatientClinic } from '@/lib
 import { clinicEpoch, clinicTodayYmd, clinicYmd, doctorName, formatDate, FormatDateOptions, formatTime, toYmd } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName } from './ui';
+import { ErrorView } from './StateView';
 import { PlainKey, t as translate, useT } from '@/lib/i18n';
 
 /** Matches the server's booking horizon; older servers without `bookableDates` get 30 days. */
@@ -263,12 +264,7 @@ export function BookingForm({
   }
   if (doctorsQuery.error && !doctorsQuery.data) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.muted}>{doctorsQuery.error}</Text>
-        <TouchableOpacity onPress={doctorsQuery.refresh} style={styles.retry} accessibilityRole="button">
-          <Text style={styles.link}>{t('common.tryAgain')}</Text>
-        </TouchableOpacity>
-      </View>
+      <ErrorView message={doctorsQuery.error} onRetry={doctorsQuery.refresh} />
     );
   }
   if (moving && !doctors.some((d) => d._id === doctorId)) {
@@ -937,7 +933,6 @@ const styles = StyleSheet.create({
   },
   atClinicText: { flexShrink: 1, fontSize: 13, fontWeight: '600', color: colors.primaryOnSoft },
   center: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md },
-  retry: { marginTop: spacing.xs, minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.sm },
   link: { color: colors.primary, fontWeight: '600', fontSize: 14 },
   muted: { fontSize: 14, lineHeight: 20, color: colors.textMuted },
   error: { color: colors.danger, fontSize: 14 },
@@ -1030,7 +1025,7 @@ const styles = StyleSheet.create({
   dayCellDisabled: { borderColor: 'transparent', backgroundColor: 'transparent' },
   dayNum: { fontSize: 15, fontWeight: '600', color: colors.text },
   dayNumSelected: { color: colors.primaryText },
-  dayNumDisabled: { color: '#B8C3CC', fontWeight: '400', textDecorationLine: 'line-through' },
+  dayNumDisabled: { color: colors.textDisabled, fontWeight: '400', textDecorationLine: 'line-through' },
   availDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.accent, marginTop: 5 },
   availDotHidden: { backgroundColor: 'transparent' },
   legend: { fontSize: 11, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },

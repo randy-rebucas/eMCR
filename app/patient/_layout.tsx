@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { Redirect, router, Stack, usePathname } from 'expo-router';
 import { setActivationRequiredHandler } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
+import { notePatientRoute, takeResumeRoute, useAuth } from '@/lib/auth';
 import { colors } from '@/lib/theme';
 import { ProfileProvider, useProfile } from '@/lib/profile';
 import { UnreadProvider } from '@/lib/unread';
-import { NotificationResponder } from '@/components/NotificationResponder';
+import { hasPendingNotificationTap, NotificationResponder } from '@/components/NotificationResponder';
 import { TourProvider } from '@/components/QuickTour';
 import { useT } from '@/lib/i18n';
 
@@ -18,6 +18,8 @@ export default function PatientLayout() {
 
   return (
     <ProfileProvider>
+      {/* Before NotificationResponder: its effects must see a pending tap before it is opened. */}
+      <RouteMemory />
       <NotificationResponder />
       <ActivationPrompt />
       <ProfileScreens />
@@ -76,6 +78,9 @@ function ProfileScreens() {
           <Stack.Screen name="profile/edit" options={{ title: t('patient.title.editContact'), headerShown: false }} />
           <Stack.Screen name="profile/password" options={{ title: t('patient.title.password'), headerShown: false }} />
           <Stack.Screen name="activate" options={{ title: t('patient.title.activate'), headerShown: false }} />
+          <Stack.Screen name="about" options={{ title: t('patient.title.about'), headerShown: false }} />
+          <Stack.Screen name="support" options={{ title: t('patient.title.support'), headerShown: false }} />
+          <Stack.Screen name="delete-account" options={{ title: t('patient.title.deleteAccount'), headerShown: false }} />
         </Stack>
       </TourProvider>
     </UnreadProvider>
@@ -91,6 +96,24 @@ function PendingRoute() {
     if (router.canDismiss()) router.dismissAll();
     router.navigate(href as never);
   }, [takePendingRoute]);
+  return null;
+}
+
+/**
+ * Keeps lib/auth told which patient screen is showing, so an expired session can bring the patient
+ * back to it after they sign in again. On mount (a sign-in), reopens that screen over Home, unless
+ * a notification tapped while signed out is about to open its own.
+ */
+function RouteMemory() {
+  const pathname = usePathname();
+  useEffect(() => {
+    notePatientRoute(pathname);
+  }, [pathname]);
+  useEffect(() => {
+    const href = takeResumeRoute();
+    if (href && !hasPendingNotificationTap()) router.push(href as never);
+    return () => notePatientRoute(null);
+  }, []);
   return null;
 }
 
