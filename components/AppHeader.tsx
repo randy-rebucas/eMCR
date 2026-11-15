@@ -132,12 +132,12 @@ const styles = StyleSheet.create({
     minHeight: 18,
     borderRadius: 999,
     paddingHorizontal: 4,
-    // #D93036: white 10pt text needs 4.5:1 (the lighter #E5484D was 3.9:1).
-    backgroundColor: '#D93036',
+    // White 10pt text needs 4.5:1 (see colors.badgeRed).
+    backgroundColor: colors.badgeRed,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: colors.surface,
   },
-  badgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
+  badgeText: { color: colors.white, fontSize: 10, fontWeight: '700' },
 });

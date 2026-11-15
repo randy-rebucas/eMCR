@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,8 +8,9 @@ import { Invoice, InvoiceListEnvelope, InvoiceStatus } from '@/lib/types';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { balanceOf, invoiceLook, itemsSummary, lastPaymentDate } from '@/lib/invoices';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
+import { Banner, ListFooter, useBottomPadding } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { ErrorView, SkeletonCards } from '@/components/StateView';
 import { AppHeader } from '@/components/AppHeader';
 import { InvoiceStatusPill } from '@/components/InvoiceStatusPill';
 import { MessageKey, useT } from '@/lib/i18n';
@@ -110,14 +111,9 @@ export default function InvoicesScreen() {
 
   let empty;
   if (list.loading) {
-    empty = <ActivityIndicator color={colors.primary} style={styles.loading} />;
+    empty = <SkeletonCards />;
   } else if (list.error && list.items.length === 0) {
-    empty = (
-      <View style={styles.empty}>
-        <Text style={styles.emptyText}>{list.error}</Text>
-        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={list.reload} style={styles.stretch} />
-      </View>
-    );
+    empty = <ErrorView message={list.error} onRetry={list.reload} />;
   } else {
     empty = (
       <View style={[styles.emptyCard]}>
@@ -212,8 +208,6 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.md + 4, paddingBottom: spacing.xl },
   headerSpacing: { marginBottom: spacing.md },
   flex: { flex: 1 },
-  stretch: { alignSelf: 'stretch' },
-  loading: { marginVertical: spacing.xl },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
 
@@ -291,7 +285,6 @@ const styles = StyleSheet.create({
   amount: { fontSize: 15, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
   due: { fontSize: 12, fontWeight: '700', color: colors.warning, fontVariant: ['tabular-nums'] },
 
-  empty: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md },
   emptyCard: {
     alignItems: 'center',
     gap: spacing.sm,

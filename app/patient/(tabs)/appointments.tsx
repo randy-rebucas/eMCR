@@ -19,6 +19,7 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, KeyboardAvoider, ListFooter } from '@/components/ui';
 import { photos, ScrimPhoto } from '@/components/Photo';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { ErrorView, SkeletonCards } from '@/components/StateView';
 import { AppHeader } from '@/components/AppHeader';
 import { AppointmentCard } from '@/components/AppointmentCard';
 import { BookedSummary, BookingForm, BookingSuccess } from '@/components/BookingForm';
@@ -188,12 +189,7 @@ export default function AppointmentsScreen() {
   if (segment !== 'book') {
     if (list.loading) empty = <SkeletonCards label={t('appointments.loading')} />;
     else if (list.error && list.items.length === 0) {
-      empty = (
-        <View style={styles.empty}>
-          <Text style={styles.emptyText}>{list.error}</Text>
-          <Button title={t('common.tryAgain')} variant="secondary" onPress={list.reload} />
-        </View>
-      );
+      empty = <ErrorView message={list.error} onRetry={list.reload} />;
     } else if (segment === 'upcoming') {
       empty = (
         <ScrimPhoto source={photos.planner} style={styles.emptyPhoto} top={0.4} bottom={0.97}>
@@ -269,28 +265,8 @@ export default function AppointmentsScreen() {
   );
 }
 
-/** Placeholder cards while the first page loads (nothing saved yet). */
-function SkeletonCards({ label }: { label: string }) {
-  // One announced element for screen readers; the grey shapes inside stay hidden.
-  return (
-    <View accessible accessibilityRole="progressbar" accessibilityLabel={label} accessibilityState={{ busy: true }}>
-      {[0, 1, 2].map((i) => (
-        <View key={i} style={styles.skeleton}>
-          <View style={styles.skeletonDate} />
-          <View style={styles.flex}>
-            <View style={[styles.skeletonLine, { width: '70%' }]} />
-            <View style={[styles.skeletonLine, styles.skeletonThin, { width: '50%' }]} />
-            <View style={[styles.skeletonLine, styles.skeletonThin, { width: '35%' }]} />
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  flex: { flex: 1 },
   content: { paddingHorizontal: spacing.md + 4, paddingBottom: spacing.xl },
   headerSpacing: { marginBottom: spacing.md },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
@@ -324,17 +300,4 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   monthCount: { fontSize: 13, color: colors.textMuted, fontVariant: ['tabular-nums'] },
-  skeleton: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    marginBottom: spacing.sm + 4,
-  },
-  skeletonDate: { width: 68, height: 72, borderRadius: radius.md, backgroundColor: colors.slateSoft },
-  skeletonLine: { height: 16, borderRadius: 4, backgroundColor: colors.slateSoft, marginBottom: spacing.sm },
-  skeletonThin: { height: 12 },
 });

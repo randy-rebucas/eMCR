@@ -9,6 +9,7 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { Button, IconName, LoadingView, useBottomPadding } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { ErrorState } from '@/components/ErrorState';
+import { isUnavailable, UnavailableView } from '@/components/StateView';
 import { PlainKey, TFunction, useT } from '@/lib/i18n';
 
 /**
@@ -37,14 +38,16 @@ export default function LabResultDetailScreen() {
   const t = useT();
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<LabResult>(
+  const record = useApiData<LabResult>(
     id ? `/api/patients/me/lab-results/${encodeURIComponent(id)}` : null,
     { refreshOn: ['lab-results'], offline: true }
   );
+  const { data, loading, refreshing, error, refresh, offline, updatedAt } = record;
 
   if (loading) return <LoadingView />;
-  if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data) return <ErrorState message={t('results.notFound')} onRetry={refresh} />;
+  // Gone, or another profile's record (often a push for a deleted record): Back, not Try Again.
+  if (error && !data) return isUnavailable(record) ? <UnavailableView /> : <ErrorState message={error} onRetry={refresh} />;
+  if (!data) return <UnavailableView />;
 
   const result = data;
   const ready = isReady(result.status);

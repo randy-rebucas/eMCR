@@ -51,6 +51,7 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, useBottomPadding } from '@/components/ui';
 import { AppHeader } from '@/components/AppHeader';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { ErrorView } from '@/components/StateView';
 import { PlainKey, possessiveName, useT } from '@/lib/i18n';
 
 const MAX_TIMES = 6;
@@ -353,10 +354,7 @@ export default function MedicinesScreen() {
       {loading && !data ? (
         <ActivityIndicator color={colors.primary} style={styles.loading} />
       ) : error && !data ? (
-        <View style={styles.card}>
-          <Text style={styles.bodyText}>{error}</Text>
-          <Button title={t('common.tryAgainTitle')} variant="secondary" icon="refresh" onPress={refresh} style={styles.retry} />
-        </View>
+        <ErrorView message={error} onRetry={refresh} />
       ) : !medicines.length ? (
         <View style={[styles.card, styles.empty]}>
           <Ionicons name="medical-outline" size={32} color={colors.primary} />
@@ -777,7 +775,6 @@ const styles = StyleSheet.create({
   removeBtn: { marginLeft: 'auto', width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm + 4, paddingVertical: spacing.xs },
   editorActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
-  retry: { marginTop: spacing.md },
   empty: { alignItems: 'center', gap: spacing.xs, paddingVertical: spacing.lg },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginTop: spacing.xs },
   status: {

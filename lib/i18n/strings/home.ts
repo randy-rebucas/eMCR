@@ -57,6 +57,9 @@ export default defineStrings({
 
     'results.title': 'Recent Results',
     'results.labTest': 'Lab test',
+    // A section whose load failed: shown with Try Again so it doesn't read as "nothing here".
+    'results.failed': "Couldn't load your latest result.",
+    'balance.failed': "Couldn't load your balance.",
 
     'balance.title': 'Outstanding Balance',
     'balance.view': 'View Bills',
@@ -125,6 +128,8 @@ export default defineStrings({
 
     'results.title': 'Pinakabagong Resulta',
     'results.labTest': 'Lab test',
+    'results.failed': 'Hindi ma-load ang pinakabagong resulta mo.',
+    'balance.failed': 'Hindi ma-load ang balanse mo.',
 
     'balance.title': 'Natitirang Balanse',
     'balance.view': 'Tingnan ang Bayarin',

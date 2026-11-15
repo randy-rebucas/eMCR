@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ActivityIndicator, RefreshControl, SectionList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, SectionList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,9 +9,10 @@ import { PatientClinic } from '@/lib/types';
 import { formatDate } from '@/lib/format';
 import { diagnosisText, primaryDiagnosis, Visit, visitProvider, visitReason, visitTypeLabel } from '@/lib/visits';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
+import { Banner, ListFooter, useBottomPadding } from '@/components/ui';
 import { AppHeader } from '@/components/AppHeader';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { ErrorView, SkeletonCards } from '@/components/StateView';
 import { photos, ScrimPhoto } from '@/components/Photo';
 import { useT } from '@/lib/i18n';
 
@@ -75,16 +76,9 @@ export default function VisitsScreen() {
 
   let empty;
   if (list.loading) {
-    empty = <ActivityIndicator color={colors.primary} style={styles.loading} accessibilityLabel={t('visits.loading')} />;
+    empty = <SkeletonCards label={t('visits.loading')} />;
   } else if (list.error) {
-    empty = (
-      <View style={styles.errorBox}>
-        <Text style={styles.errorText} accessibilityRole="alert">
-          {list.error}
-        </Text>
-        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={list.reload} style={styles.stretch} />
-      </View>
-    );
+    empty = <ErrorView message={list.error} onRetry={list.reload} />;
   } else {
     empty = (
       <ScrimPhoto source={photos.consultation} style={styles.emptyPhoto} top={0.3}>
@@ -173,8 +167,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.md + 4, paddingBottom: spacing.xl },
   flex: { flex: 1 },
-  stretch: { alignSelf: 'stretch' },
-  loading: { marginVertical: spacing.xl },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2, fontVariant: ['tabular-nums'] },
   banner: { marginTop: spacing.md },
@@ -204,8 +196,6 @@ const styles = StyleSheet.create({
   meta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   cancelled: { fontSize: 12, fontWeight: '700', color: colors.slate, marginTop: 2 },
   muted: { color: colors.textMuted },
-  errorBox: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
-  errorText: { fontSize: 14, color: colors.textMuted, textAlign: 'center' },
   emptyPhoto: { minHeight: 260, borderRadius: radius.lg, marginTop: spacing.lg },
   emptyFoot: { flex: 1, justifyContent: 'flex-end', padding: spacing.md + 4, gap: spacing.xs },
   emptyTitle: { fontSize: 20, fontWeight: '800', color: colors.primaryText },

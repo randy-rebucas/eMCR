@@ -21,7 +21,12 @@ export default defineStrings({
     sessionExpired: 'Your session has expired. Please sign in again.',
     network: "Can't reach the server. Check your connection and try again.",
     tooManyAttempts: 'Too many attempts. Please wait a moment and try again.',
-    requestFailed: 'Request failed ({status})',
+    // lib/api fallbacks by status, when the server sent no message of its own.
+    'error.noAccess': "You don't have access to this.",
+    'error.notFound': 'This is no longer available.',
+    'error.conflict': 'This was changed somewhere else. Please reload and try again.',
+    'error.maintenance': 'eMCR is under maintenance. Please try again in a few minutes.',
+    'error.server': "There's a problem on our side. Please try again in a few minutes.",
     accountInactive: 'Your account is no longer active.',
     profileLost: 'You no longer manage this family member’s records.',
     activateToUse: 'Activate eMCR to use this.',
@@ -144,6 +149,26 @@ export default defineStrings({
     'language.systemNow': 'Same as phone ({language})',
     'language.en': 'English',
     'language.fil': 'Filipino',
+
+    // app/+not-found.tsx
+    'notFound.title': "This page isn't here",
+    'notFound.body': 'The link may be old, or the page was moved. Your records are safe.',
+    'notFound.home': 'Go to home',
+
+    // Root ErrorBoundary (app/_layout.tsx)
+    'crash.title': 'Something went wrong',
+    'crash.body': "eMCR hit a problem showing this screen. Your records are safe. Please try again.",
+
+    // components/UpdateGate.tsx (lib/appVersion.ts)
+    'update.requiredTitle': 'Update eMCR to continue',
+    'update.requiredBody': 'This version of eMCR is no longer supported. Update to the latest version to keep using your records.',
+    'update.update': 'Update now',
+    'update.noStore': 'Open the {store} and update eMCR from there.',
+    'update.appStore': 'App Store',
+    'update.playStore': 'Play Store',
+    'update.softTitle': 'A new version of eMCR is ready',
+    'update.softBody': 'Update for the latest fixes and features.',
+    'update.later': 'Not now',
   },
   fil: {
     cancel: 'Kanselahin',
@@ -163,7 +188,11 @@ export default defineStrings({
     sessionExpired: 'Nag-expire na ang session mo. Mag-sign in ulit.',
     network: 'Hindi maabot ang server. Tingnan ang internet connection mo at subukan ulit.',
     tooManyAttempts: 'Masyadong maraming subok. Maghintay sandali at subukan ulit.',
-    requestFailed: 'Hindi natuloy ang request ({status})',
+    'error.noAccess': 'Wala kang access dito.',
+    'error.notFound': 'Hindi na ito available.',
+    'error.conflict': 'Nabago ito sa ibang lugar. I-reload at subukan ulit.',
+    'error.maintenance': 'May maintenance ang eMCR. Pakisubukan ulit pagkalipas ng ilang minuto.',
+    'error.server': 'May problema sa panig namin. Pakisubukan ulit pagkalipas ng ilang minuto.',
     accountInactive: 'Hindi na aktibo ang account mo.',
     profileLost: 'Hindi mo na hawak ang records ng family member na ito.',
     activateToUse: 'I-activate ang eMCR para magamit ito.',
@@ -274,5 +303,22 @@ export default defineStrings({
     'language.systemNow': 'Kapareho ng phone ({language})',
     'language.en': 'English',
     'language.fil': 'Filipino',
+
+    'notFound.title': 'Wala rito ang page na ito',
+    'notFound.body': 'Maaaring luma na ang link, o nailipat ang page. Ligtas ang records mo.',
+    'notFound.home': 'Pumunta sa Home',
+
+    'crash.title': 'May nangyaring mali',
+    'crash.body': 'Nagkaproblema ang eMCR sa pagpapakita ng screen na ito. Ligtas ang records mo. Pakisubukan ulit.',
+
+    'update.requiredTitle': 'I-update ang eMCR para magpatuloy',
+    'update.requiredBody': 'Hindi na suportado ang bersyong ito ng eMCR. I-update sa pinakabagong bersyon para patuloy mong magamit ang records mo.',
+    'update.update': 'I-update Ngayon',
+    'update.noStore': 'Buksan ang {store} at doon i-update ang eMCR.',
+    'update.appStore': 'App Store',
+    'update.playStore': 'Play Store',
+    'update.softTitle': 'May bagong bersyon ng eMCR',
+    'update.softBody': 'Mag-update para sa mga pinakabagong ayos at feature.',
+    'update.later': 'Mamaya na',
   },
 });

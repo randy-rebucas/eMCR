@@ -72,6 +72,13 @@ export default defineStrings({
     'detail.pending': "The clinic will confirm this request. You'll get a notification once it does.",
     reschedule: 'Reschedule',
     'reschedule.cantMove': 'This appointment can no longer be moved in the app. Please contact the clinic.',
+    // reschedule.tsx: why it can't be moved, in the order lib/appointments canReschedule checks.
+    'reschedule.cantMoveTitle': "This appointment can't be moved",
+    'reschedule.reason.cancelled': 'It was cancelled, so there is nothing to move. You can book a new appointment instead.',
+    'reschedule.reason.completed': 'This visit has already taken place.',
+    'reschedule.reason.noShow': 'It was marked as missed. Book a new appointment, or contact the clinic.',
+    'reschedule.reason.passed': 'Its time has already passed. Contact the clinic if you need a new time.',
+    'reschedule.reason.noSlot': "It wasn't booked for a set time with a doctor (a walk-in, for example), so only the clinic can change it.",
 
     // lib/teleconsult
     'call.failedTitle': "Couldn't open the call",
@@ -226,6 +233,12 @@ export default defineStrings({
     'detail.pending': 'Kukumpirmahin ng clinic ang request na ito. Makakatanggap ka ng notification kapag nakumpirma na.',
     reschedule: 'I-reschedule',
     'reschedule.cantMove': 'Hindi na mailipat sa app ang appointment na ito. Makipag-ugnayan sa clinic.',
+    'reschedule.cantMoveTitle': 'Hindi mailipat ang appointment na ito',
+    'reschedule.reason.cancelled': 'Kinansela na ito, kaya wala nang ililipat. Puwede kang mag-book ng bagong appointment.',
+    'reschedule.reason.completed': 'Tapos na ang pagbisitang ito.',
+    'reschedule.reason.noShow': 'Naka-mark ito na hindi ka nakadalo. Mag-book ng bagong appointment, o makipag-ugnayan sa clinic.',
+    'reschedule.reason.passed': 'Lumipas na ang oras nito. Makipag-ugnayan sa clinic kung kailangan mo ng bagong oras.',
+    'reschedule.reason.noSlot': 'Hindi ito naka-book sa takdang oras sa isang doktor (halimbawa, walk-in), kaya ang clinic lang ang makakapagbago nito.',
 
     'call.failedTitle': 'Hindi mabuksan ang call',
     'call.failedBody': 'Siguraduhing may naka-install na web browser, saka subukan ulit.',

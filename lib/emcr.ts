@@ -166,9 +166,16 @@ export async function sendInviteCode(code: string): Promise<string> {
   return result.sentTo ?? '';
 }
 
-/** Spend the invite with the SMS code: links its records and signs in. */
+/**
+ * Spend the invite with the SMS code: links its records and signs in. The step shows the Terms and
+ * Privacy consent line, so the server records the agreement (`termsAccepted`).
+ */
 export function redeemInvite(code: string, otp: string): Promise<EmcrInviteRedeemResult> {
-  return apiFetch<EmcrInviteRedeemResult>(EMCR_ENDPOINTS.inviteRedeem, { method: 'POST', auth: false, body: { code, otp } });
+  return apiFetch<EmcrInviteRedeemResult>(EMCR_ENDPOINTS.inviteRedeem, {
+    method: 'POST',
+    auth: false,
+    body: { code, otp, termsAccepted: true },
+  });
 }
 
 // ── Sign-in and claim ────────────────────────────────────────────────────────
@@ -183,12 +190,15 @@ export async function requestPhoneCode(phone: string): Promise<string> {
   return result.message ?? t('auth.phoneCodeRequested');
 }
 
-/** Prove the phone. Returns a claim token, and a session when the account already has a profile. */
-export function verifyPhoneCode(phone: string, otp: string): Promise<EmcrVerifyResult> {
+/**
+ * Prove the phone. Returns a claim token, and a session when the account already has a profile.
+ * `termsAccepted`: the sign-in code step showed the consent line (a first sign-in creates the account).
+ */
+export function verifyPhoneCode(phone: string, otp: string, opts: { termsAccepted?: boolean } = {}): Promise<EmcrVerifyResult> {
   return apiFetch<EmcrVerifyResult>(EMCR_ENDPOINTS.otpVerify, {
     method: 'POST',
     auth: false,
-    body: { phone, otp },
+    body: { phone, otp, ...(opts.termsAccepted ? { termsAccepted: true } : {}) },
   });
 }
 
@@ -320,6 +330,8 @@ export async function requestAccess(input: AccessRequestInput): Promise<string> 
       dateOfBirth: input.dateOfBirth,
       ...(input.contactPhone ? { contactPhone: input.contactPhone } : {}),
       ...(input.contactEmail ? { contactEmail: input.contactEmail } : {}),
+      // The form shows the Terms and Privacy consent line above Send.
+      termsAccepted: true,
     },
   });
   return (

@@ -38,6 +38,8 @@ export function useApiData<T>(path: string | null, options: Options = {}) {
   const [loading, setLoading] = useState(path !== null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** HTTP status of the last failure (0 = no connection), so screens can tell "gone" from "try again". */
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   /** When `data` last loaded successfully (epoch ms), so a failed poll can say how old it is. */
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   /** The last load couldn't reach the server, and `data` is an older copy. */
@@ -76,7 +78,10 @@ export function useApiData<T>(path: string | null, options: Options = {}) {
       let outcome: 'pending' | 'ok' | 'network' | 'failed' = 'pending';
       if (mode === 'initial') setLoading(true);
       if (mode === 'refresh') setRefreshing(true);
-      if (mode !== 'silent') setError(null);
+      if (mode !== 'silent') {
+        setError(null);
+        setErrorStatus(null);
+      }
 
       // Stale-while-revalidate: show the saved copy while the request runs (or after it failed offline).
       if (cacheKey && mode === 'initial' && loadedPath.current !== path) {
@@ -101,6 +106,7 @@ export function useApiData<T>(path: string | null, options: Options = {}) {
         setData(result);
         setUpdatedAt(Date.now());
         setError(null);
+        setErrorStatus(null);
         setOffline(false);
         setStale(false);
       } catch (err) {
@@ -118,6 +124,7 @@ export function useApiData<T>(path: string | null, options: Options = {}) {
         }
         setOffline(network && (dataRef.current !== null || fromCache.current));
         setError(errorMessage(err, t('common.failedToLoad')));
+        setErrorStatus(err instanceof ApiError ? err.status : null);
       } finally {
         inFlight.current--;
         // The latest request clears every spinner, including one a superseded request started.
@@ -140,5 +147,5 @@ export function useApiData<T>(path: string | null, options: Options = {}) {
 
   useRefreshOn(refreshOn, poll);
 
-  return { data, setData, loading, refreshing, error, updatedAt, offline, stale, refresh, poll };
+  return { data, setData, loading, refreshing, error, errorStatus, updatedAt, offline, stale, refresh, poll };
 }

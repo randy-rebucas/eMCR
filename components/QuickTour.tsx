@@ -14,8 +14,9 @@ import {
 import { router, usePathname } from 'expo-router';
 import Svg, { Defs, Mask, Rect } from 'react-native-svg';
 import { getTourSeen, setTourSeen } from '@/lib/storage';
-import { colors, radius, spacing } from '@/lib/theme';
+import { colors, radius, spacing, typography } from '@/lib/theme';
 import { useT } from '@/lib/i18n';
+import { useReducedMotion } from './ui';
 
 /**
  * First-run coach marks over the patient home screen. Screens mark what the
@@ -166,6 +167,10 @@ function TourOverlay({
   const rootRef = useRef<ViewRef>(null);
   const [hole, setHole] = useState<Box | null>(null);
   const fade = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReducedMotion();
+  // Read inside the step effect without re-running it when the setting flips mid-tour.
+  const reduceMotionRef = useRef(reduceMotion);
+  reduceMotionRef.current = reduceMotion;
   const t = useT();
   const current = STEPS[step];
   const title = t(`common.tour.${current.text}.title`);
@@ -186,7 +191,9 @@ function TourOverlay({
       // Window coords → overlay coords, whatever the platform's status-bar handling.
       const box = { ...target, x: target.x - (origin?.x ?? 0), y: target.y - (origin?.y ?? 0) };
       setHole(current.shape === 'tab' ? tabHole(box, W) : pad(box, 8));
-      Animated.timing(fade, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+      // Reduce motion on: the card just appears at its spot, with no fade-in.
+      if (reduceMotionRef.current) fade.setValue(1);
+      else Animated.timing(fade, { toValue: 1, duration: 180, useNativeDriver: true }).start();
       AccessibilityInfo.announceForAccessibility(`${title}. ${body}`);
     })();
     return () => {
@@ -212,11 +219,11 @@ function TourOverlay({
       <Svg width={W} height={H} style={StyleSheet.absoluteFill}>
         <Defs>
           <Mask id="tour-hole" x="0" y="0" width={W} height={H} maskUnits="userSpaceOnUse">
-            <Rect x={0} y={0} width={W} height={H} fill="#FFFFFF" />
-            {hole ? <Rect x={hole.x} y={hole.y} width={hole.width} height={hole.height} rx={radius.lg} fill="#000000" /> : null}
+            <Rect x={0} y={0} width={W} height={H} fill={colors.white} />
+            {hole ? <Rect x={hole.x} y={hole.y} width={hole.width} height={hole.height} rx={radius.lg} fill={colors.black} /> : null}
           </Mask>
         </Defs>
-        <Rect x={0} y={0} width={W} height={H} fill="rgba(6, 24, 38, 0.72)" mask="url(#tour-hole)" />
+        <Rect x={0} y={0} width={W} height={H} fill={colors.tourScrim} mask="url(#tour-hole)" />
         {hole ? (
           <Rect
             x={hole.x - 2}
@@ -299,7 +306,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     padding: spacing.md + 2,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOpacity: 0.2,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 8 },
@@ -315,9 +322,9 @@ const styles = StyleSheet.create({
   },
   arrowTop: { top: -7 },
   arrowBottom: { bottom: -7 },
-  count: { fontSize: 12, fontWeight: '700', color: colors.primary, letterSpacing: 0.4, textTransform: 'uppercase' },
+  count: { fontSize: typography.small, fontWeight: '700', color: colors.primary, letterSpacing: 0.4, textTransform: 'uppercase' },
   title: { fontSize: 18, fontWeight: '800', color: colors.text, marginTop: 4, letterSpacing: -0.2 },
-  body: { fontSize: 15, lineHeight: 21, color: colors.textMuted, marginTop: 6 },
+  body: { fontSize: typography.body, lineHeight: 21, color: colors.textMuted, marginTop: 6 },
   actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.md + 2 },
   skip: { fontSize: 15, fontWeight: '600', color: colors.textMuted },
   navs: { flexDirection: 'row', gap: spacing.sm },

@@ -1,4 +1,4 @@
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,9 +6,10 @@ import { usePaginatedList } from '@/lib/usePaginatedList';
 import { formatDate } from '@/lib/format';
 import { Referral, REFERRALS_PATH, referredToText, STATUS_LABEL, statusTone, URGENCY_LABEL } from '@/lib/referrals';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
+import { Banner, ListFooter, useBottomPadding } from '@/components/ui';
 import { AppHeader } from '@/components/AppHeader';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { ErrorView, SkeletonCards } from '@/components/StateView';
 import { useT } from '@/lib/i18n';
 
 /** Referrals to a specialist or another clinic, newest first, as one ruled card. */
@@ -31,14 +32,9 @@ export default function ReferralsScreen() {
 
   let empty;
   if (list.loading) {
-    empty = <ActivityIndicator color={colors.primary} style={styles.loading} />;
+    empty = <SkeletonCards />;
   } else if (list.error) {
-    empty = (
-      <View style={styles.empty}>
-        <Text style={styles.emptyText}>{list.error}</Text>
-        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={list.reload} style={styles.stretch} />
-      </View>
-    );
+    empty = <ErrorView message={list.error} onRetry={list.reload} />;
   } else {
     empty = (
       <View style={styles.emptyCard}>
@@ -129,8 +125,6 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.md + 4, paddingBottom: spacing.xl },
   headerSpacing: { marginBottom: spacing.md },
   flex: { flex: 1 },
-  stretch: { alignSelf: 'stretch' },
-  loading: { marginVertical: spacing.xl },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2, marginBottom: spacing.sm },
 
@@ -165,7 +159,6 @@ const styles = StyleSheet.create({
   chipTextTeal: { color: colors.primaryOnSoft },
   appt: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 
-  empty: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md, gap: spacing.sm },
   emptyCard: {
     alignItems: 'center',
     gap: spacing.sm,

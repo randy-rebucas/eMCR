@@ -31,6 +31,8 @@
  *   notifications notifications.tsx, notification-settings.tsx, lib/notifications, lib/push
  *   profile       profile/*
  *   activate      activate.tsx
+ *   support       about.tsx, support.tsx, delete-account.tsx, lib/support
+ *   states        shared state views (components/StateView), not-found / unavailable / update-required screens
  */
 import activate from './strings/activate';
 import appointments from './strings/appointments';
@@ -54,6 +56,8 @@ import queue from './strings/queue';
 import referrals from './strings/referrals';
 import results from './strings/results';
 import share from './strings/share';
+import states from './strings/states';
+import support from './strings/support';
 import visits from './strings/visits';
 import vitals from './strings/vitals';
 import waitlist from './strings/waitlist';
@@ -82,6 +86,8 @@ export const catalogs = {
   referrals,
   results,
   share,
+  states,
+  support,
   visits,
   vitals,
   waitlist,

@@ -44,3 +44,5 @@ yarn-error.*
 .env
 
 ServiceAccountEMCR.json
+# Firebase config for Android push: comes from the GOOGLE_SERVICES_JSON EAS file variable.
+google-services.json

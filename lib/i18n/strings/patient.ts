@@ -33,6 +33,9 @@ export default defineStrings({
     'title.editContact': 'Edit contact details',
     'title.password': 'Password',
     'title.activate': 'Activate eMCR',
+    'title.about': 'About eMCR',
+    'title.support': 'Contact support',
+    'title.deleteAccount': 'Delete account',
 
     // lib/profile.tsx
     switchedBack: 'Switched back to you',
@@ -135,6 +138,9 @@ export default defineStrings({
     'title.editContact': 'I-edit ang contact details',
     'title.password': 'Password',
     'title.activate': 'I-activate ang eMCR',
+    'title.about': 'Tungkol sa eMCR',
+    'title.support': 'Kontakin ang support',
+    'title.deleteAccount': 'I-delete ang account',
 
     switchedBack: 'Bumalik sa records mo',
 

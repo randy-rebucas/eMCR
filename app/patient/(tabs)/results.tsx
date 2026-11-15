@@ -19,8 +19,9 @@ import { isReady, ResultSummary, summarize } from '@/lib/labResults';
 import { LabResult, PatientDocument } from '@/lib/types';
 import { formatDate, formatFileSize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, Button, IconName, ListFooter, SearchMoreHint } from '@/components/ui';
+import { Banner, IconName, ListFooter, SearchMoreHint } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { ErrorView, SkeletonCards } from '@/components/StateView';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ResultStatusPill } from '@/components/ResultStatusPill';
 import { photos, ScrimPhoto } from '@/components/Photo';
@@ -206,14 +207,9 @@ export default function ResultsScreen() {
 
   let empty;
   if (active.loading) {
-    empty = <ActivityIndicator color={colors.primary} style={styles.loading} />;
+    empty = <SkeletonCards />;
   } else if (active.error && active.items.length === 0) {
-    empty = (
-      <View style={styles.empty}>
-        <Text style={styles.emptyText}>{active.error}</Text>
-        <Button title={t('common.tryAgainTitle')} variant="secondary" onPress={active.reload} style={styles.stretch} />
-      </View>
-    );
+    empty = <ErrorView message={active.error} onRetry={active.reload} />;
   } else {
     const filtered = q || (segment === 'lab' && labFilter !== 'all');
     empty = !filtered && segment === 'lab' ? (
@@ -433,8 +429,6 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.md + 4, paddingBottom: spacing.xl },
   headerSpacing: { marginBottom: spacing.md },
   flex: { flex: 1 },
-  stretch: { alignSelf: 'stretch' },
-  loading: { marginVertical: spacing.xl },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
   segments: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },

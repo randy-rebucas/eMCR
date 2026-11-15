@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   Animated,
   FlatList,
   ImageSourcePropType,
@@ -40,7 +41,27 @@ const SLIDES: Slide[] = [
   { key: 'notify', photo: photos.waitingRoom, top: 0.25 },
 ];
 
-/** First-launch intro carousel, then on to sign-in. */
+/** The system "Reduce motion" setting, kept current while the screen is open. */
+function useReduceMotion(): boolean {
+  const [reduce, setReduce] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((on) => alive && setReduce(on))
+      .catch(() => {});
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduce);
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, []);
+  return reduce;
+}
+
+/**
+ * First-launch intro carousel, then on to sign-in. It never moves on its own; with Reduce motion
+ * on, Next jumps to the slide instead of sliding there, and the dots don't stretch.
+ */
 export default function WelcomeScreen() {
   const { signedIn } = useAuth();
   const { width, height } = useWindowDimensions();
@@ -48,6 +69,7 @@ export default function WelcomeScreen() {
   const scrollX = useRef(new Animated.Value(0)).current;
   const [index, setIndex] = useState(0);
   const [pickingLanguage, setPickingLanguage] = useState(false);
+  const reduceMotion = useReduceMotion();
   const t = useT();
   const languageSummary = useLanguageSummary();
 
@@ -62,7 +84,9 @@ export default function WelcomeScreen() {
 
   function next() {
     if (last) return finish();
-    listRef.current?.scrollToIndex({ index: index + 1, animated: true });
+    listRef.current?.scrollToIndex({ index: index + 1, animated: !reduceMotion });
+    // A jump has no momentum end to report the new slide, so set it here.
+    if (reduceMotion) setIndex(index + 1);
   }
 
   function onMomentumEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
@@ -129,6 +153,9 @@ export default function WelcomeScreen() {
       <View style={styles.footer}>
         <View style={styles.dots} accessibilityLabel={t('auth.welcome.step', { step: index + 1, total: SLIDES.length })}>
           {SLIDES.map((s, i) => {
+            if (reduceMotion) {
+              return <View key={s.key} style={[styles.dot, { width: i === index ? 22 : 8, opacity: i === index ? 1 : 0.25 }]} />;
+            }
             const range = [(i - 1) * width, i * width, (i + 1) * width];
             const w = scrollX.interpolate({ inputRange: range, outputRange: [8, 22, 8], extrapolate: 'clamp' });
             const opacity = scrollX.interpolate({ inputRange: range, outputRange: [0.25, 1, 0.25], extrapolate: 'clamp' });

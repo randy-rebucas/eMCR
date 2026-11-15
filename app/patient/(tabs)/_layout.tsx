@@ -1,13 +1,33 @@
-import { ColorValue } from 'react-native';
+import { ColorValue, StyleSheet, Text } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '@/lib/theme';
+import { colors, typography } from '@/lib/theme';
 import { useUnread } from '@/lib/unread';
 import { IconName } from '@/components/ui';
 import { TourTarget } from '@/components/QuickTour';
 import { useT } from '@/lib/i18n';
 
 type TabTourId = 'tab-appointments' | 'tab-queue' | 'tab-results' | 'tab-more';
+
+/**
+ * Tab names follow the phone's text size, capped so the fixed-height bar (49pt) still fits icon and
+ * label. React Navigation turns scaling off on iOS (relying on the long-press large-content viewer),
+ * and its options have no cap, so the label is our own Text.
+ */
+const TAB_LABEL_MAX_SCALE = 1.3;
+
+function tabLabel({ color, position, children }: { color: ColorValue; position: string; children: string }) {
+  return (
+    <Text
+      style={[styles.label, { color }, position === 'beside-icon' && styles.labelBeside]}
+      numberOfLines={1}
+      allowFontScaling
+      maxFontSizeMultiplier={TAB_LABEL_MAX_SCALE}
+    >
+      {children}
+    </Text>
+  );
+}
 
 function tabIcon(active: IconName, inactive: IconName, tourId?: TabTourId) {
   return ({ focused, color, size }: { focused: boolean; color: ColorValue; size: number }) => {
@@ -28,7 +48,7 @@ export default function PatientTabsLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarLabel: tabLabel,
       }}
     >
       <Tabs.Screen
@@ -63,3 +83,9 @@ export default function PatientTabsLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  label: { fontSize: 11, fontWeight: '600', textAlign: 'center' },
+  // Tablets and landscape put the name beside the icon, as React Navigation's own label does.
+  labelBeside: { marginStart: 5, marginEnd: 12, fontSize: typography.caption, textAlign: 'left' },
+});

@@ -296,7 +296,7 @@ function Stars({
             accessibilityLabel={t('patient.feedback.stars', { count: n })}
             style={styles.star}
           >
-            <Ionicons name={on ? 'star' : 'star-outline'} size={size} color={on ? '#E0A400' : colors.border} />
+            <Ionicons name={on ? 'star' : 'star-outline'} size={size} color={on ? colors.star : colors.border} />
           </TouchableOpacity>
         );
       })}

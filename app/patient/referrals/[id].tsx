@@ -22,6 +22,7 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, IconName, LoadingView, RefreshErrorBanner, useBottomPadding } from '@/components/ui';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorState } from '@/components/ErrorState';
+import { isUnavailable, UnavailableView } from '@/components/StateView';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { TFunction, useT } from '@/lib/i18n';
 
@@ -30,10 +31,11 @@ export default function ReferralDetailScreen() {
   const t = useT();
   const bottomPad = useBottomPadding();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, loading, refreshing, error, refresh, offline, stale, updatedAt } = useApiData<Referral>(
+  const record = useApiData<Referral>(
     id ? `${REFERRALS_PATH}/${encodeURIComponent(id)}` : null,
     { refreshOn: ['appointments'], offline: true }
   );
+  const { data, loading, refreshing, error, refresh, offline, stale, updatedAt } = record;
   const [opening, setOpening] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
 
@@ -53,8 +55,9 @@ export default function ReferralDetailScreen() {
   }
 
   if (loading) return <LoadingView />;
-  if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data) return <ErrorState message={t('referrals.notFound')} onRetry={refresh} />;
+  // Gone, or another profile's record (often a push for a deleted record): Back, not Try Again.
+  if (error && !data) return isUnavailable(record) ? <UnavailableView /> : <ErrorState message={error} onRetry={refresh} />;
+  if (!data) return <UnavailableView />;
 
   const urgency = URGENCY_LABEL[data.urgency];
   const tone = statusTone(data.status);

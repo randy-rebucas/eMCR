@@ -13,6 +13,7 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName, LoadingView, useBottomPadding } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { ErrorState } from '@/components/ErrorState';
+import { isUnavailable, UnavailableView } from '@/components/StateView';
 import { InvoiceStatusPill } from '@/components/InvoiceStatusPill';
 import { t as translate, useT } from '@/lib/i18n';
 
@@ -24,10 +25,11 @@ export default function InvoiceDetailScreen() {
   const bottomPad = useBottomPadding();
   const t = useT();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, loading, refreshing, error, refresh, offline, stale, updatedAt } = useApiData<InvoiceDetailEnvelope>(
+  const record = useApiData<InvoiceDetailEnvelope>(
     id ? `/api/patients/me/invoices/${encodeURIComponent(id)}` : null,
     { envelope: true, refreshOn: ['invoices'], offline: true }
   );
+  const { data, loading, refreshing, error, refresh, offline, stale, updatedAt } = record;
   // Fails (e.g. an older server) → treated as not offered: the front-desk note stays.
   const { data: offer } = useApiData<PayOnlineOffer>(id ? payLinkPath(id) : null, { refreshOn: ['invoices'] });
   const [paying, setPaying] = useState(false);
@@ -72,8 +74,9 @@ export default function InvoiceDetailScreen() {
   }, [id, backFromPayPage]);
 
   if (loading) return <LoadingView />;
-  if (error && !data) return <ErrorState message={error} onRetry={refresh} />;
-  if (!data?.data) return <ErrorState message={t('invoices.notFound')} onRetry={refresh} />;
+  // Gone, or another profile's record (often a push for a deleted record): Back, not Try Again.
+  if (error && !data) return isUnavailable(record) ? <UnavailableView /> : <ErrorState message={error} onRetry={refresh} />;
+  if (!data?.data) return <UnavailableView />;
 
   const invoice = data.data;
   const paid = data.summary?.paid ?? amountPaid(invoice);

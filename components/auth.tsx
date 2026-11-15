@@ -1,5 +1,6 @@
 import { ComponentRef, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   BackHandler,
   Pressable,
   ScrollView,
@@ -15,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import { ApiError } from '@/lib/api';
 import { colors, radius, spacing } from '@/lib/theme';
@@ -126,27 +128,40 @@ export function AuthBand({
   );
 }
 
-/** Text input with a leading icon, focus ring, and an eye toggle for passwords. */
+/**
+ * Text input with a leading icon, focus ring, and an eye toggle for passwords.
+ *
+ * `showLabel` puts `label` above the box, where it stays while typing; `placeholder` is then only
+ * an example (a date format, an email shape), never the label. Without it the label is the
+ * placeholder, for screens that draw their own label above the field. `errorText` is shown under
+ * the field and announced, and is read with the label when the field is focused again.
+ */
 export function IconField({
   icon,
   label,
   error,
+  errorText,
+  showLabel = false,
   secureTextEntry,
   ...rest
-}: TextInputProps & { icon: IconName; label: string; error?: boolean }) {
+}: TextInputProps & { icon: IconName; label: string; error?: boolean; errorText?: string | null; showLabel?: boolean }) {
   const t = useT();
+  const input = useRef<ComponentRef<typeof TextInput>>(null);
   const [focused, setFocused] = useState(false);
   const [hidden, setHidden] = useState(true);
   const isSecret = !!secureTextEntry;
-  return (
-    <View style={[styles.field, focused && styles.fieldFocused, error && styles.fieldError]}>
+  const invalid = !!error || !!errorText;
+  const grouped = showLabel || !!errorText;
+  const field = (
+    <View style={[styles.field, grouped && styles.fieldInGroup, focused && styles.fieldFocused, invalid && styles.fieldError]}>
       <Ionicons name={icon} size={20} color={focused ? colors.primary : colors.textMuted} />
       <TextInput
-        placeholder={label}
+        ref={input}
+        placeholder={showLabel ? undefined : label}
         {...rest}
         style={styles.fieldInput}
         placeholderTextColor={colors.textMuted}
-        accessibilityLabel={label}
+        accessibilityLabel={errorText ? `${label}, ${errorText}` : label}
         secureTextEntry={isSecret && hidden}
         onFocus={(e) => {
           setFocused(true);
@@ -169,6 +184,24 @@ export function IconField({
       ) : null}
     </View>
   );
+  if (!grouped) return field;
+  return (
+    <View style={styles.fieldGroup}>
+      {/* The input carries the label for screen readers; this one is for the eye (tap = focus). */}
+      {showLabel ? (
+        <Text
+          style={styles.fieldLabel}
+          onPress={() => input.current?.focus()}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        >
+          {label}
+        </Text>
+      ) : null}
+      {field}
+      {errorText ? <InlineError message={errorText} style={styles.fieldErrorText} /> : null}
+    </View>
+  );
 }
 
 /** A PH mobile number as the 10 digits after +63: "0917 123 4567" / "+63 917…" → "9171234567". */
@@ -184,22 +217,34 @@ export const isPhMobile = (local: string) => /^9\d{9}$/.test(local);
 
 export const toPhE164 = (local: string) => `+63${local}`;
 
-/** Mobile number field fixed to the Philippines: "+63" prefix, digits grouped as 917 123 4567. */
+/**
+ * Mobile number field fixed to the Philippines: "+63" prefix, digits grouped as 917 123 4567.
+ * `label` shows a visible label above it (leave it out where the screen already has one); the
+ * placeholder is only the example number.
+ */
 export function PhPhoneField({
   value,
   onChange,
   error,
+  label,
   ...rest
-}: Omit<TextInputProps, 'value' | 'onChange' | 'onChangeText'> & { value: string; onChange: (local: string) => void; error?: boolean }) {
+}: Omit<TextInputProps, 'value' | 'onChange' | 'onChangeText'> & {
+  value: string;
+  onChange: (local: string) => void;
+  error?: boolean;
+  label?: string;
+}) {
   const t = useT();
+  const input = useRef<ComponentRef<typeof TextInput>>(null);
   const [focused, setFocused] = useState(false);
   const grouped = [value.slice(0, 3), value.slice(3, 6), value.slice(6)].filter(Boolean).join(' ');
-  return (
-    <View style={[styles.field, focused && styles.fieldFocused, error && styles.fieldError]}>
+  const field = (
+    <View style={[styles.field, label ? styles.fieldInGroup : null, focused && styles.fieldFocused, error && styles.fieldError]}>
       <Ionicons name="call-outline" size={20} color={focused ? colors.primary : colors.textMuted} />
       <Text style={styles.phPrefix}>+63</Text>
       <View style={styles.phDivider} />
       <TextInput
+        ref={input}
         placeholder="917 123 4567"
         {...rest}
         value={grouped}
@@ -220,6 +265,20 @@ export function PhPhoneField({
           rest.onBlur?.(e);
         }}
       />
+    </View>
+  );
+  if (!label) return field;
+  return (
+    <View style={styles.fieldGroup}>
+      <Text
+        style={styles.fieldLabel}
+        onPress={() => input.current?.focus()}
+        accessibilityElementsHidden
+        importantForAccessibility="no"
+      >
+        {label}
+      </Text>
+      {field}
     </View>
   );
 }
@@ -269,11 +328,12 @@ export function OtpInput({
       <TextInput
         ref={input}
         value={value}
+        // No maxLength: it would cut a pasted "123-456" or "Your code is 123456" before the
+        // digits are picked out. The slice keeps it to `length`.
         onChangeText={(v) => onChange(v.replace(/\D/g, '').slice(0, length))}
         keyboardType="number-pad"
         autoComplete="one-time-code"
         textContentType="oneTimeCode"
-        maxLength={length}
         autoFocus={autoFocus}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
@@ -293,6 +353,47 @@ export function InlineError({ message, style }: { message: string; style?: Style
       {message}
     </Text>
   );
+}
+
+// The same pages as More > Terms of Use / Privacy Policy.
+const TERMS_URL = 'https://www.myclinicsoft.solutions/terms';
+const PRIVACY_URL = 'https://www.myclinicsoft.solutions/privacy';
+
+function openLegalPage(url: string) {
+  WebBrowser.openBrowserAsync(url, {
+    controlsColor: colors.primary,
+    toolbarColor: colors.surface,
+    dismissButtonStyle: 'done',
+  }).catch(() => Alert.alert(translate('auth.consent.openFailed'), translate('auth.consent.checkConnection')));
+}
+
+/**
+ * "By continuing, you agree to the Terms of Use and Privacy Policy", just above the button on the
+ * steps that create or request an eMCR account (health data under the Data Privacy Act). Both
+ * links open in the in-app browser, so the step underneath isn't lost.
+ */
+export function TermsConsent({ style }: { style?: StyleProp<TextStyle> }) {
+  const t = useT();
+  // split() with two groups gives [text, tag, linkText, text, tag, linkText, text].
+  const parts = t('auth.consent.line').split(/<(terms|privacy)>(.*?)<\/\1>/s);
+  const nodes: ReactNode[] = [];
+  for (let i = 0; i < parts.length; i += 3) {
+    if (parts[i]) nodes.push(parts[i]);
+    const tag = parts[i + 1];
+    if (!tag) continue;
+    nodes.push(
+      <Text
+        key={i}
+        style={styles.consentLink}
+        onPress={() => openLegalPage(tag === 'terms' ? TERMS_URL : PRIVACY_URL)}
+        accessibilityRole="link"
+        accessibilityHint={t('auth.consent.linkHint')}
+      >
+        {parts[i + 2]}
+      </Text>
+    );
+  }
+  return <Text style={[styles.consent, style]}>{nodes}</Text>;
 }
 
 /**
@@ -614,6 +715,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     marginBottom: spacing.sm + 4,
   },
+  fieldGroup: { marginBottom: spacing.sm + 4 },
+  fieldInGroup: { marginBottom: 0 },
+  fieldLabel: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: spacing.xs + 2 },
+  fieldErrorText: { fontSize: 13, color: colors.danger, marginTop: spacing.xs },
   fieldFocused: { borderColor: colors.primary, backgroundColor: colors.surface },
   fieldError: { borderColor: colors.danger },
   fieldInput: { flex: 1, fontSize: 16, color: colors.text, paddingVertical: spacing.sm + 4 },
@@ -672,6 +777,8 @@ const styles = StyleSheet.create({
     maxWidth: 300,
   },
   statusLink: { alignSelf: 'center', marginTop: spacing.lg },
+  consent: { fontSize: 13, lineHeight: 19, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.md },
+  consentLink: { color: colors.primary, fontWeight: '600', textDecorationLine: 'underline' },
   confirmPhone: { fontWeight: '700', color: colors.text },
   confirmError: { color: colors.danger, fontSize: 14, textAlign: 'center', marginTop: -spacing.sm, marginBottom: spacing.sm },
   confirmLinks: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm },

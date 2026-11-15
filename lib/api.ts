@@ -564,16 +564,25 @@ export async function apiFetch<E = unknown>(path: string, options: RequestOption
   }
 
   if (!response.ok || json?.success === false) {
-    const message =
-      typeof json?.error === 'string'
-        ? json.error
-        : response.status === 429
-          ? t('common.tooManyAttempts')
-          : t('common.requestFailed', { status: response.status });
+    const message = typeof json?.error === 'string' && json.error.trim() ? json.error : fallbackMessage(response.status);
     throw new ApiError(message, response.status, typeof json?.code === 'string' ? json.code : undefined, json);
   }
 
   return json as E;
+}
+
+/**
+ * A plain message for a failure the server didn't explain (a proxy page, an empty body). Never a
+ * bare status code: patients can't act on "Request failed (500)".
+ */
+function fallbackMessage(status: number): string {
+  if (status === 429) return t('common.tooManyAttempts');
+  if (status === 403) return t('common.error.noAccess');
+  if (status === 404 || status === 410) return t('common.error.notFound');
+  if (status === 409) return t('common.error.conflict');
+  if (status === 503) return t('common.error.maintenance');
+  if (status >= 500) return t('common.error.server');
+  return t('common.somethingWrong');
 }
 
 /** Like `apiFetch`, but unwraps `data` from the `{ success, data }` envelope. */

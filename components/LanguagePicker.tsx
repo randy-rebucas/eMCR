@@ -64,7 +64,7 @@ export function LanguagePicker({ visible, onClose }: { visible: boolean; onClose
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(6, 24, 38, 0.45)' },
+  backdrop: { flex: 1, backgroundColor: colors.sheetBackdrop },
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.lg,
