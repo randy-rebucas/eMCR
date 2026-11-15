@@ -1,5 +1,23 @@
 # eMCR release notes
 
+## 1.1.7
+
+A rebuild of 1.1.6 under a new version number: **no app changes**. Use it when 1.1.6 is already
+taken in a store (submitted or released), so a new build can go up.
+
+**Deploy steps:** the same as 1.1.6. If they were done for 1.1.6, there is nothing new to deploy.
+Otherwise, deploy the backend (clinic-management `main`), run `pnpm prod db:indexes --apply`, and
+set up the `GOOGLE_SERVICES_JSON` EAS file variable and FCM V1 credentials for Android push.
+
+### Google Play "What's new" (under 500 characters)
+
+If 1.1.6 never reached patients (for example, it was still in review), use the 1.1.6 text below,
+since this is the first release with those changes. If 1.1.6 is already live:
+
+```
+• Maintenance update
+```
+
 ## 1.1.6
 
 Store-readiness fixes from the second 2026-11-15 audit: account deletion and contact support inside
