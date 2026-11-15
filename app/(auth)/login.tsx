@@ -4,11 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Redirect, router } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { colors, radius, spacing } from '@/lib/theme';
-import { BrandLogo } from '@/components/BrandLogo';
+import { photos } from '@/components/Photo';
 import { Banner, Button, IconName } from '@/components/ui';
 import {
+  AuthBand,
   AuthFailure,
-  AuthHeader,
   AuthScreen,
   classifyAuthError,
   Divider,
@@ -34,6 +34,8 @@ import {
 } from '@/lib/emcr';
 
 type Failure = AuthFailure | { kind: 'credentials' };
+/** Which part of the screen an inline error belongs to, so it shows beside the button that failed. */
+type From = 'phone' | 'password' | 'qr';
 
 export default function LoginScreen() {
   const auth = useAuth();
@@ -50,6 +52,7 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState('');
   const [sendingCode, setSendingCode] = useState(false);
   const [lastAttempt, setLastAttempt] = useState<(() => Promise<void>) | null>(null);
+  const [from, setFrom] = useState<From>('phone');
   // Keyboard "Go" and the button can both fire before `submitting` re-renders.
   const inFlight = useRef(false);
 
@@ -61,10 +64,11 @@ export default function LoginScreen() {
     auth.clearNotice();
   }
 
-  async function run(action: () => Promise<void>, { wrongCredentialsScreen = false } = {}) {
+  async function run(action: () => Promise<void>, source: From, { wrongCredentialsScreen = false } = {}) {
     if (inFlight.current) return;
     inFlight.current = true;
     clear();
+    setFrom(source);
     setLastAttempt(() => action);
     setSubmitting(true);
     try {
@@ -81,11 +85,12 @@ export default function LoginScreen() {
   function submitPassword() {
     const id = email.trim();
     if (!id || !password) {
+      setFrom('password');
       setFailure({ kind: 'message', message: t('auth.login.missingFields'), status: 0 });
       return;
     }
     if (id.includes('@') && !isEmcrLoginId(id)) {
-      run(() => auth.loginWithPassword(id, password), { wrongCredentialsScreen: true });
+      run(() => auth.loginWithPassword(id, password), 'password', { wrongCredentialsScreen: true });
       return;
     }
     run(
@@ -96,12 +101,14 @@ export default function LoginScreen() {
         else noteAccountCredentials(result.account);
         await auth.applySession(result.session);
       },
+      'password',
       { wrongCredentialsScreen: true }
     );
   }
 
   function submitPhone() {
     if (!isPhMobile(phone)) {
+      setFrom('phone');
       setFailure({ kind: 'message', message: t('auth.enterPhMobile'), status: 0 });
       return;
     }
@@ -114,7 +121,7 @@ export default function LoginScreen() {
       } finally {
         setSendingCode(false);
       }
-    });
+    }, 'phone');
   }
 
   function handleQrScanned(data: string) {
@@ -129,6 +136,7 @@ export default function LoginScreen() {
     // Sign-in QRs are JSON. Anything else is usually the clinic's patient-lookup code.
     if (!data.trim().startsWith('{')) {
       clear();
+      setFrom('qr');
       setFailure({
         kind: 'message',
         message: t('auth.login.patientIdQr'),
@@ -136,11 +144,11 @@ export default function LoginScreen() {
       });
       return;
     }
-    run(() => auth.loginWithQr(data));
+    run(() => auth.loginWithQr(data), 'qr');
   }
 
   function retry() {
-    if (lastAttempt) run(lastAttempt);
+    if (lastAttempt) run(lastAttempt, from);
     else clear();
   }
 
@@ -166,16 +174,15 @@ export default function LoginScreen() {
   }
 
   const inlineError = failure?.kind === 'message' ? failure.message : null;
+  // Shown beside the part that failed: the band pushes the top of the screen out of view.
+  const errorFor = (part: From) => (inlineError && from === part ? <Banner message={inlineError} /> : null);
 
   return (
     <AuthScreen>
-      <View style={styles.logo}>
-        <BrandLogo />
-      </View>
-      <AuthHeader title={t('auth.login.title')} subtitle={t('auth.login.subtitle')} align="center" />
+      <AuthBand source={photos.patientPhone} scrimTop={0.6} title={t('auth.login.title')} lead={t('auth.login.subtitle')} />
 
+      {/* Why the last session ended (expired, signed out elsewhere): context, so it stays on top. */}
       {auth.notice ? <Banner message={auth.notice} tone="warning" /> : null}
-      {inlineError ? <Banner message={inlineError} /> : null}
 
       <View style={styles.primary}>
         <Text style={styles.primaryLabel}>{t('auth.login.withPhone')}</Text>
@@ -188,6 +195,7 @@ export default function LoginScreen() {
           returnKeyType="send"
           onSubmitEditing={submitPhone}
         />
+        {errorFor('phone')}
         <Button
           title={t('auth.sendCode')}
           icon="chatbubble-ellipses-outline"
@@ -221,6 +229,7 @@ export default function LoginScreen() {
           }}
         />
       </View>
+      {errorFor('qr')}
 
       {showPassword ? (
         <View style={styles.passwordForm}>
@@ -252,6 +261,7 @@ export default function LoginScreen() {
             onPress={() => router.push('/phone?purpose=forgot')}
             style={styles.forgot}
           />
+          {errorFor('password')}
           <Button title={t('auth.login.signIn')} onPress={submitPassword} loading={submitting && !scanning && !sendingCode} />
         </View>
       ) : null}
@@ -309,11 +319,10 @@ function MethodTile({
 }
 
 const styles = StyleSheet.create({
-  logo: { marginTop: spacing.lg, marginBottom: spacing.xl },
   primary: { marginBottom: spacing.sm },
   primaryLabel: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: spacing.sm },
   primaryHint: { fontSize: 13, color: colors.textMuted, textAlign: 'center', marginTop: spacing.sm },
-  grid: { flexDirection: 'row', gap: spacing.sm },
+  grid: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   tile: {
     flex: 1,
     alignItems: 'center',

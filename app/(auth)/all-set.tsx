@@ -8,17 +8,18 @@ import { StatusScreen, useBlockHardwareBack } from '@/components/auth';
 import { useT } from '@/lib/i18n';
 
 // Confetti pieces around the check: [x, y, color, kind].
+// Brand teal, slate and the light amber: no colours outside lib/theme.ts.
 const CONFETTI: [number, number, string, 'dot' | 'dash'][] = [
   [30, 50, colors.accent, 'dot'],
-  [52, 20, '#F59E0B', 'dash'],
+  [52, 20, colors.warningLine, 'dash'],
   [100, 8, colors.primary, 'dot'],
-  [150, 18, '#3B82F6', 'dash'],
-  [178, 52, '#F43F5E', 'dot'],
-  [190, 110, colors.accent, 'dash'],
-  [172, 160, '#F59E0B', 'dot'],
-  [24, 112, '#3B82F6', 'dot'],
-  [40, 162, '#F43F5E', 'dash'],
-  [110, 192, colors.accent, 'dot'],
+  [150, 18, colors.slate, 'dash'],
+  [178, 52, colors.accent, 'dot'],
+  [190, 110, colors.warningLine, 'dash'],
+  [172, 160, colors.slate, 'dot'],
+  [24, 112, colors.primary, 'dot'],
+  [40, 162, colors.accent, 'dash'],
+  [110, 192, colors.warningLine, 'dot'],
 ];
 
 /** Shown once activation has saved the patient's email + password. */

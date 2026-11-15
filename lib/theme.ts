@@ -24,6 +24,18 @@ export const colors = {
   warningSoft: '#FFF4DC',
   slateSoft: '#EAF0F5',
   slate: '#4A6684',
+  /** The scrim under Home's photos (the same ink as `text`): white text on it is 16:1. */
+  navy: '#0B2136',
+  /** Secondary text on navy or on a photo's navy foot: 9.6:1. */
+  onNavyMuted: '#A9BCCF',
+  /** Hairlines and outline buttons on navy (the next-appointment card). */
+  navyLine: '#24405C',
+  /** Dimmed page behind a centred sheet (the check-in QR): navy at 55%. */
+  backdrop: 'rgba(11,33,54,0.55)',
+  /** Outline of the eMCR renewal card, a step darker than `warningSoft`. */
+  warningLine: '#F1D9A6',
+  /** Fill of the eMCR renewal card: lighter than `warningSoft`, so its tile still shows. */
+  warningTint: '#FFFBF2',
 };
 
 export const spacing = {

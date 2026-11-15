@@ -1,5 +1,6 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Platform,
   RefreshControl,
@@ -29,17 +30,8 @@ import {
   ShareLinkList,
   STATUS_LABEL,
 } from '@/lib/shareLinks';
-import {
-  Badge,
-  Banner,
-  Button,
-  IconName,
-  KeyboardAvoider,
-  LoadingView,
-  RefreshErrorBanner,
-  useBottomPadding,
-} from '@/components/ui';
-import { AppHeader, softShadow } from '@/components/AppHeader';
+import { Banner, Button, KeyboardAvoider, LoadingView, RefreshErrorBanner, useBottomPadding } from '@/components/ui';
+import { AppHeader } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
 import { possessiveName, useT } from '@/lib/i18n';
 
@@ -71,8 +63,10 @@ export default function ShareScreen() {
 
   const other = viewing && !viewing.self ? viewing.firstName : null;
   const links = data?.links ?? [];
-  const activeCount = links.filter((l) => l.status === 'active').length;
-  const atLimit = data ? activeCount >= data.maxActive : false;
+  // Open links first (the ones that can still be opened), then the ones that ended.
+  const active = links.filter((l) => l.status === 'active');
+  const ended = links.filter((l) => l.status !== 'active');
+  const atLimit = data ? active.length >= data.maxActive : false;
 
   async function share(url: string, link: ShareLink) {
     const until = t('share.opensUntil', { date: formatDateTime(link.expiresAt) });
@@ -99,9 +93,7 @@ export default function ShareScreen() {
       await share(result.url, result.link);
     } catch (err) {
       setCreateError(
-        err instanceof ApiError && err.code === 'SHARE_LINK_LIMIT'
-          ? err.message
-          : errorMessage(err, t('share.createFailed'))
+        err instanceof ApiError && err.code === 'SHARE_LINK_LIMIT' ? err.message : errorMessage(err, t('share.createFailed'))
       );
     } finally {
       setCreating(false);
@@ -109,29 +101,25 @@ export default function ShareScreen() {
   }
 
   function confirmRevoke(link: ShareLink) {
-    Alert.alert(
-      t('share.revokeTitle'),
-      link.label ? t('share.revokeNamed', { label: link.label }) : t('share.revokeAnyone'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('share.revoke'),
-          style: 'destructive',
-          onPress: async () => {
-            setRevoking(link.id);
-            try {
-              const { link: updated } = await revokeShareLink(link.id);
-              setData((prev) => (prev ? { ...prev, links: prev.links.map((l) => (l.id === updated.id ? updated : l)) } : prev));
-              setFresh((f) => (f?.link.id === updated.id ? null : f));
-            } catch (err) {
-              Alert.alert(t('share.revokeFailed'), errorMessage(err, t('share.revokeFailedFallback')));
-            } finally {
-              setRevoking(null);
-            }
-          },
+    Alert.alert(t('share.revokeTitle'), link.label ? t('share.revokeNamed', { label: link.label }) : t('share.revokeAnyone'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('share.revoke'),
+        style: 'destructive',
+        onPress: async () => {
+          setRevoking(link.id);
+          try {
+            const { link: updated } = await revokeShareLink(link.id);
+            setData((prev) => (prev ? { ...prev, links: prev.links.map((l) => (l.id === updated.id ? updated : l)) } : prev));
+            setFresh((f) => (f?.link.id === updated.id ? null : f));
+          } catch (err) {
+            Alert.alert(t('share.revokeFailed'), errorMessage(err, t('share.revokeFailedFallback')));
+          } finally {
+            setRevoking(null);
+          }
         },
-      ]
-    );
+      },
+    ]);
   }
 
   const header = (
@@ -166,16 +154,31 @@ export default function ShareScreen() {
       >
         {header}
 
-        <View style={styles.explain}>
-          <Info icon="document-text-outline">
+        {/* What the doctor gets, who else could open it, and what's open now. */}
+        <View style={styles.hero}>
+          <View style={styles.heroTop}>
+            <Ionicons name="document-text-outline" size={22} color={colors.primaryText} />
+            <Text style={styles.heroTitle}>{t('share.heroTitle')}</Text>
+          </View>
+          <Text style={styles.heroText}>
             {other ? t('share.infoPdfOther', { whose: possessiveName(other) }) : t('share.infoPdfSelf')}
-          </Info>
-          <Info icon="people-outline" warn>
-            {t('share.infoAnyone')}
-          </Info>
-          <Info icon="eye-outline">{t('share.infoTracked')}</Info>
+          </Text>
+          <View style={styles.heroWarn}>
+            <Ionicons name="alert-circle" size={16} color={colors.warning} />
+            <Text style={styles.heroWarnText}>{t('share.infoAnyone')}</Text>
+          </View>
+          {data ? (
+            <Text style={styles.heroFoot}>
+              {active.length
+                ? t('share.openNow', { count: active.length, max: data.maxActive })
+                : t('share.noneOpen')}
+            </Text>
+          ) : null}
         </View>
 
+        <Text style={styles.sectionTitle} accessibilityRole="header">
+          {t('share.newLink')}
+        </Text>
         <View style={styles.card}>
           <Text style={styles.label}>{t('share.howLong')}</Text>
           <View style={styles.chips} accessibilityRole="radiogroup">
@@ -195,7 +198,7 @@ export default function ShareScreen() {
             })}
           </View>
 
-          <Text style={[styles.label, { marginTop: spacing.md }]}>{t('share.whoFor')}</Text>
+          <Text style={[styles.label, styles.labelSpaced]}>{t('share.whoFor')}</Text>
           <TextInput
             style={styles.input}
             value={label}
@@ -209,47 +212,69 @@ export default function ShareScreen() {
           />
           <Text style={styles.hint}>{t('share.whoForHint')}</Text>
 
-          {createError ? <Banner message={createError} /> : null}
-          <Button
-            title={t('share.create')}
-            icon="share-outline"
-            onPress={create}
-            loading={creating}
-            disabled={atLimit}
-            style={{ marginTop: spacing.md }}
-          />
-          {atLimit ? (
-            <Text style={styles.hint}>{t('share.atLimit', { count: activeCount })}</Text>
+          {createError ? (
+            <View style={styles.spaced}>
+              <Banner message={createError} />
+            </View>
+          ) : null}
+          <Button title={t('share.create')} icon="share-outline" onPress={create} loading={creating} disabled={atLimit} style={styles.spaced} />
+          {atLimit ? <Text style={styles.hintWarn}>{t('share.atLimit', { count: active.length })}</Text> : null}
+
+          {fresh && fresh.link.status === 'active' ? (
+            <View style={styles.fresh}>
+              <Text style={styles.freshText}>{t('share.created')}</Text>
+              <Button title={t('share.shareAgain')} variant="secondary" icon="share-outline" onPress={() => share(fresh.url, fresh.link)} />
+            </View>
           ) : null}
         </View>
 
-        {fresh && fresh.link.status === 'active' ? (
-          <View style={styles.fresh}>
-            <Text style={styles.freshText}>{t('share.created')}</Text>
-            <Button title={t('share.shareAgain')} variant="secondary" icon="share-outline" onPress={() => share(fresh.url, fresh.link)} />
-          </View>
-        ) : null}
-
-        <Text style={styles.sectionTitle} accessibilityRole="header">
-          {t('share.sharedLinks')}
-        </Text>
         <RefreshErrorBanner error={error} show={!!data} />
         {error && !data ? (
           <ErrorState message={error} onRetry={refresh} />
-        ) : links.length ? (
-          <View style={[styles.card, styles.list]}>
-            {links.map((link, i) => (
-              <LinkRow
-                key={link.id}
-                link={link}
-                last={i === links.length - 1}
-                revoking={revoking === link.id}
-                onRevoke={() => confirmRevoke(link)}
-              />
-            ))}
-          </View>
+        ) : !links.length ? (
+          <>
+            <Text style={styles.sectionTitle} accessibilityRole="header">
+              {t('share.sharedLinks')}
+            </Text>
+            <Text style={styles.empty}>{t('share.empty')}</Text>
+          </>
         ) : (
-          <Text style={styles.empty}>{t('share.empty')}</Text>
+          <>
+            {active.length ? (
+              <>
+                <Text style={styles.sectionTitle} accessibilityRole="header">
+                  {t('share.openLinks')}
+                </Text>
+                <View style={[styles.card, styles.list]}>
+                  {active.map((link, i) => (
+                    <LinkRow
+                      key={link.id}
+                      link={link}
+                      last={i === active.length - 1}
+                      revoking={revoking === link.id}
+                      onRevoke={() => confirmRevoke(link)}
+                    />
+                  ))}
+                </View>
+              </>
+            ) : null}
+            {ended.length ? (
+              <>
+                <Text style={styles.sectionTitle} accessibilityRole="header">
+                  {t('share.endedLinks')}
+                </Text>
+                <View style={[styles.card, styles.list]}>
+                  {ended.map((link, i) => (
+                    <LinkRow key={link.id} link={link} last={i === ended.length - 1} revoking={false} onRevoke={() => {}} />
+                  ))}
+                </View>
+              </>
+            ) : null}
+            <View style={styles.trackRow}>
+              <Ionicons name="eye-outline" size={16} color={colors.textMuted} />
+              <Text style={styles.trackText}>{t('share.infoTracked')}</Text>
+            </View>
+          </>
         )}
       </ScrollView>
     </KeyboardAvoider>
@@ -258,7 +283,8 @@ export default function ShareScreen() {
 
 function LinkRow({ link, last, revoking, onRevoke }: { link: ShareLink; last: boolean; revoking: boolean; onRevoke: () => void }) {
   const t = useT();
-  const ended =
+  const isActive = link.status === 'active';
+  const when =
     link.status === 'revoked'
       ? t('share.revokedAt', { date: formatDateTime(link.revokedAt) })
       : link.status === 'expired'
@@ -271,49 +297,88 @@ function LinkRow({ link, last, revoking, onRevoke }: { link: ShareLink; last: bo
   return (
     <View style={[styles.row, !last && styles.divider]}>
       <View style={styles.rowTop}>
-        <Text style={[styles.rowTitle, link.status !== 'active' && styles.muted]} numberOfLines={2}>
+        <Ionicons
+          name={isActive ? 'link-outline' : link.status === 'revoked' ? 'close-circle-outline' : 'time-outline'}
+          size={20}
+          color={isActive ? colors.primary : colors.textMuted}
+        />
+        <Text style={[styles.rowTitle, !isActive && styles.muted]} numberOfLines={2}>
           {link.label || t('share.noName')}
         </Text>
-        <Badge label={STATUS_LABEL[link.status]} tone={link.status === 'active' ? 'primary' : link.status === 'revoked' ? 'danger' : 'neutral'} />
+        {/* Revoked is the patient's own choice, not an error: no red. */}
+        {!isActive ? <Text style={styles.status}>{STATUS_LABEL[link.status]}</Text> : null}
       </View>
-      <Text style={styles.rowLine}>
-        {t(link.sharedByFamily ? 'share.createdByFamily' : 'share.createdAt', { date: formatDateTime(link.createdAt) })}
-      </Text>
-      <Text style={styles.rowLine}>{ended}</Text>
-      <Text style={styles.rowLine}>{opened}</Text>
-      {link.status === 'active' ? (
-        <Button title={t('share.revoke')} variant="dangerOutline" icon="close-circle-outline" onPress={onRevoke} loading={revoking} style={styles.revoke} />
-      ) : null}
+      <View style={styles.rowBody}>
+        <Text style={[styles.rowLine, isActive && styles.rowLineStrong]}>{when}</Text>
+        <Text style={styles.rowLine}>{opened}</Text>
+        <Text style={styles.rowLine}>
+          {t(link.sharedByFamily ? 'share.createdByFamily' : 'share.createdAt', { date: formatDateTime(link.createdAt) })}
+        </Text>
+        {isActive ? (
+          <TouchableOpacity
+            style={styles.revoke}
+            onPress={onRevoke}
+            disabled={revoking}
+            accessibilityRole="button"
+            accessibilityLabel={link.label ? t('share.revokeA11y', { label: link.label }) : t('share.revoke')}
+            accessibilityState={{ busy: revoking }}
+          >
+            {revoking ? (
+              <ActivityIndicator size="small" color={colors.danger} />
+            ) : (
+              <>
+                <Ionicons name="close-circle-outline" size={18} color={colors.danger} />
+                <Text style={styles.revokeText}>{t('share.revoke')}</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : null}
+      </View>
     </View>
   );
 }
 
-function Info({ icon, warn, children }: { icon: IconName; warn?: boolean; children: ReactNode }) {
-  return (
-    <View style={styles.infoRow}>
-      <Ionicons name={icon} size={18} color={warn ? colors.warning : colors.slate} />
-      <Text style={[styles.infoText, warn && { color: colors.warning }]}>{children}</Text>
-    </View>
-  );
-}
+const ICON_GAP = 20 + spacing.sm + 2;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.md + 4 },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2, marginBottom: spacing.lg },
-  explain: { backgroundColor: colors.slateSoft, borderRadius: radius.md, padding: spacing.sm + 4, gap: spacing.sm, marginBottom: spacing.md },
-  infoRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
-  infoText: { flex: 1, fontSize: 13, lineHeight: 18, color: colors.slate },
+  sectionTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
+
+  hero: { backgroundColor: colors.navy, borderRadius: radius.lg, padding: spacing.md + 4, gap: spacing.sm + 2 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  heroTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: colors.primaryText },
+  heroText: { fontSize: 14, lineHeight: 20, color: colors.onNavyMuted },
+  heroWarn: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: colors.warningSoft,
+    borderRadius: radius.md,
+    padding: spacing.sm + 2,
+  },
+  heroWarnText: { flex: 1, fontSize: 13, lineHeight: 18, color: colors.warning, fontWeight: '600' },
+  heroFoot: {
+    fontSize: 14,
+    color: colors.primaryText,
+    paddingTop: spacing.sm + 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.navyLine,
+    fontVariant: ['tabular-nums'],
+  },
+
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
+    borderColor: colors.border,
     padding: spacing.md,
-    ...softShadow,
   },
+  list: { paddingVertical: 0 },
   label: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: spacing.sm },
+  labelSpaced: { marginTop: spacing.md },
   chips: { flexDirection: 'row', gap: spacing.sm },
   chip: {
     flex: 1,
@@ -335,11 +400,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingHorizontal: spacing.sm + 4,
     paddingVertical: spacing.sm + 2,
+    minHeight: 48,
     fontSize: 16,
     color: colors.text,
     backgroundColor: colors.surface,
   },
   hint: { fontSize: 12, color: colors.textMuted, marginTop: spacing.xs },
+  hintWarn: { fontSize: 13, color: colors.warning, marginTop: spacing.sm, fontWeight: '600' },
+  spaced: { marginTop: spacing.md },
   fresh: {
     backgroundColor: colors.primarySoft,
     borderRadius: radius.md,
@@ -348,14 +416,19 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   freshText: { fontSize: 13, lineHeight: 18, color: colors.primaryOnSoft },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
+
   row: { paddingVertical: spacing.sm + 4 },
   divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  rowTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 2 },
+  rowTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 2 },
   rowTitle: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.text },
-  rowLine: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  rowBody: { marginLeft: ICON_GAP },
+  rowLine: { fontSize: 13, color: colors.textMuted, marginTop: 2, fontVariant: ['tabular-nums'] },
+  rowLineStrong: { color: colors.text },
+  status: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
   muted: { color: colors.textMuted },
-  list: { paddingVertical: 0 },
-  revoke: { marginTop: spacing.sm },
-  empty: { fontSize: 14, color: colors.textMuted, paddingVertical: spacing.md },
+  revoke: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', minHeight: 44 },
+  revokeText: { fontSize: 14, fontWeight: '600', color: colors.danger },
+  trackRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm, paddingHorizontal: spacing.xs },
+  trackText: { flex: 1, fontSize: 12, lineHeight: 17, color: colors.textMuted },
+  empty: { fontSize: 14, color: colors.textMuted },
 });

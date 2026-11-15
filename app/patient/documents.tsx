@@ -19,7 +19,8 @@ import { PatientDocument } from '@/lib/types';
 import { formatDate, formatFileSize, humanize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName, ListFooter, SearchMoreHint, useBottomPadding } from '@/components/ui';
-import { AppHeader, softShadow } from '@/components/AppHeader';
+import { AppHeader } from '@/components/AppHeader';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { PlainKey, t as translate, useT } from '@/lib/i18n';
 
 type Category = 'all' | 'laboratory_result' | 'medical_certificate' | 'referral' | 'imaging' | 'prescription' | 'other';
@@ -34,28 +35,33 @@ const CATEGORIES: { value: Category; label: PlainKey; icon: IconName }[] = [
   { value: 'other', label: 'documents.tab.other', icon: 'ellipsis-horizontal' },
 ];
 
-/** `label` is a getter so it reads in the current language. */
-function look(label: PlainKey, bg: string, fg: string): { readonly label: string; bg: string; fg: string } {
-  return {
-    get label() {
-      return translate(label);
-    },
-    bg,
-    fg,
-  };
-}
-
-const CATEGORY_LOOK: Record<string, { readonly label: string; bg: string; fg: string }> = {
-  laboratory_result: look('documents.cat.laboratory_result', '#E3F5EC', '#1F7A4A'),
-  medical_certificate: look('documents.cat.medical_certificate', '#E3F6F5', '#0A7F7E'),
-  referral: look('documents.cat.referral', '#FDF1DC', '#A15C00'),
-  imaging: look('documents.cat.imaging', '#EEEAFB', '#5B47B0'),
-  prescription: look('documents.cat.prescription', '#E6EEFB', '#2F5FB3'),
-  invoice: look('documents.cat.invoice', '#E6EEFB', '#2F5FB3'),
-  insurance: look('documents.cat.insurance', '#E3F6F5', '#0A7F7E'),
-  id: look('documents.cat.id', colors.slateSoft, colors.slate),
-  other: look('documents.cat.other', colors.slateSoft, colors.slate),
+const CATEGORY_LABEL: Record<string, PlainKey> = {
+  laboratory_result: 'documents.cat.laboratory_result',
+  medical_certificate: 'documents.cat.medical_certificate',
+  referral: 'documents.cat.referral',
+  imaging: 'documents.cat.imaging',
+  prescription: 'documents.cat.prescription',
+  invoice: 'documents.cat.invoice',
+  insurance: 'documents.cat.insurance',
+  id: 'documents.cat.id',
+  other: 'documents.cat.other',
 };
+
+const CATEGORY_ICON: Record<string, IconName> = {
+  laboratory_result: 'flask-outline',
+  medical_certificate: 'ribbon-outline',
+  referral: 'arrow-redo-outline',
+  imaging: 'image-outline',
+  prescription: 'medical-outline',
+  invoice: 'receipt-outline',
+  insurance: 'shield-checkmark-outline',
+  id: 'card-outline',
+};
+
+function categoryLabel(category: string | undefined): string {
+  const key = CATEGORY_LABEL[category ?? ''];
+  return key ? translate(key) : category ? humanize(category) : translate('documents.document');
+}
 
 function fileIcon(type: PatientDocument['documentType']): IconName {
   if (type === 'image') return 'image-outline';
@@ -79,10 +85,13 @@ export default function DocumentsScreen() {
   const [search, setSearch] = useState('');
   const list = usePaginatedList<PatientDocument, { pagination?: Pagination }>(
     `/api/patients/me/documents${category === 'all' ? '' : `?category=${category}`}`,
-    { limit: 20, refreshOn: ['documents'] }
+    { limit: 20, refreshOn: ['documents'], offline: true }
   );
   const [openingId, setOpeningId] = useState<string | null>(null);
-  const [openError, setOpenError] = useState<string | null>(null);
+  // Shown on the row that failed, not at the top of the list where it may be off screen.
+  const [openError, setOpenError] = useState<{ id: string; message: string } | null>(null);
+  // Files download from the server: a saved list can be read, not opened.
+  const needsServer = list.offline || list.stale;
 
   const total = list.extra?.pagination?.total;
   const q = search.trim().toLowerCase();
@@ -90,7 +99,7 @@ export default function DocumentsScreen() {
     () =>
       q
         ? list.items.filter((d) =>
-            [d.title, d.description, d.filename, formatDate(d.uploadDate), CATEGORY_LOOK[d.category ?? '']?.label]
+            [d.title, d.description, d.filename, formatDate(d.uploadDate), categoryLabel(d.category)]
               .join(' ')
               .toLowerCase()
               .includes(q)
@@ -106,7 +115,7 @@ export default function DocumentsScreen() {
     try {
       await openDocument(doc);
     } catch (err) {
-      setOpenError(errorMessage(err, t('documents.openFailed')));
+      setOpenError({ id: doc._id, message: errorMessage(err, t('documents.openFailed')) });
     } finally {
       setOpeningId(null);
     }
@@ -120,21 +129,27 @@ export default function DocumentsScreen() {
       </Text>
       <Text style={styles.subtitle}>{t('documents.subtitle')}</Text>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categories}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.chipRow}
+        contentContainerStyle={styles.chips}
+        accessibilityRole="tablist"
+      >
         {CATEGORIES.map((c) => {
           const selected = c.value === category;
           return (
             <TouchableOpacity
               key={c.value}
-              style={[styles.category, selected && styles.categorySelected]}
+              style={[styles.chip, selected && styles.chipSelected]}
               onPress={() => setCategory(c.value)}
               accessibilityRole="tab"
               accessibilityState={{ selected }}
             >
-              <Ionicons name={c.icon} size={20} color={selected ? colors.primaryText : colors.primary} />
-              <Text style={[styles.categoryText, selected && styles.categoryTextSelected]}>
+              <Ionicons name={c.icon} size={16} color={selected ? colors.primaryText : colors.primary} />
+              <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
                 {t(c.label)}
-                {selected && total !== undefined && !list.loading ? ` (${total})` : ''}
+                {selected && total !== undefined && !list.loading ? ` · ${total}` : ''}
               </Text>
             </TouchableOpacity>
           );
@@ -160,8 +175,14 @@ export default function DocumentsScreen() {
         ) : null}
       </View>
 
-      {openError ? <Banner message={openError} /> : null}
-      {list.error && list.items.length > 0 ? <Banner message={list.error} /> : null}
+      {list.offline ? (
+        <View style={styles.banner}>
+          <OfflineBanner offline={list.offline} updatedAt={list.updatedAt} subject={t('documents.offlineSubject')} />
+          <Text style={styles.offlineNote}>{t('documents.openNeedsConnection')}</Text>
+        </View>
+      ) : list.error && list.items.length > 0 ? (
+        <Banner message={list.error} />
+      ) : null}
     </SafeAreaView>
   );
 
@@ -194,7 +215,17 @@ export default function DocumentsScreen() {
       style={styles.root}
       data={items}
       keyExtractor={(item) => item._id}
-      renderItem={({ item }) => <DocumentRow doc={item} opening={openingId === item._id} onPress={() => open(item)} />}
+      renderItem={({ item, index }) => (
+        <DocumentRow
+          doc={item}
+          opening={openingId === item._id}
+          error={openError?.id === item._id ? openError.message : null}
+          disabled={needsServer}
+          first={index === 0}
+          last={index === items.length - 1}
+          onPress={() => open(item)}
+        />
+      )}
       ListHeaderComponent={header}
       ListHeaderComponentStyle={styles.headerSpacing}
       ListEmptyComponent={empty}
@@ -218,53 +249,62 @@ export default function DocumentsScreen() {
   );
 }
 
-function DocumentRow({ doc, opening, onPress }: { doc: PatientDocument; opening: boolean; onPress: () => void }) {
+/** One file as a row of the list's ruled card: title, then kind · type · size · date. */
+function DocumentRow({
+  doc,
+  opening,
+  error,
+  disabled,
+  first,
+  last,
+  onPress,
+}: {
+  doc: PatientDocument;
+  opening: boolean;
+  error: string | null;
+  disabled: boolean;
+  first: boolean;
+  last: boolean;
+  onPress: () => void;
+}) {
   const t = useT();
-  const look = CATEGORY_LOOK[doc.category ?? ''] ?? {
-    label: doc.category ? humanize(doc.category) : t('documents.document'),
-    bg: colors.slateSoft,
-    fg: colors.slate,
-  };
-  const kind = fileKind(doc);
-  const fileMeta = [kind, formatFileSize(doc.size)].filter(Boolean).join(' • ');
+  const label = categoryLabel(doc.category);
+  const meta = [label, fileKind(doc), formatFileSize(doc.size), formatDate(doc.uploadDate)].filter(Boolean).join(' · ');
   return (
     <TouchableOpacity
-      style={styles.row}
+      style={[styles.row, first && styles.rowFirst, last && styles.rowLast, !first && styles.rowDivider]}
       onPress={onPress}
-      disabled={opening}
+      disabled={opening || disabled}
       accessibilityRole="button"
-      accessibilityLabel={t('documents.openA11y', { title: doc.title, category: look.label })}
+      accessibilityState={{ disabled: disabled || opening, busy: opening }}
+      accessibilityLabel={t('documents.openA11y', { title: doc.title, category: label })}
     >
-      <View style={[styles.tile, { backgroundColor: look.bg }]}>
-        <Ionicons name={fileIcon(doc.documentType)} size={26} color={look.fg} />
-        {doc.documentType === 'pdf' ? (
-          <View style={[styles.pdfTag, { backgroundColor: look.fg }]}>
-            <Text style={styles.pdfTagText}>PDF</Text>
-          </View>
-        ) : null}
-      </View>
-      <View style={styles.flex}>
-        <Text style={styles.rowTitle} numberOfLines={2}>
-          {doc.title}
-        </Text>
-        <Text style={styles.rowMeta}>{formatDate(doc.uploadDate)}</Text>
-        {doc.description ? (
-          <Text style={styles.rowMeta} numberOfLines={1}>
-            {doc.description}
-          </Text>
-        ) : null}
-      </View>
-      <View style={styles.right}>
-        <View style={[styles.pill, { backgroundColor: look.bg }]}>
-          <Text style={[styles.pillText, { color: look.fg }]}>{look.label}</Text>
+      <View style={styles.rowMain}>
+        <View style={styles.tile}>
+          <Ionicons name={CATEGORY_ICON[doc.category ?? ''] ?? fileIcon(doc.documentType)} size={22} color={colors.primaryOnSoft} />
         </View>
-        {fileMeta ? <Text style={styles.fileMeta}>{fileMeta}</Text> : null}
+        <View style={styles.flex}>
+          <Text style={styles.rowTitle} numberOfLines={2}>
+            {doc.title}
+          </Text>
+          <Text style={styles.rowMeta}>{meta}</Text>
+          {doc.description ? (
+            <Text style={styles.rowMeta} numberOfLines={2}>
+              {doc.description}
+            </Text>
+          ) : null}
+        </View>
+        {opening ? (
+          <ActivityIndicator color={colors.primary} />
+        ) : (
+          <Ionicons name="open-outline" size={18} color={disabled ? colors.border : colors.textMuted} />
+        )}
       </View>
-      {opening ? (
-        <ActivityIndicator color={colors.primary} />
-      ) : (
-        <Ionicons name="open-outline" size={18} color={colors.textMuted} />
-      )}
+      {error ? (
+        <Text style={styles.rowError} accessibilityRole="alert">
+          {error}
+        </Text>
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -278,20 +318,22 @@ const styles = StyleSheet.create({
   loading: { marginVertical: spacing.xl },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
-  categories: { gap: spacing.sm, paddingTop: spacing.lg, paddingRight: spacing.md },
-  category: {
-    minWidth: 76,
+  chipRow: { marginTop: spacing.lg, marginHorizontal: -(spacing.md + 4) },
+  chips: { gap: spacing.sm, paddingHorizontal: spacing.md + 4 },
+  chip: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    borderRadius: radius.md,
-    backgroundColor: '#E4EEF0',
-    paddingHorizontal: spacing.sm + 4,
-    paddingVertical: spacing.sm + 2,
+    gap: 6,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  categorySelected: { backgroundColor: colors.primary },
-  categoryText: { fontSize: 12, fontWeight: '600', color: colors.text },
-  categoryTextSelected: { color: colors.primaryText },
+  chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 14, fontWeight: '600', color: colors.text, fontVariant: ['tabular-nums'] },
+  chipTextSelected: { color: colors.primaryText },
   search: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -305,27 +347,27 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   searchInput: { flex: 1, fontSize: 15, color: colors.text, paddingVertical: spacing.sm },
+  banner: { marginTop: spacing.md, gap: spacing.xs },
+  offlineNote: { fontSize: 13, color: colors.textMuted },
+  // Rows draw one ruled card: outer border on every row, corners on the ends.
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm + 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 4,
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: '#EAF0F2',
-    padding: spacing.sm + 6,
-    marginBottom: spacing.sm + 2,
-    ...softShadow,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 1,
+    minHeight: 64,
   },
-  tile: { width: 54, height: 54, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-  pdfTag: { position: 'absolute', bottom: 6, right: 4, borderRadius: 4, paddingHorizontal: 3, paddingVertical: 1 },
-  pdfTagText: { fontSize: 8, fontWeight: '800', color: '#FFFFFF' },
+  rowFirst: { borderTopWidth: 1, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
+  rowLast: { borderBottomWidth: 1, borderBottomLeftRadius: radius.lg, borderBottomRightRadius: radius.lg },
+  rowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  rowMain: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4 },
+  tile: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   rowTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
-  rowMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  right: { alignItems: 'flex-end', gap: spacing.sm, maxWidth: 110 },
-  pill: { borderRadius: 999, paddingHorizontal: spacing.sm + 2, paddingVertical: 4 },
-  pillText: { fontSize: 11, fontWeight: '700' },
-  fileMeta: { fontSize: 12, color: colors.textMuted },
+  rowMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2, fontVariant: ['tabular-nums'] },
+  rowError: { fontSize: 13, color: colors.danger, marginTop: spacing.sm },
   empty: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md },
   emptyIcon: {
     width: 72,

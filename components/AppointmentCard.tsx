@@ -3,31 +3,42 @@ import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } fr
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Appointment } from '@/lib/types';
-import { cancelAppointment, canCancel } from '@/lib/appointments';
+import { cancelAppointment, canCancel, daysUntil, isOverdue } from '@/lib/appointments';
 import { errorMessage } from '@/lib/api';
 import { doctorName, formatDate, formatTime } from '@/lib/format';
 import { isVideoVisit, openVideoCall, useJoinUrl } from '@/lib/teleconsult';
 import { colors, radius, spacing } from '@/lib/theme';
-import { IconName } from './ui';
-import { StatusBadge } from './StatusBadge';
+import { Badge, IconName } from './ui';
+import { StatusBadge, statusLabel } from './StatusBadge';
 import { softShadow } from './AppHeader';
-import { useT } from '@/lib/i18n';
+import { TFunction, useT } from '@/lib/i18n';
+
+/** "In 5 days", "Tomorrow", "Today" for the next-appointment card. */
+export function countdown(t: TFunction, days: number): string | null {
+  if (!isFinite(days) || days < 0) return null;
+  if (days === 0) return t('appointments.next.today');
+  if (days === 1) return t('appointments.next.tomorrow');
+  return t('appointments.next.inDays', { count: days });
+}
 
 /**
- * Date block + reason, doctor, time and room. `actions` adds the Cancel /
- * View Details row under upcoming appointments.
+ * Date block + reason, doctor, time and room. `actions` adds the Cancel / Join / View Details row
+ * under upcoming appointments. `variant="hero"` is the Appointments tab's next appointment: the
+ * same facts and actions on solid navy, with how far away it is.
  */
 export function AppointmentCard({
   appointment: a,
   actions = false,
   compact = false,
   cached = false,
+  variant = 'card',
 }: {
   appointment: Appointment;
   actions?: boolean;
   compact?: boolean;
   /** The list is a saved offline copy: hide the video Join link, which may be out of date. */
   cached?: boolean;
+  variant?: 'card' | 'hero';
 }) {
   const t = useT();
   const [cancelling, setCancelling] = useState(false);
@@ -37,6 +48,10 @@ export function AppointmentCard({
   // formatDate reads the parts on the clinic's clock (dates are stored as clinic-midnight instants).
   const doctor = doctorName(a.doctor);
   const open = () => router.push(`/patient/appointments/${a._id}`);
+  const status = statusLabel(t, a.status);
+  const a11y = doctor
+    ? t('appointments.card.a11yDoctor', { date: formatDate(a.appointmentDate ?? a.scheduledAt), doctor, status })
+    : t('appointments.card.a11y', { date: formatDate(a.appointmentDate ?? a.scheduledAt), status });
 
   function confirmCancel() {
     Alert.alert(t('appointments.cancel.title'), t('appointments.cancel.body'), [
@@ -58,18 +73,83 @@ export function AppointmentCard({
     ]);
   }
 
+  if (variant === 'hero') {
+    const away = countdown(t, daysUntil(a));
+    const video = isVideoVisit(a);
+    return (
+      <View style={styles.hero}>
+        <TouchableOpacity onPress={open} accessibilityRole="button" accessibilityLabel={`${t('appointments.next.eyebrow')}: ${a11y}`}>
+          <View style={styles.heroTop}>
+            <Text style={styles.heroEyebrow}>
+              {t('appointments.next.eyebrow')}
+              {away ? ` · ${away}` : ''}
+            </Text>
+            <View style={styles.heroStatus}>
+              {/* Confirmed gets the teal tick; pending or moved is still waiting on the clinic. */}
+              {a.status === 'confirmed' || a.status === 'scheduled' ? (
+                <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
+              ) : (
+                <Ionicons name="time-outline" size={14} color={colors.onNavyMuted} />
+              )}
+              <Text style={styles.heroStatusText}>{status}</Text>
+            </View>
+          </View>
+          {valid ? (
+            <Text style={styles.heroWhen}>
+              {formatDate(when, { weekday: 'long', month: 'long', day: 'numeric' })}
+              {a.appointmentTime ? `\n${formatTime(a.appointmentTime)}` : ''}
+            </Text>
+          ) : null}
+          <Text style={styles.heroReason} numberOfLines={2}>
+            {a.reason || t('appointments.card.fallbackTitle')}
+          </Text>
+          {doctor ? (
+            <View style={styles.heroLine}>
+              <Ionicons name="person-outline" size={16} color={colors.onNavyMuted} />
+              <Text style={styles.heroLineText} numberOfLines={1}>
+                {doctor}
+                {a.doctor?.specialization ? ` · ${a.doctor.specialization}` : ''}
+              </Text>
+            </View>
+          ) : null}
+          {video || a.room ? (
+            <View style={styles.heroLine}>
+              <Ionicons name={video ? 'videocam-outline' : 'location-outline'} size={16} color={colors.onNavyMuted} />
+              <Text style={styles.heroLineText} numberOfLines={1}>
+                {video ? t('appointments.videoCall') : a.room}
+              </Text>
+            </View>
+          ) : null}
+        </TouchableOpacity>
+
+        <View style={styles.heroActions}>
+          {joinUrl ? (
+            <HeroButton icon="videocam-outline" label={t('appointments.card.join')} primary onPress={() => openVideoCall(joinUrl)} />
+          ) : null}
+          <HeroButton icon="document-text-outline" label={t('appointments.card.viewDetails')} primary={!joinUrl} onPress={open} />
+        </View>
+        {canCancel(a) ? (
+          <TouchableOpacity
+            style={styles.heroCancel}
+            onPress={confirmCancel}
+            disabled={cancelling}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: cancelling, busy: cancelling }}
+          >
+            {cancelling ? (
+              <ActivityIndicator size="small" color={colors.onNavyMuted} />
+            ) : (
+              <Text style={styles.heroCancelText}>{t('appointments.cancel.confirm')}</Text>
+            )}
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.card}>
-      <TouchableOpacity
-        style={styles.main}
-        onPress={open}
-        accessibilityRole="button"
-        accessibilityLabel={
-          doctor
-            ? t('appointments.card.a11yDoctor', { date: formatDate(a.appointmentDate ?? a.scheduledAt), doctor, status: a.status })
-            : t('appointments.card.a11y', { date: formatDate(a.appointmentDate ?? a.scheduledAt), status: a.status })
-        }
-      >
+      <TouchableOpacity style={styles.main} onPress={open} accessibilityRole="button" accessibilityLabel={a11y}>
         <View style={[styles.dateBlock, compact && styles.dateBlockCompact]}>
           {valid ? (
             <>
@@ -88,7 +168,8 @@ export function AppointmentCard({
             <Text style={[styles.title, styles.flex]} numberOfLines={2}>
               {a.reason || t('appointments.card.fallbackTitle')}
             </Text>
-            <StatusBadge status={a.status} />
+            {/* A visit still marked confirmed after its day isn't coming up: say so instead. */}
+            {isOverdue(a) ? <Badge label={t('appointments.card.pastDate')} /> : <StatusBadge status={a.status} />}
           </View>
           {doctor ? <Text style={styles.doctor}>{doctor}</Text> : null}
           {a.doctor?.specialization ? <Text style={styles.meta}>{a.doctor.specialization}</Text> : null}
@@ -120,13 +201,7 @@ export function AppointmentCard({
       {actions ? (
         <View style={styles.actions}>
           {canCancel(a) ? (
-            <ActionButton
-              icon="close-circle-outline"
-              label={t('common.cancel')}
-              tone="danger"
-              onPress={confirmCancel}
-              loading={cancelling}
-            />
+            <ActionButton icon="close-circle-outline" label={t('common.cancel')} tone="danger" onPress={confirmCancel} loading={cancelling} />
           ) : null}
           {joinUrl ? (
             <ActionButton icon="videocam-outline" label={t('appointments.card.join')} tone="primary" onPress={() => openVideoCall(joinUrl)} />
@@ -135,6 +210,20 @@ export function AppointmentCard({
         </View>
       ) : null}
     </View>
+  );
+}
+
+function HeroButton({ icon, label, onPress, primary }: { icon: IconName; label: string; onPress: () => void; primary?: boolean }) {
+  return (
+    <TouchableOpacity
+      style={[styles.heroButton, primary ? styles.heroButtonPrimary : styles.heroButtonGhost]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Ionicons name={icon} size={18} color={colors.primaryText} />
+      <Text style={styles.heroButtonText}>{label}</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -180,7 +269,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
+    borderColor: colors.border,
     marginBottom: spacing.sm + 4,
     ...softShadow,
   },
@@ -196,7 +285,7 @@ const styles = StyleSheet.create({
   dateBlockCompact: { width: 68, paddingVertical: spacing.sm },
   // primaryOnSoft: plain primary is only 4.3:1 on the soft tint.
   dateMonth: { fontSize: 13, fontWeight: '700', color: colors.primaryOnSoft, letterSpacing: 0.5 },
-  dateDay: { fontSize: 30, fontWeight: '800', color: colors.primaryOnSoft, lineHeight: 36 },
+  dateDay: { fontSize: 30, fontWeight: '800', color: colors.primaryOnSoft, lineHeight: 36, fontVariant: ['tabular-nums'] },
   dateDayCompact: { fontSize: 26, lineHeight: 32 },
   dateWeekday: { fontSize: 13, fontWeight: '600', color: colors.primaryOnSoft },
   header: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
@@ -205,7 +294,7 @@ const styles = StyleSheet.create({
   meta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm + 2 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
-  metaStrong: { fontSize: 14, color: colors.text, fontWeight: '500', flexShrink: 1 },
+  metaStrong: { fontSize: 14, color: colors.text, fontWeight: '500', flexShrink: 1, fontVariant: ['tabular-nums'] },
   chevron: { alignSelf: 'center' },
   actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   action: {
@@ -221,4 +310,41 @@ const styles = StyleSheet.create({
   },
   actionPrimary: { backgroundColor: colors.primary, borderColor: colors.primary },
   actionText: { fontSize: 14, fontWeight: '600' },
+
+  // The next appointment: solid navy, no shadow, the one thing on the tab that matters most.
+  hero: { backgroundColor: colors.navy, borderRadius: radius.lg, padding: spacing.md + 4, marginBottom: spacing.lg },
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, flexWrap: 'wrap' },
+  heroEyebrow: { fontSize: 12, fontWeight: '700', color: colors.onNavyMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
+  heroStatus: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  heroStatusText: { fontSize: 13, fontWeight: '600', color: colors.primaryText },
+  heroWhen: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '800',
+    color: colors.primaryText,
+    letterSpacing: -0.3,
+    marginTop: spacing.sm + 4,
+    fontVariant: ['tabular-nums'],
+  },
+  heroReason: { fontSize: 16, fontWeight: '600', color: colors.primaryText, marginTop: spacing.md },
+  heroLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, marginTop: spacing.xs + 2 },
+  heroLineText: { flexShrink: 1, fontSize: 14, color: colors.onNavyMuted },
+  heroActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md + 4 },
+  heroButton: {
+    flexGrow: 1,
+    flexBasis: 128,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    minHeight: 48,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+  },
+  heroButtonPrimary: { backgroundColor: colors.primary },
+  heroButtonGhost: { borderWidth: 1, borderColor: colors.navyLine },
+  heroButtonText: { fontSize: 15, fontWeight: '600', color: colors.primaryText },
+  // Cancel as a quiet text action: it's there, but it isn't what the card is for.
+  heroCancel: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.md, marginTop: spacing.xs },
+  heroCancelText: { fontSize: 14, fontWeight: '600', color: colors.onNavyMuted, textDecorationLine: 'underline' },
 });

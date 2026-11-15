@@ -164,7 +164,7 @@ export function usePaginatedList<T extends { _id?: string; id?: string }, X = Re
         const network = isNetworkError(err);
         outcome = network ? 'network' : 'failed';
         // Signed out, no access, or gone: the saved copy must not be shown again.
-        const drop = !network && err instanceof ApiError && shouldDropCacheOnStatus(err.status);
+        const drop = !network && err instanceof ApiError && shouldDropCacheOnStatus(err.status, err.code);
         if (cacheKey && drop) removeOffline(cacheKey);
         if (!current()) return;
         if (drop && fromCache.current) {

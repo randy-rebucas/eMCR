@@ -10,7 +10,7 @@ import { balanceOf, invoiceLook, itemsSummary, lastPaymentDate } from '@/lib/inv
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
-import { AppHeader, softShadow } from '@/components/AppHeader';
+import { AppHeader } from '@/components/AppHeader';
 import { InvoiceStatusPill } from '@/components/InvoiceStatusPill';
 import { MessageKey, useT } from '@/lib/i18n';
 import { catalogs } from '@/lib/i18n/registry';
@@ -35,6 +35,7 @@ export default function InvoicesScreen() {
 
   const balance = current?.outstandingBalance ?? 0;
   const unpaid = current?.unpaidCount ?? 0;
+  const owing = !!current && balance > 0;
 
   const filters: { value: Filter; label: string }[] = [
     { value: 'all', label: t('invoices.filter.all') },
@@ -51,32 +52,37 @@ export default function InvoicesScreen() {
       </Text>
       <Text style={styles.subtitle}>{t('invoices.subtitle')}</Text>
 
-      <View style={styles.balanceCard}>
-        <View style={styles.wallet}>
-          <Ionicons name="wallet-outline" size={32} color={colors.primary} />
-        </View>
-        <View style={styles.flex}>
-          <Text style={styles.balanceLabel}>{t('invoices.outstandingBalance')}</Text>
-          <Text style={[styles.balance, balance === 0 && styles.balanceClear]}>
-            {current ? formatMoney(balance) : '—'}
-          </Text>
-          <Text style={styles.balanceMeta}>
-            {!current
-              ? ' '
-              : unpaid > 0
-                ? t('invoices.awaitingPayment', { count: unpaid })
-                : t('invoices.allPaidUp')}
-          </Text>
-        </View>
+      {/* What the patient owes across every clinic bill: solid navy, the one thing this screen is for. */}
+      <View
+        style={styles.hero}
+        accessible
+        accessibilityLabel={
+          current
+            ? owing
+              ? `${t('invoices.outstandingBalance')}: ${formatMoney(balance)}. ${t('invoices.awaitingPayment', { count: unpaid })}`
+              : t('invoices.allPaidUp')
+            : t('invoices.outstandingBalance')
+        }
+      >
+        <Text style={styles.heroEyebrow}>{t('invoices.outstandingBalance')}</Text>
+        <Text style={styles.heroAmount}>{current ? formatMoney(balance) : '—'}</Text>
+        {current ? (
+          <View style={styles.heroFoot}>
+            {owing ? (
+              <View style={styles.owingChip}>
+                <Ionicons name="alert-circle" size={14} color={colors.warning} />
+                <Text style={styles.owingChipText}>{t('invoices.awaitingPayment', { count: unpaid })}</Text>
+              </View>
+            ) : (
+              <View style={styles.doneChip}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
+                <Text style={styles.doneChipText}>{t('invoices.allPaidUp')}</Text>
+              </View>
+            )}
+            {owing ? <Text style={styles.heroNote}>{t('invoices.howToPay')}</Text> : null}
+          </View>
+        ) : null}
       </View>
-      {balance > 0 ? (
-        <View style={styles.payNote}>
-          <Ionicons name="business-outline" size={18} color={colors.slate} />
-          <Text style={styles.payNoteText}>
-            {t('invoices.payAtDeskNoOnline')}
-          </Text>
-        </View>
-      ) : null}
 
       <View style={styles.tabs} accessibilityRole="tablist">
         {filters.map((f) => {
@@ -114,24 +120,26 @@ export default function InvoicesScreen() {
     );
   } else {
     empty = (
-      <View style={styles.empty}>
-        <View style={styles.emptyIcon}>
-          <Ionicons name="receipt-outline" size={32} color={colors.primary} />
-        </View>
+      <View style={[styles.emptyCard]}>
+        <Ionicons name="receipt-outline" size={28} color={colors.primary} />
         <Text style={styles.emptyTitle}>{filter === 'all' ? t('invoices.emptyTitle') : t('invoices.emptyFilteredTitle')}</Text>
-        <Text style={styles.emptyText}>
-          {filter === 'all' ? t('invoices.emptyBody') : t('invoices.emptyFilteredBody')}
-        </Text>
+        <Text style={styles.emptyText}>{filter === 'all' ? t('invoices.emptyBody') : t('invoices.emptyFilteredBody')}</Text>
+        {filter !== 'all' ? (
+          <TouchableOpacity style={styles.showAll} onPress={() => setFilter('all')} accessibilityRole="button">
+            <Text style={styles.showAllText}>{t('invoices.showAll')}</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     );
   }
 
+  const last = list.items.length - 1;
   return (
     <FlatList
       style={styles.root}
       data={list.items}
       keyExtractor={(item) => item._id}
-      renderItem={({ item }) => <InvoiceRow invoice={item} />}
+      renderItem={({ item, index }) => <InvoiceRow invoice={item} first={index === 0} last={index === last} />}
       ListHeaderComponent={header}
       ListHeaderComponentStyle={styles.headerSpacing}
       ListEmptyComponent={empty}
@@ -144,7 +152,8 @@ export default function InvoicesScreen() {
   );
 }
 
-function InvoiceRow({ invoice }: { invoice: Invoice }) {
+/** One row of a single ruled card that runs down the list: the first and last round its corners. */
+function InvoiceRow({ invoice, first, last }: { invoice: Invoice; first: boolean; last: boolean }) {
   const t = useT();
   const look = invoiceLook(invoice);
   const balance = balanceOf(invoice);
@@ -152,7 +161,7 @@ function InvoiceRow({ invoice }: { invoice: Invoice }) {
   const items = itemsSummary(invoice);
   return (
     <TouchableOpacity
-      style={styles.row}
+      style={[styles.row, first && styles.rowFirst, last && styles.rowLast]}
       onPress={() => router.push(`/patient/invoices/${invoice._id}`)}
       accessibilityRole="button"
       accessibilityLabel={t('invoices.rowA11y', {
@@ -165,31 +174,35 @@ function InvoiceRow({ invoice }: { invoice: Invoice }) {
             : humanize(invoice.status),
       })}
     >
-      <View style={[styles.tile, { backgroundColor: look.bg }]}>
-        <Ionicons name={look.icon} size={24} color={look.fg} />
-      </View>
-      <View style={styles.flex}>
-        <Text style={styles.rowTitle} numberOfLines={1}>
-          {invoice.invoiceNumber ?? t('invoices.invoice')}
-        </Text>
-        <Text style={styles.rowSub}>{look.label}</Text>
-        <Text style={styles.rowMeta}>{formatDate(invoice.createdAt)}</Text>
-        {items ? (
-          <Text style={styles.rowMeta} numberOfLines={1}>
-            {items}
+      <View style={[styles.rowInner, !first && styles.rowRule]}>
+        <View style={styles.tile}>
+          <Ionicons name={look.icon} size={22} color={colors.primaryOnSoft} />
+        </View>
+        <View style={styles.flex}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {invoice.invoiceNumber ?? t('invoices.invoice')}
           </Text>
-        ) : null}
+          <Text style={styles.rowMeta}>
+            {look.label} · {formatDate(invoice.createdAt)}
+          </Text>
+          {items ? (
+            <Text style={styles.rowMeta} numberOfLines={1}>
+              {items}
+            </Text>
+          ) : null}
+        </View>
+        <View style={styles.right}>
+          <Text style={styles.amount}>{formatMoney(invoice.total)}</Text>
+          {balance > 0 ? (
+            <Text style={styles.due}>{t('invoices.balanceAmount', { amount: formatMoney(balance) })}</Text>
+          ) : invoice.status === 'paid' && paidOn ? (
+            <Text style={styles.rowMeta}>{t('invoices.paidOn', { date: formatDate(paidOn, { month: 'short', day: 'numeric' }) })}</Text>
+          ) : (
+            <InvoiceStatusPill status={invoice.status} />
+          )}
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
       </View>
-      <View style={styles.right}>
-        <Text style={styles.amount}>{formatMoney(invoice.total)}</Text>
-        <InvoiceStatusPill status={invoice.status} />
-        {invoice.status === 'paid' && paidOn ? (
-          <Text style={styles.rowMeta}>{t('invoices.paidOn', { date: formatDate(paidOn) })}</Text>
-        ) : balance > 0 ? (
-          <Text style={styles.due}>{t('invoices.balanceAmount', { amount: formatMoney(balance) })}</Text>
-        ) : null}
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
     </TouchableOpacity>
   );
 }
@@ -203,74 +216,93 @@ const styles = StyleSheet.create({
   loading: { marginVertical: spacing.xl },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
-  balanceCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: '#EAF0F2',
-    padding: spacing.md + 2,
-    marginTop: spacing.lg,
-    ...softShadow,
+
+  hero: { backgroundColor: colors.navy, borderRadius: radius.lg, padding: spacing.md + 4, marginTop: spacing.lg },
+  heroEyebrow: { fontSize: 12, fontWeight: '700', color: colors.onNavyMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
+  heroAmount: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: colors.primaryText,
+    letterSpacing: -0.5,
+    marginTop: spacing.xs,
+    fontVariant: ['tabular-nums'],
   },
-  wallet: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  balanceLabel: { fontSize: 14, fontWeight: '600', color: colors.text },
-  balance: { fontSize: 30, fontWeight: '800', color: colors.primary, letterSpacing: -0.5, marginTop: 2 },
-  balanceClear: { color: colors.text },
-  balanceMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  payNote: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  heroFoot: {
+    marginTop: spacing.md,
+    paddingTop: spacing.sm + 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.navyLine,
     gap: spacing.sm,
-    backgroundColor: colors.slateSoft,
-    borderRadius: radius.md,
-    padding: spacing.sm + 4,
-    marginTop: spacing.sm + 2,
   },
-  payNoteText: { flex: 1, fontSize: 13, lineHeight: 18, color: colors.slate },
-  tabs: { flexDirection: 'row', backgroundColor: '#E4EEF0', borderRadius: radius.md, padding: 4, marginTop: spacing.lg },
+  owingChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.warningSoft,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+  },
+  owingChipText: { fontSize: 12, fontWeight: '600', color: colors.warning },
+  doneChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.navyLine,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+  },
+  doneChipText: { fontSize: 12, fontWeight: '600', color: colors.primaryText },
+  heroNote: { fontSize: 13, lineHeight: 18, color: colors.onNavyMuted },
+
+  tabs: { flexDirection: 'row', backgroundColor: colors.slateSoft, borderRadius: radius.md, padding: 4, marginTop: spacing.lg },
   tab: { flex: 1, minHeight: 44, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 },
   tabSelected: { backgroundColor: colors.primary },
   tabText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
   tabTextSelected: { color: colors.primaryText },
+
+  // Each row draws its own sides; together they read as one card with hairlines between rows.
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm + 4,
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: '#EAF0F2',
-    padding: spacing.sm + 6,
-    marginBottom: spacing.sm + 2,
-    ...softShadow,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
   },
-  tile: { width: 52, height: 52, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-  rowTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
-  rowSub: { fontSize: 13, color: colors.text, marginTop: 2 },
-  rowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  right: { alignItems: 'flex-end', gap: 6 },
-  amount: { fontSize: 16, fontWeight: '800', color: colors.primary },
-  due: { fontSize: 12, fontWeight: '600', color: colors.danger },
-  empty: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md },
-  emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+  rowFirst: { borderTopWidth: 1, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
+  rowLast: { borderBottomWidth: 1, borderBottomLeftRadius: radius.lg, borderBottomRightRadius: radius.lg },
+  rowInner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4, paddingVertical: spacing.sm + 4 },
+  rowRule: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  tile: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
     backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.md,
   },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: spacing.xs },
-  emptyText: { fontSize: 14, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.sm },
+  rowTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  rowMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2, fontVariant: ['tabular-nums'] },
+  right: { alignItems: 'flex-end', gap: 4 },
+  amount: { fontSize: 15, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
+  due: { fontSize: 12, fontWeight: '700', color: colors.warning, fontVariant: ['tabular-nums'] },
+
+  empty: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md },
+  emptyCard: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  emptyText: { fontSize: 14, lineHeight: 20, color: colors.textMuted, textAlign: 'center' },
+  showAll: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.md },
+  showAllText: { fontSize: 14, fontWeight: '600', color: colors.primary },
 });

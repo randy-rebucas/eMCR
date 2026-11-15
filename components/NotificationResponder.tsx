@@ -9,7 +9,9 @@ import { useProfile } from '@/lib/profile';
 
 const ACTIVATE_HREF = '/patient/activate';
 
-// Survives remounts (sign out → sign in) so one tap is never handled twice.
+// Survives remounts (sign out → sign in) so one tap is never handled twice. Keyed on the request
+// id plus when that notification was delivered: a repeating local reminder (medicine reminders'
+// daily trigger) reuses one id every day, and each day's tap must still open the screen.
 const handled = new Set<string>();
 
 /**
@@ -32,7 +34,7 @@ function Responder({ Notifications }: { Notifications: NonNullable<typeof MaybeN
 
   useEffect(() => {
     if (!lastResponse || lastResponse.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
-    const id = lastResponse.notification.request.identifier;
+    const id = `${lastResponse.notification.request.identifier}@${lastResponse.notification.date}`;
     if (handled.has(id)) return;
     handled.add(id);
     Notifications.clearLastNotificationResponse();

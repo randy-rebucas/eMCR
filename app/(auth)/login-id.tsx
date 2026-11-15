@@ -53,6 +53,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     backgroundColor: colors.surface,
   },
-  id: { fontSize: 16, fontWeight: '700', color: colors.text, textAlign: 'center' },
+  id: { fontSize: 16, fontWeight: '700', color: colors.text, textAlign: 'center', fontVariant: ['tabular-nums'] },
   note: { fontSize: 13, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.lg },
 });

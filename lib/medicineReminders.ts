@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import { ApiError, apiRequest } from './api';
+import { ApiError, apiFetch, ListEnvelope } from './api';
 import { useRefreshOn } from './events';
 import { Notifications } from './notifications';
 import { getSession } from './storage';
 import { isCurrent, isOpenForReminders } from './prescriptions';
-import { toYmd } from './format';
+import { clinicEpoch, clinicYmd, formatDate, toYmd } from './format';
 import { Medication, Prescription } from './types';
 import { PlainKey, possessiveName, t, useLanguage } from './i18n';
 
@@ -227,14 +227,19 @@ export interface ActiveMedicine {
   end: number | null;
 }
 
-/** Midnight (device-local) after the last day of the course. */
-function courseEndFor(p: Prescription, med: Medication): number | null {
+/**
+ * Midnight at the clinic (Asia/Manila) after the last day of the course. Days are counted from
+ * the clinic calendar day the prescription was issued, the same way `courseDay` counts them, so
+ * "Day 7 of 7" and the last reminder fall on the same day wherever the phone is.
+ */
+export function courseEndFor(p: Prescription, med: Medication): number | null {
   if (!med.durationDays || med.durationDays <= 0) return null;
   const start = new Date(p.issuedAt ?? p.createdAt);
   if (isNaN(start.getTime())) return null;
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() + med.durationDays);
-  return start.getTime();
+  const startDay = Date.parse(`${clinicYmd(start)}T00:00:00Z`);
+  const endYmd = new Date(startDay + med.durationDays * DAY).toISOString().slice(0, 10);
+  const end = clinicEpoch(endYmd);
+  return isNaN(end) ? null : end;
 }
 
 /**
@@ -269,17 +274,34 @@ export function reminderKeys(schedule: ProfileSchedule | null | undefined): Set<
   return new Set((schedule?.meds ?? []).map((m) => m.key));
 }
 
-const PRESCRIPTIONS_PATH = '/api/patients/me/prescriptions?limit=50';
+/** The server's largest page (GET /api/patients/me/prescriptions, newest first). */
+const PRESCRIPTIONS_PAGE_SIZE = 50;
+/** Background sync reads at most this many pages per profile. */
+const MAX_PRESCRIPTION_PAGES = 10;
+const PRESCRIPTIONS_PATH = `/api/patients/me/prescriptions?limit=${PRESCRIPTIONS_PAGE_SIZE}`;
 export { PRESCRIPTIONS_PATH as MEDICINE_PRESCRIPTIONS_PATH };
+
+/** The prescription id of a reminder key (`<prescriptionId>.<index>`). */
+const prescriptionOf = (key: string) => key.slice(0, key.lastIndexOf('.'));
 
 /**
  * Drops medicines that are no longer on a current prescription (stopped, cancelled, course
  * over, or edited to a different medicine) and refreshes course ends. Returns the new schedule.
+ * `fetched` is the prescriptions it was checked against; unless `complete` (every prescription
+ * was fetched), a medicine whose prescription isn't among them is kept as it is: an older
+ * maintenance prescription past the newest page is not a stopped one.
  */
-function reconcile(schedule: ProfileSchedule, active: ActiveMedicine[]): ProfileSchedule {
+function reconcile(
+  schedule: ProfileSchedule,
+  active: ActiveMedicine[],
+  fetched: Prescription[],
+  complete: boolean
+): ProfileSchedule {
   const byKey = new Map(active.map((a) => [a.key, a]));
+  const seen = new Set(fetched.map((p) => p._id));
   const meds = schedule.meds.flatMap((m) => {
     const a = byKey.get(m.key);
+    if (!a && !complete && !seen.has(prescriptionOf(m.key))) return [m];
     if (!a || a.med.name !== m.name) return [];
     return [{ ...m, end: a.end }];
   });
@@ -363,13 +385,21 @@ function fireDates(time: string, end: number, now: number): Date[] {
   return out;
 }
 
-// Translated when the reminder is scheduled, in the app's language at that moment.
-function content(slot: Slot) {
+/**
+ * Translated when the reminder is scheduled, in the app's language at that moment. `until`: a
+ * repeating reminder for courses that end (no room for one-off ones) says when the course ends,
+ * since the OS repeats it until the app next syncs, which may be after that day.
+ */
+function content(slot: Slot, until?: number) {
+  const body = slot.who
+    ? t('medicines.notify.bodyFor', { whose: possessiveName(slot.who) })
+    : t('medicines.notify.body');
   return {
     title: slot.who ? t('medicines.notify.titleFor', { name: slot.who }) : t('medicines.notify.title'),
-    body: slot.who
-      ? t('medicines.notify.bodyFor', { whose: possessiveName(slot.who) })
-      : t('medicines.notify.body'),
+    body:
+      until !== undefined
+        ? `${body} ${t('medicines.notify.courseUntil', { date: formatDate(new Date(until - 1), { month: 'short', day: 'numeric' }) })}`
+        : body,
     data: { tag: `medicine-reminder-${slot.time}`, profileId: slot.profileId, slot: slot.time },
   };
 }
@@ -398,7 +428,11 @@ function serial<T>(task: () => Promise<T>): Promise<T> {
  * Replaces this app's medicine notifications with the stored schedules of every profile.
  * Slots whose courses all end soon get one-off date triggers (so they stop on time even if the
  * app isn't opened) while the budget allows; everything else is a repeating daily trigger, which
- * stops at the next sync after the course ends.
+ * stops at the next sync after the course ends (the app has no background task to cancel it on
+ * the day). A daily trigger for a course that ends says the end date in its text, so one that
+ * still fires after the course (app not opened since) explains itself. Every sync (launch, return
+ * to the app, prescription refresh) rolls the window forward, so as the end nears a course moves
+ * onto date triggers.
  */
 export function rescheduleAll(): Promise<void> {
   return serial(rescheduleNow);
@@ -464,7 +498,7 @@ async function rescheduleNow(): Promise<void> {
     } else {
       await Notifications.scheduleNotificationAsync({
         identifier: base,
-        content: content(slot),
+        content: content(slot, slot.end ?? undefined),
         trigger: { type: T.DAILY, hour: Math.floor(mins / 60), minute: mins % 60, channelId: CHANNEL_ID },
       });
     }
@@ -517,15 +551,22 @@ export function setDoseTaken(owner: string, profileId: string, key: string, time
   });
 }
 
-/** Load, reconcile and save one profile's schedule. Runs inside `serial`. */
+/**
+ * Load, reconcile and save one profile's schedule. Runs inside `serial`. `complete`: the list
+ * holds every prescription (see `reconcile`).
+ */
 async function reconcileProfile(
   owner: string,
   profile: { id: string; who?: string | null },
-  prescriptions: Prescription[]
+  prescriptions: Prescription[],
+  complete: boolean
 ): Promise<ProfileSchedule> {
   const schedule = await loadSchedule(profile.id);
   const active = activeMedicines(prescriptions, Date.now(), reminderKeys(schedule));
-  const next = { ...reconcile(schedule, active), who: profile.who === undefined ? schedule.who : profile.who };
+  const next = {
+    ...reconcile(schedule, active, prescriptions, complete),
+    who: profile.who === undefined ? schedule.who : profile.who,
+  };
   if (schedule.meds.length || next.meds.length) await saveSchedule(owner, profile.id, next);
   return next;
 }
@@ -533,15 +574,20 @@ async function reconcileProfile(
 /**
  * Re-check one profile's schedule against its prescriptions and reschedule. Medicines that were
  * stopped, cancelled or finished drop out. Returns the reconciled schedule. `who` left undefined
- * keeps the stored name.
+ * keeps the stored name. `prescriptions` is one page (`MEDICINE_PRESCRIPTIONS_PATH`): a full page
+ * may not be everything, so then medicines on prescriptions it doesn't include are left alone
+ * (the background sync reads every page).
  */
 export function syncMedicineReminders(
   owner: string,
   profile: { id: string; who?: string | null },
-  prescriptions: Prescription[]
+  prescriptions: Prescription[],
+  /** Known to hold every prescription (e.g. from `fetchAllPrescriptions`). */
+  knownComplete?: boolean
 ): Promise<ProfileSchedule> {
   return serial(async () => {
-    const next = await reconcileProfile(owner, profile, prescriptions);
+    const complete = knownComplete ?? prescriptions.length < PRESCRIPTIONS_PAGE_SIZE;
+    const next = await reconcileProfile(owner, profile, prescriptions, complete);
     await rescheduleNow();
     return next;
   });
@@ -606,6 +652,43 @@ export function doseStatus(schedule: ProfileSchedule, key: string, time: string,
 const SYNC_INTERVAL = 6 * 60 * 60 * 1000;
 
 /**
+ * Every prescription of one profile, page by page (newest first), up to `MAX_PRESCRIPTION_PAGES`.
+ * `complete` is false when it stopped early (the cap, or a server that ignores `page`). Throws when
+ * the first page fails; a later page failing returns what was read, incomplete. `profileId` null
+ * means the signed-in person (no family-profile header).
+ */
+export async function fetchAllPrescriptions(profileId: string | null): Promise<{ prescriptions: Prescription[]; complete: boolean }> {
+  const byId = new Map<string, Prescription>();
+  for (let page = 1; page <= MAX_PRESCRIPTION_PAGES; page++) {
+    let envelope: ListEnvelope<Prescription>;
+    try {
+      envelope = await apiFetch<ListEnvelope<Prescription>>(`${PRESCRIPTIONS_PATH}&page=${page}`, { profileId });
+    } catch (error) {
+      if (page === 1) throw error;
+      return { prescriptions: [...byId.values()], complete: false };
+    }
+    const data = Array.isArray(envelope?.data) ? envelope.data : [];
+    let added = 0;
+    for (const p of data) {
+      if (p?._id && !byId.has(p._id)) {
+        byId.set(p._id, p);
+        added++;
+      }
+    }
+    const pagination = envelope?.pagination;
+    const totalPages = pagination?.totalPages ?? pagination?.pages;
+    const done =
+      data.length < PRESCRIPTIONS_PAGE_SIZE ||
+      (typeof totalPages === 'number' && page >= totalPages) ||
+      (typeof pagination?.total === 'number' && byId.size >= pagination.total);
+    if (done) return { prescriptions: [...byId.values()], complete: true };
+    // The same page again (a server that ignores `page`): stop, without claiming it's everything.
+    if (!added) break;
+  }
+  return { prescriptions: [...byId.values()], complete: false };
+}
+
+/**
  * Reconcile every profile that has reminders with its own prescriptions, then reschedule once.
  * Each request names its profile explicitly (never the app's current one), so switching profile
  * mid-sync can't reconcile one person's schedule against another's prescriptions.
@@ -619,16 +702,14 @@ async function syncAllProfiles(owner: string): Promise<void> {
   if (!index?.profiles.length) return;
   let failed: unknown = null;
   for (const profileId of [...index.profiles]) {
-    let prescriptions: Prescription[];
+    let fetched: { prescriptions: Prescription[]; complete: boolean };
     try {
-      prescriptions = await apiRequest<Prescription[]>(PRESCRIPTIONS_PATH, {
-        // The signed-in person's own record goes without the family-profile header.
-        profileId: profileId === owner ? null : profileId,
-      });
+      // The signed-in person's own record goes without the family-profile header.
+      fetched = await fetchAllPrescriptions(profileId === owner ? null : profileId);
     } catch (error) {
       // The family member is no longer reachable (unlinked, turned 18): their reminders stop.
       if (error instanceof ApiError && error.status === 403 && error.code === 'PROFILE_FORBIDDEN') {
-        prescriptions = [];
+        fetched = { prescriptions: [], complete: true };
       } else {
         failed = error;
         // Signed out mid-sync (refresh rejected): the remaining profiles would fail the same way.
@@ -636,7 +717,7 @@ async function syncAllProfiles(owner: string): Promise<void> {
         continue;
       }
     }
-    await serial(() => reconcileProfile(owner, { id: profileId }, prescriptions));
+    await serial(() => reconcileProfile(owner, { id: profileId }, fetched.prescriptions, fetched.complete));
   }
   // Rolling date triggers forward is cheap and also restores reminders after a sign-in.
   await rescheduleAll();

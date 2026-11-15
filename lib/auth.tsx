@@ -5,6 +5,7 @@ import {
   apiRequest,
   ApiError,
   AUTH_ENDPOINTS,
+  isPasswordChangeRequired,
   onServerReachable,
   query,
   setActiveProfileId,
@@ -22,6 +23,7 @@ import { emitRefresh } from './events';
 import { clearOfflineCache } from './offlineCache';
 import { t } from './i18n';
 import { clearMedicineReminders, resumeMedicineReminders, suspendMedicineReminders } from './medicineReminders';
+import { clearEmcrSignInState, getCredentialStep, noteEmcrSignInCompleted, setCredentialStep } from './emcr';
 import { EmcrSession, PatientProfile, PatientSummary } from './types';
 
 type AuthState =
@@ -39,6 +41,29 @@ interface PatientTokenResponse extends TokenPair {
 function isGuardianToken(token: string | null | undefined): boolean {
   return !!token && tokenClaims(token)?.rel === 'guardian';
 }
+
+/**
+ * Whether a token was issued for the clinic's temporary password (`pwc`): the server answers
+ * 403 PASSWORD_CHANGE_REQUIRED on patient data until the patient chooses their own.
+ */
+function isPasswordChangeToken(token: string | null | undefined): boolean {
+  return !!token && !!tokenClaims(token)?.pwc;
+}
+
+/**
+ * The temporary password must be replaced before anything loads. After a relaunch the app no
+ * longer has it in memory, so /create-password asks for it (a `temp` step without it).
+ */
+function owePasswordChange(): void {
+  if (!getCredentialStep()) setCredentialStep({ mode: 'temp' }, { forSignIn: false });
+}
+
+/**
+ * `/api/patients/me` with the picture (a data URI): every call here fills the header / More
+ * avatar. Current servers leave the picture out unless asked; older ones ignore `include` and
+ * always send it.
+ */
+const ME_WITH_PHOTO_PATH = '/api/patients/me?include=photo';
 
 interface AuthContextValue {
   loading: boolean;
@@ -88,12 +113,16 @@ function patientSummaryFromProfile(p: PatientProfile): PatientSummary {
     firstName: p.firstName,
     lastName: p.lastName,
     email: p.email ?? null,
+    profileImage: p.profileImage ?? null,
   };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: 'loading' });
   const [notice, setNotice] = useState<string | null>(null);
+  /** The state as last rendered, for callbacks that must not re-create on every change. */
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const signingOut = useRef(false);
   /** Who the last session on this device signed in (token identity); null after a sign-out. */
   const lastIdentity = useRef<string | null>(null);
@@ -108,6 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setSessionExpiredHandler((message) => {
       clearDocumentCache();
+      clearEmcrSignInState();
       suspendMedicineReminders().catch(() => {});
       setState({ status: 'signedOut' });
       if (!signingOut.current) setNotice(message ?? t('common.sessionExpired'));
@@ -115,11 +145,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => setSessionExpiredHandler(null);
   }, []);
 
+  /**
+   * Fetch the signed-in person's picture once after a sign-in, for the header and More (sign-in
+   * responses carry none). Only sets a picture it got; never clears a known one. Never throws.
+   */
+  const loadPhoto = useCallback((patientId: string | null) => {
+    apiRequest<PatientProfile>(ME_WITH_PHOTO_PATH, { profile: false })
+      .then((p) => {
+        if (!p.profileImage) return;
+        setState((prev) =>
+          prev.status === 'signedIn' && prev.patient && prev.patient.id === p._id && (patientId === null || patientId === p._id)
+            ? { ...prev, patient: { ...prev.patient, profileImage: p.profileImage } }
+            : prev
+        );
+      })
+      .catch(() => {});
+  }, []);
+
   /** `/api/patients/me` refused the stored session: 401 expired it, 403 deactivated the account. */
   const endSessionAfterRefusal = useCallback(async (error: ApiError) => {
     setActiveProfileId(null);
     await clearSession();
     clearDocumentCache();
+    clearEmcrSignInState();
     if (error.status === 403) {
       lastIdentity.current = null;
       clearMedicineReminders().catch(() => {});
@@ -139,8 +187,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       lastIdentity.current = tokenIdentity(session.accessToken);
+      if (isPasswordChangeToken(session.accessToken)) {
+        // Signed in with the clinic's temporary password and never replaced it: nothing loads
+        // until it is (app/index.tsx sends the patient to /create-password). Works offline too.
+        owePasswordChange();
+        setState({ status: 'signedIn', patient: null, guardianOnly: isGuardianToken(session.accessToken) });
+        return;
+      }
       try {
-        const profile = await apiRequest<PatientProfile>('/api/patients/me');
+        const profile = await apiRequest<PatientProfile>(ME_WITH_PHOTO_PATH);
         const current = await getSession();
         setState({
           status: 'signedIn',
@@ -149,6 +204,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         registerForPushNotifications({ prompt: false }).catch(() => {});
       } catch (error) {
+        if (isPasswordChangeRequired(error)) {
+          owePasswordChange();
+          setState({ status: 'signedIn', patient: null, guardianOnly: isGuardianToken(session.accessToken) });
+          return;
+        }
         if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
           // 401 here means even the refresh failed (expired: reminders are kept for the same
           // account's next sign-in); 403 means the account was deactivated (everything goes).
@@ -178,7 +238,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const retry = () => {
       if (inFlight || cancelled) return;
       inFlight = true;
-      apiRequest<PatientProfile>('/api/patients/me', { profile: false })
+      apiRequest<PatientProfile>(ME_WITH_PHOTO_PATH, { profile: false })
         .then(async (profile) => {
           const current = await getSession();
           if (cancelled || !current) return;
@@ -197,7 +257,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             error instanceof ApiError &&
             error.status === 403 &&
             error.code !== 'PROFILE_FORBIDDEN' &&
-            error.code !== 'NOT_FOR_FAMILY_PROFILE'
+            error.code !== 'NOT_FOR_FAMILY_PROFILE' &&
+            // The temporary password is still in use: the api layer opens /create-password.
+            !isPasswordChangeRequired(error)
           ) {
             endSessionAfterRefusal(error).catch(() => {});
           }
@@ -228,6 +290,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // are kept only when the same account signs in again.
     await clearOfflineCache();
     clearDocumentCache();
+    // The password step and phone proof the sign-in screens set for this sign-in stay; anything
+    // older (another person's, or a temporary password from before) goes.
+    noteEmcrSignInCompleted();
     setActiveProfileId(null);
     if (result.patient?.id) await resumeMedicineReminders(result.patient.id).catch(() => {});
     else if (!samePerson) await clearMedicineReminders().catch(() => {});
@@ -241,7 +306,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     emitRefresh('notifications');
     registerForPushNotifications({ prompt: false }).catch(() => {});
-  }, []);
+    // Sign-in responses carry no picture: fetch it once so the header and More show it at once.
+    // Not while the clinic's temporary password is in use (the server refuses it until replaced).
+    if (!isPasswordChangeToken(result.token)) loadPhoto(result.patient?.id ?? null);
+  }, [loadPhoto]);
 
   const loginWithPassword = useCallback(
     async (email: string, password: string) => {
@@ -324,6 +392,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       if (restored?.patient?.id) resumeMedicineReminders(restored.patient.id).catch(() => {});
     }
+    // Opened on a temporary-password session, who is signed in couldn't load: it can now.
+    const shown = stateRef.current;
+    if (!isPasswordChangeToken(pair.token) && (!session || (shown.status === 'signedIn' && shown.patient === null))) {
+      apiRequest<PatientProfile>(ME_WITH_PHOTO_PATH, { profile: false })
+        .then((profile) => {
+          setState((now) =>
+            now.status === 'signedIn' && now.patient === null ? { ...now, patient: patientSummaryFromProfile(profile) } : now
+          );
+        })
+        .catch(() => {});
+    }
     // A password change drops the backend's device registrations; register this one again.
     registerForPushNotifications({ prompt: false }).catch(() => {});
   }, []);
@@ -364,6 +443,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       lastSignedIn.current = null;
       await clearSession();
       clearDocumentCache();
+      clearEmcrSignInState();
       await clearMedicineReminders().catch(() => {});
       setState({ status: 'signedOut' });
       if (everywhere && failure) {

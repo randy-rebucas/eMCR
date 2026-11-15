@@ -112,6 +112,28 @@ export function setActivationRequiredHandler(handler: ((message: string) => void
 }
 
 /**
+ * Called when the server refuses patient data because the clinic's temporary password hasn't been
+ * replaced yet (403 PASSWORD_CHANGE_REQUIRED). The app opens /create-password.
+ */
+let passwordChangeRequiredHandler: (() => void) | null = null;
+
+export function setPasswordChangeRequiredHandler(handler: (() => void) | null): void {
+  passwordChangeRequiredHandler = handler;
+}
+
+/** The server code for "replace the clinic's temporary password first". */
+export const PASSWORD_CHANGE_REQUIRED = 'PASSWORD_CHANGE_REQUIRED';
+
+export function isPasswordChangeRequired(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 403 && error.code === PASSWORD_CHANGE_REQUIRED;
+}
+
+/** For requests made outside `apiFetch` (file downloads) refused with 403 PASSWORD_CHANGE_REQUIRED. */
+export function reportPasswordChangeRequired(): void {
+  passwordChangeRequiredHandler?.();
+}
+
+/**
  * For requests made outside `apiFetch` (file downloads) refused with 403: when a family profile
  * is active, the server most likely no longer lets this account see it (PROFILE_FORBIDDEN).
  * Returns true when the profile-lost handler ran.
@@ -527,6 +549,12 @@ export async function apiFetch<E = unknown>(path: string, options: RequestOption
   // was about the profile on screen: background work for another profile handles it itself.
   if (response.status === 403 && json?.code === 'PROFILE_FORBIDDEN' && profileId !== null && profileId === activeProfileId) {
     profileLostHandler?.(typeof json.error === 'string' ? json.error : t('common.profileLost'));
+  }
+
+  // The clinic's temporary password is still in use: nothing loads until the patient chooses their
+  // own. The session is fine (never treated like a 401); the app opens /create-password.
+  if (response.status === 403 && json?.code === PASSWORD_CHANGE_REQUIRED) {
+    reportPasswordChangeRequired();
   }
 
   // eMCR isn't activated: the app opens the "Enter your activation code" screen. The call still

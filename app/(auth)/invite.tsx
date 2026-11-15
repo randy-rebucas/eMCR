@@ -237,7 +237,6 @@ export default function InviteScreen() {
   return (
     <AuthScreen back>
       <AuthHeader title={t('auth.invite.title')} subtitle={t('auth.invite.subtitle')} />
-      {errorText ? <Banner message={errorText} /> : null}
       <Button title={t('auth.invite.scan')} icon="qr-code-outline" onPress={() => setScanning(true)} disabled={submitting} />
       <IconField
         icon="ticket-outline"
@@ -253,6 +252,7 @@ export default function InviteScreen() {
         returnKeyType="go"
         onSubmitEditing={() => lookUp()}
       />
+      {errorText ? <Banner message={errorText} /> : null}
       <Button title={t('auth.continue')} variant="secondary" onPress={() => lookUp()} loading={submitting && !scanning} />
       <View style={styles.footer}>
         <Text style={styles.muted}>{t('auth.invite.noInvite')}</Text>
@@ -277,6 +277,6 @@ const styles = StyleSheet.create({
   error: { color: colors.danger, fontSize: 14, textAlign: 'center', marginTop: -spacing.sm, marginBottom: spacing.sm },
   resend: { alignItems: 'center', marginTop: spacing.lg, gap: spacing.xs },
   row: { flexDirection: 'row', alignItems: 'center' },
-  muted: { fontSize: 14, color: colors.textMuted },
+  muted: { fontSize: 14, color: colors.textMuted, fontVariant: ['tabular-nums'] },
   footer: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', marginTop: 'auto', paddingTop: spacing.xl },
 });

@@ -38,23 +38,37 @@ export const EMCR_ENDPOINTS = {
  * The password step owed after a sign-in, kept in memory: `create` (first sign-in, no password
  * yet), `temp` (signed in with the clinic's temporary password, which must be replaced) or
  * `reset` (forgot password, signed in by SMS code). The notifications step sends the user to
- * /create-password while one is pending.
+ * /create-password while one is pending. A `temp` step without `currentPassword` (the app was
+ * relaunched, or the server answered PASSWORD_CHANGE_REQUIRED) asks for the temporary password.
  */
-export type CredentialStep = { mode: 'create' } | { mode: 'temp'; currentPassword: string } | { mode: 'reset' };
+export type CredentialStep = { mode: 'create' } | { mode: 'temp'; currentPassword?: string } | { mode: 'reset' };
 
 let credentialStep: CredentialStep | null = null;
+
+/**
+ * Sign-in state set by the auth screens just before they hand a session to the AuthProvider
+ * (`applySession`). Each sign-in keeps what was set for it and drops anything older, so one
+ * person's temporary password or phone proof never carries into the next sign-in.
+ */
+const armedForSignIn = { credentialStep: false, claimContext: false };
 
 export function getCredentialStep(): CredentialStep | null {
   return credentialStep;
 }
 
-export function setCredentialStep(step: CredentialStep | null): void {
+/**
+ * `forSignIn` (default): set by a sign-in screen for the sign-in it is about to complete. False
+ * for a step owed by the session already stored (relaunch, PASSWORD_CHANGE_REQUIRED), which a
+ * later sign-in drops.
+ */
+export function setCredentialStep(step: CredentialStep | null, options: { forSignIn?: boolean } = {}): void {
   credentialStep = step;
+  armedForSignIn.credentialStep = step !== null && (options.forSignIn ?? true);
 }
 
 /** After a sign-in that returned the account: owe a password if it has none yet. */
 export function noteAccountCredentials(account: EmcrAccount | null | undefined): void {
-  if (account && account.hasPassword === false) credentialStep = { mode: 'create' };
+  if (account && account.hasPassword === false) setCredentialStep({ mode: 'create' });
 }
 
 /** The domain of eMCR login IDs (`qc01.jdc.19900425@myclinicsoft.solutions`). */
@@ -221,6 +235,7 @@ let claimContext: ClaimContext | null = null;
 
 export function setClaimContext(context: ClaimContext | null): void {
   claimContext = context;
+  armedForSignIn.claimContext = context !== null;
 }
 
 /** The current claim proof, or null when there is none or it has expired. */
@@ -230,7 +245,36 @@ export function getClaimContext(): ClaimContext | null {
 }
 
 export function updateClaimContext(changes: Partial<ClaimContext>): void {
-  if (claimContext) claimContext = { ...claimContext, ...changes };
+  if (!claimContext) return;
+  claimContext = { ...claimContext, ...changes };
+  // Still in use by the flow that is about to sign in (claim → "Add another person").
+  armedForSignIn.claimContext = true;
+}
+
+// ── Lifetime of the in-memory sign-in state ──────────────────────────────────
+
+/**
+ * Forget the password step (which can hold the clinic's temporary password in plain text), the
+ * phone proof and the issued login ID. Called on sign-out and when the session expires.
+ */
+export function clearEmcrSignInState(): void {
+  credentialStep = null;
+  claimContext = null;
+  issuedLoginId = null;
+  armedForSignIn.credentialStep = false;
+  armedForSignIn.claimContext = false;
+}
+
+/**
+ * Called by the AuthProvider when a sign-in completes: keeps only what the screens set for this
+ * sign-in (since the previous one) and drops everything older.
+ */
+export function noteEmcrSignInCompleted(): void {
+  if (!armedForSignIn.credentialStep) credentialStep = null;
+  if (!armedForSignIn.claimContext) claimContext = null;
+  issuedLoginId = null;
+  armedForSignIn.credentialStep = false;
+  armedForSignIn.claimContext = false;
 }
 
 export function claimContextFrom(result: EmcrVerifyResult, phone: string, mode: ClaimContext['mode']): ClaimContext {
@@ -285,8 +329,8 @@ export async function requestAccess(input: AccessRequestInput): Promise<string> 
 
 // ── Account and activation ───────────────────────────────────────────────────
 
-export function getEmcrAccount(): Promise<EmcrAccount> {
-  return apiRequest<EmcrAccount>(EMCR_ENDPOINTS.account, { profile: false });
+export function getEmcrAccount(options: { timeoutMs?: number } = {}): Promise<EmcrAccount> {
+  return apiRequest<EmcrAccount>(EMCR_ENDPOINTS.account, { profile: false, ...options });
 }
 
 /** Redeem a voucher code for the signed-in account (any spelling; the server normalizes it). */

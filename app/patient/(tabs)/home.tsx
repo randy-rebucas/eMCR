@@ -1,20 +1,22 @@
-import { ReactNode, useMemo } from 'react';
+import { ReactNode, useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
+import { useAuth } from '@/lib/auth';
 import { useProfile } from '@/lib/profile';
 import { useApiData } from '@/lib/useApiData';
 import { useUnread } from '@/lib/unread';
 import { Appointment, EmcrAccount, InvoiceListEnvelope, LabResult, QueueEntry } from '@/lib/types';
 import { EMCR_ENDPOINTS } from '@/lib/emcr';
-import { clinicHour, clinicTodayYmd, clinicYmd, formatDate, formatMoney } from '@/lib/format';
+import { clinicHour, clinicTodayYmd, clinicYmd, formatDate, formatMoney, formatTime } from '@/lib/format';
 import { appointmentStart, isUpcoming } from '@/lib/appointments';
+import { doseStatus, DoseStatus, formatSlot, loadSchedule, ProfileSchedule, setDoseTaken, toMinutes } from '@/lib/medicineReminders';
 import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from '@/components/ui';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { AppointmentCard } from '@/components/AppointmentCard';
+import { photos, ScrimPhoto } from '@/components/Photo';
 import { ResultStatusPill } from '@/components/ResultStatusPill';
 import { TourTarget } from '@/components/QuickTour';
 import { VisitFeedbackPrompt } from '@/components/VisitFeedbackPrompt';
@@ -28,15 +30,23 @@ function greeting(t: TFunction): string {
   return h < 12 ? t('home.greeting.morning') : h < 18 ? t('home.greeting.afternoon') : t('home.greeting.evening');
 }
 
-const SHORTCUTS: { label: PlainKey; icon: IconName; href: string; bg: string; fg: string }[] = [
-  { label: 'home.shortcut.appointments', icon: 'calendar-outline', href: '/patient/appointments', bg: '#E3F6F5', fg: '#0A7F7E' },
-  { label: 'home.shortcut.queue', icon: 'qr-code-outline', href: '/patient/queue', bg: '#E6EEFB', fg: '#2F5FB3' },
-  { label: 'home.shortcut.results', icon: 'document-text-outline', href: '/patient/results', bg: '#EEEAFB', fg: '#5B47B0' },
-  { label: 'home.shortcut.prescriptions', icon: 'bandage-outline', href: '/patient/prescriptions', bg: '#FDEFE4', fg: '#B5541B' },
+/**
+ * Records that have no tab of their own (Appointments, Queue and Results are tabs already, so
+ * they aren't repeated here). One icon family, one tone: the teal of the rest of the app.
+ */
+const SHORTCUTS: { label: PlainKey; hint: PlainKey; icon: IconName; href: string }[] = [
+  { label: 'home.shortcut.prescriptions', hint: 'home.shortcut.prescriptionsHint', icon: 'document-text-outline', href: '/patient/prescriptions' },
+  { label: 'home.shortcut.medicines', hint: 'home.shortcut.medicinesHint', icon: 'alarm-outline', href: '/patient/medicines' },
+  { label: 'home.shortcut.health', hint: 'home.shortcut.healthHint', icon: 'pulse-outline', href: '/patient/health-summary' },
+  { label: 'home.shortcut.bills', hint: 'home.shortcut.billsHint', icon: 'wallet-outline', href: '/patient/invoices' },
 ];
+
+/** Most of today's doses listed on Home; the rest are counted and live on the Medicines screen. */
+const MAX_DOSES = 4;
 
 export default function HomeScreen() {
   const t = useT();
+  const { patient: me } = useAuth();
   const { viewing: patient } = useProfile();
   const { refreshUnread } = useUnread();
   const appointments = useApiData<Appointment[]>('/api/patients/me/appointments?limit=20', {
@@ -63,13 +73,36 @@ export default function HomeScreen() {
   }, [appointments.data]);
 
   const queueEntry = queue.data && ACTIVE_QUEUE.has(queue.data.status) ? queue.data : null;
+  const nextIsToday = !!next && clinicYmd(new Date(appointmentStart(next))) === clinicTodayYmd();
   // An in-person visit today with no check-in yet: offer the clinic's self check-in.
-  const nextIsToday = !!next && next.modality !== 'teleconsult' && clinicYmd(new Date(appointmentStart(next))) === clinicTodayYmd();
-  const offerCheckIn = !account.loading && !queue.loading && !queue.error && ((nextIsToday && !queueEntry) || (queueEntry?.status === 'waiting' && !queueEntry.checkedIn));
+  const nextInPersonToday = nextIsToday && next?.modality !== 'teleconsult';
+  const offerCheckIn =
+    !account.loading &&
+    !queue.loading &&
+    !queue.error &&
+    ((nextInPersonToday && !queueEntry) || (queueEntry?.status === 'waiting' && !queueEntry.checkedIn));
   const latestResult = results.data?.[0];
   const balance = invoices.data?.summary?.outstandingBalance ?? 0;
   const refreshing =
     appointments.refreshing || queue.refreshing || results.refreshing || invoices.refreshing || account.refreshing;
+  const appointmentsFailed = !!appointments.error && !appointments.data;
+
+  // Today's doses come from the reminders saved on this phone (no server call). Re-read whenever
+  // Home comes back into view: the Medicines screen changes them.
+  const [schedule, setSchedule] = useState<ProfileSchedule | null>(null);
+  const profileId = patient?.id ?? null;
+  useFocusEffect(
+    useCallback(() => {
+      if (!profileId) return;
+      let live = true;
+      loadSchedule(profileId).then((s) => {
+        if (live) setSchedule(s);
+      });
+      return () => {
+        live = false;
+      };
+    }, [profileId])
+  );
 
   function refreshAll() {
     account.refresh();
@@ -78,9 +111,11 @@ export default function HomeScreen() {
     results.refresh();
     invoices.refresh();
     refreshUnread();
+    if (profileId) loadSchedule(profileId).then(setSchedule);
   }
 
   const fullName = patient ? `${patient.firstName} ${patient.lastName}`.trim() : '';
+  const status = bandStatus(t, queueEntry, next, nextIsToday, !!appointments.data);
 
   return (
     <View style={styles.root}>
@@ -89,122 +124,48 @@ export default function HomeScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshAll} tintColor={colors.primary} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero */}
-        <View style={styles.hero}>
-          <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" preserveAspectRatio="none">
-            <Defs>
-              <LinearGradient id="hero" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0" stopColor="#D5F0EE" />
-                <Stop offset="1" stopColor={colors.background} />
-              </LinearGradient>
-            </Defs>
-            <Rect x="0" y="0" width="100%" height="100%" fill="url(#hero)" />
-            <Circle cx="105%" cy="38%" r="150" fill={colors.accent} opacity={0.1} />
-            <Circle cx="92%" cy="62%" r="70" fill={colors.accent} opacity={0.08} />
-          </Svg>
-          <SafeAreaView edges={['top']}>
-            <AppHeader />
-
-            <Text style={styles.hello}>{greeting(t)}</Text>
-            {fullName ? (
-              <Text style={styles.name} numberOfLines={1}>
-                {fullName} 👋
-              </Text>
-            ) : null}
-            <Text style={styles.tagline}>{t('home.tagline')}</Text>
-          </SafeAreaView>
-        </View>
+        <SafeAreaView edges={['top']} style={styles.header}>
+          <AppHeader />
+        </SafeAreaView>
 
         <View style={styles.body}>
+          {/* The day, over a photo of a routine check-up. */}
+          <ScrimPhoto source={photos.checkup} style={styles.band} top={0.3} bottom={0.95}>
+            <View style={styles.bandInner}>
+              <Text style={styles.bandDate}>{formatDate(Date.now(), { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
+              <View>
+                <Text style={styles.hello}>{greeting(t)}</Text>
+                {fullName ? (
+                  <Text style={styles.name} numberOfLines={1} accessibilityRole="header">
+                    {fullName}
+                  </Text>
+                ) : null}
+                {status ? (
+                  <View style={styles.statusLine}>
+                    <Ionicons name={status.icon} size={16} color={status.live ? colors.accent : colors.onNavyMuted} />
+                    <Text style={[styles.statusText, status.live && styles.statusLive]}>{status.text}</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          </ScrimPhoto>
+
           {/* eMCR activation */}
           {activation ? <ActivationCard activation={activation} /> : null}
 
           {/* Visit feedback the clinic asked for (closable for this session) */}
           <VisitFeedbackPrompt />
 
-          {/* Booking CTA */}
-          <TourTarget id="home-book">
-            <TouchableOpacity
-              style={styles.cta}
-              onPress={() => router.push('/patient/appointments/book')}
-              accessibilityRole="button"
-              accessibilityLabel={t('home.cta.a11y')}
-            >
-              <View style={styles.ctaIcon}>
-                <Ionicons name="medkit-outline" size={24} color={colors.primary} />
-              </View>
-              <View style={styles.flex}>
-                <Text style={styles.ctaTitle}>{t('home.cta.title')}</Text>
-                <Text style={styles.ctaText}>{t('home.cta.text')}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-            </TouchableOpacity>
-          </TourTarget>
-
-          {/* Shortcuts */}
-          <TourTarget id="home-shortcuts" style={styles.shortcuts}>
-            {SHORTCUTS.map((s) => (
-              <TouchableOpacity
-                key={s.label}
-                style={styles.shortcut}
-                onPress={() => router.push(s.href as never)}
-                accessibilityRole="button"
-                accessibilityLabel={t(s.label)}
-              >
-                <View style={[styles.shortcutIcon, { backgroundColor: s.bg }]}>
-                  <Ionicons name={s.icon} size={26} color={s.fg} />
-                </View>
-                <Text style={styles.shortcutLabel} numberOfLines={2}>
-                  {t(s.label)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </TourTarget>
-
-          {/* Next appointment */}
-          <Section title={t('home.next.title')} action={t('home.viewAll')} onAction={() => router.push('/patient/appointments')}>
-            {appointments.loading ? (
-              <LoadingCard />
-            ) : appointments.error && !appointments.data ? (
-              <MessageCard text={appointments.error} />
-            ) : next ? (
-              <AppointmentCard appointment={next} />
-            ) : (
-              <MessageCard
-                text={t('home.next.none')}
-                action={{ title: t('home.next.bookOne'), onPress: () => router.push('/patient/appointments/book') }}
-              />
-            )}
-          </Section>
-
-          {offerCheckIn ? (
-            <TouchableOpacity
-              style={[styles.card, styles.rowCard, styles.checkInCard]}
-              onPress={() => router.push({ pathname: '/patient/queue', params: { scan: '1' } })}
-              accessibilityRole="button"
-              accessibilityLabel={t('home.checkIn.a11y')}
-            >
-              <View style={styles.tile}>
-                <Ionicons name="scan-outline" size={24} color={colors.primary} />
-              </View>
-              <View style={styles.flex}>
-                <Text style={styles.cardTitle}>{t('home.checkIn.title')}</Text>
-                <Text style={styles.meta}>{t('home.checkIn.text')}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-            </TouchableOpacity>
-          ) : null}
-
-          {/* Queue — only while the patient is actually in line */}
+          {/* Queue: only while the patient is actually in line. First, since it's happening now. */}
           {queueEntry ? (
             <Section title={t('home.queue.title')} action={t('home.queue.view')} onAction={() => router.push('/patient/queue')}>
-              <TouchableOpacity
-                style={[styles.card, styles.queueCard]}
-                onPress={() => router.push('/patient/queue')}
-                accessibilityRole="button"
-              >
+              <TouchableOpacity style={[styles.card, styles.queueCard]} onPress={() => router.push('/patient/queue')} accessibilityRole="button">
                 <View style={styles.queueIcon}>
-                  <Ionicons name="people" size={28} color={colors.primary} />
+                  <Ionicons
+                    name={queueEntry.status === 'in-progress' ? 'notifications' : 'ticket-outline'}
+                    size={28}
+                    color={colors.primaryOnSoft}
+                  />
                 </View>
                 <View style={styles.flex}>
                   {queueEntry.status === 'in-progress' ? (
@@ -218,12 +179,14 @@ export default function HomeScreen() {
                     <>
                       <Text style={styles.meta}>{t('home.queue.yourNumber')}</Text>
                       <Text style={styles.queueNumber}>{queueEntry.queueNumber}</Text>
-                      {queueEntry.status === 'away' ? <Text style={styles.queueLine}>{queueEntry.awayReason === 'missed' ? t('home.queue.missed') : t('home.queue.atLab')}</Text> : null}
+                      {queueEntry.status === 'away' ? (
+                        <Text style={styles.queueLine}>
+                          {queueEntry.awayReason === 'missed' ? t('home.queue.missed') : t('home.queue.atLab')}
+                        </Text>
+                      ) : null}
                       {typeof queueEntry.position === 'number' ? (
                         <Text style={styles.queueLine}>
-                          {queueEntry.position <= 1
-                            ? t('home.queue.next')
-                            : t('home.queue.ahead', { count: queueEntry.position - 1 })}
+                          {queueEntry.position <= 1 ? t('home.queue.next') : t('home.queue.ahead', { count: queueEntry.position - 1 })}
                         </Text>
                       ) : null}
                       {queueEntry.estimatedWaitTime ? (
@@ -237,6 +200,75 @@ export default function HomeScreen() {
             </Section>
           ) : null}
 
+          {offerCheckIn ? (
+            <TouchableOpacity
+              style={[styles.card, styles.rowCard, styles.checkInCard]}
+              onPress={() => router.push({ pathname: '/patient/queue', params: { scan: '1' } })}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.checkIn.a11y')}
+            >
+              <View style={styles.tile}>
+                <Ionicons name="scan-outline" size={24} color={colors.primaryOnSoft} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.cardTitle}>{t('home.checkIn.title')}</Text>
+                <Text style={styles.meta}>{t('home.checkIn.text')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          ) : null}
+
+          {/* Next appointment. With nothing booked, the booking card below is the empty state. */}
+          {appointments.loading || appointmentsFailed || next ? (
+            <Section title={t('home.next.title')} action={t('home.viewAll')} onAction={() => router.push('/patient/appointments')}>
+              {appointments.loading ? (
+                <LoadingCard />
+              ) : appointmentsFailed ? (
+                <MessageCard text={appointments.error!} />
+              ) : (
+                <AppointmentCard appointment={next!} />
+              )}
+            </Section>
+          ) : null}
+
+          <TourTarget id="home-book" style={styles.section}>
+            <BookCard empty={!appointments.loading && !appointmentsFailed && !next} />
+          </TourTarget>
+
+          {/* Today's doses, from the reminders set on the Medicines screen. */}
+          {schedule && me && profileId ? (
+            <DosesCard schedule={schedule} owner={me.id} profileId={profileId} onChange={setSchedule} />
+          ) : null}
+
+          {/* Records without a tab of their own */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, styles.shortcutsTitle]} accessibilityRole="header">
+              {t('home.shortcuts.title')}
+            </Text>
+            <TourTarget id="home-shortcuts" style={styles.shortcuts}>
+              {SHORTCUTS.map((s) => (
+                <TouchableOpacity
+                  key={s.label}
+                  style={styles.shortcut}
+                  onPress={() => router.push(s.href as never)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t(s.label)}
+                  accessibilityHint={t(s.hint)}
+                >
+                  <View style={styles.shortcutIcon}>
+                    <Ionicons name={s.icon} size={22} color={colors.primaryOnSoft} />
+                  </View>
+                  <Text style={styles.shortcutLabel} numberOfLines={1}>
+                    {t(s.label)}
+                  </Text>
+                  <Text style={styles.shortcutHint} numberOfLines={1}>
+                    {t(s.hint)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </TourTarget>
+          </View>
+
           {/* Latest result */}
           {latestResult ? (
             <Section title={t('home.results.title')} action={t('home.viewAll')} onAction={() => router.push('/patient/results')}>
@@ -246,15 +278,13 @@ export default function HomeScreen() {
                 accessibilityRole="button"
               >
                 <View style={styles.tile}>
-                  <Ionicons name="flask-outline" size={24} color={colors.primary} />
+                  <Ionicons name="flask-outline" size={24} color={colors.primaryOnSoft} />
                 </View>
                 <View style={styles.flex}>
                   <Text style={styles.cardTitle} numberOfLines={1}>
                     {latestResult.request?.testType ?? t('home.results.labTest')}
                   </Text>
-                  <Text style={styles.meta}>
-                    {formatDate(latestResult.resultDate ?? latestResult.orderDate ?? latestResult.createdAt)}
-                  </Text>
+                  <Text style={styles.meta}>{formatDate(latestResult.resultDate ?? latestResult.orderDate ?? latestResult.createdAt)}</Text>
                 </View>
                 <ResultStatusPill status={latestResult.status} />
                 <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
@@ -262,34 +292,12 @@ export default function HomeScreen() {
             </Section>
           ) : null}
 
-          {/* Health summary */}
-          <Section title={t('home.health.title')} action={t('home.open')} onAction={() => router.push('/patient/health-summary')}>
-            <TouchableOpacity
-              style={[styles.card, styles.rowCard]}
-              onPress={() => router.push('/patient/health-summary')}
-              accessibilityRole="button"
-            >
-              <View style={styles.tile}>
-                <Ionicons name="heart-outline" size={24} color={colors.primary} />
-              </View>
-              <View style={styles.flex}>
-                <Text style={styles.cardTitle}>{t('home.health.cardTitle')}</Text>
-                <Text style={styles.meta}>{t('home.health.cardText')}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-            </TouchableOpacity>
-          </Section>
-
           {/* Balance */}
           {balance > 0 ? (
             <Section title={t('home.balance.title')} action={t('home.balance.view')} onAction={() => router.push('/patient/invoices')}>
-              <TouchableOpacity
-                style={[styles.card, styles.rowCard]}
-                onPress={() => router.push('/patient/invoices')}
-                accessibilityRole="button"
-              >
+              <TouchableOpacity style={[styles.card, styles.rowCard]} onPress={() => router.push('/patient/invoices')} accessibilityRole="button">
                 <View style={styles.tile}>
-                  <Ionicons name="receipt-outline" size={24} color={colors.primary} />
+                  <Ionicons name="wallet-outline" size={24} color={colors.primaryOnSoft} />
                 </View>
                 <View style={styles.flex}>
                   <Text style={styles.meta}>{t('home.balance.due')}</Text>
@@ -304,6 +312,182 @@ export default function HomeScreen() {
           ) : null}
         </View>
       </ScrollView>
+    </View>
+  );
+}
+
+/** The band's status line: the one thing worth knowing right now, most urgent first. */
+function bandStatus(
+  t: TFunction,
+  queueEntry: QueueEntry | null,
+  next: Appointment | undefined,
+  nextIsToday: boolean,
+  loaded: boolean
+): { icon: IconName; text: string; live: boolean } | null {
+  if (queueEntry?.status === 'in-progress') return { icon: 'notifications', text: t('home.queue.yourTurn'), live: true };
+  if (queueEntry) return { icon: 'ticket-outline', text: t('home.band.inQueue', { number: queueEntry.queueNumber }), live: true };
+  if (next) {
+    const start = appointmentStart(next);
+    if (nextIsToday) return { icon: 'calendar', text: t('home.band.today', { time: formatTime(start) }), live: true };
+    const when = `${formatDate(start, { weekday: 'short', month: 'short', day: 'numeric' })} · ${formatTime(start)}`;
+    return { icon: 'calendar-outline', text: t('home.band.next', { when }), live: false };
+  }
+  return loaded ? { icon: 'calendar-outline', text: t('home.band.none'), live: false } : null;
+}
+
+/**
+ * Booking on a photo. With an appointment coming up it's a slim row ("Book a visit"); with none it
+ * is the empty state itself, taller, with its own button, so Home never shows "no appointments"
+ * and a separate booking card one above the other.
+ */
+function BookCard({ empty }: { empty: boolean }) {
+  const t = useT();
+  const book = () => router.push('/patient/appointments/book');
+  if (empty) {
+    return (
+      <ScrimPhoto source={photos.doctorWelcome} style={styles.bookEmpty} top={0.35} bottom={0.98}>
+        <View style={styles.bookInner}>
+          <Text style={styles.bookTitle} accessibilityRole="header">
+            {t('home.book.noneTitle')}
+          </Text>
+          <Text style={styles.bookText}>{t('home.book.noneText')}</Text>
+          <TouchableOpacity style={styles.bookButton} onPress={book} accessibilityRole="button">
+            <Ionicons name="add-circle-outline" size={20} color={colors.primaryText} />
+            <Text style={styles.bookButtonText}>{t('home.book.action')}</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrimPhoto>
+    );
+  }
+  return (
+    <TouchableOpacity
+      onPress={book}
+      accessibilityRole="button"
+      accessibilityLabel={t('home.book.title')}
+      accessibilityHint={t('home.book.text')}
+      activeOpacity={0.85}
+    >
+      <ScrimPhoto source={photos.consultation} style={styles.bookRow} top={0.55} bottom={0.95}>
+        <View style={styles.bookRowInner}>
+          <View style={styles.bookIcon}>
+            <Ionicons name="calendar-outline" size={22} color={colors.primaryText} />
+          </View>
+          <View style={styles.flex}>
+            <Text style={styles.bookRowTitle}>{t('home.book.title')}</Text>
+            <Text style={styles.bookText} numberOfLines={2}>
+              {t('home.book.text')}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.primaryText} />
+        </View>
+      </ScrimPhoto>
+    </TouchableOpacity>
+  );
+}
+
+/** How each dose state looks: words and an icon, never colour alone. Amber means "act on this". */
+const DOSE_LOOK: Record<DoseStatus, { icon: IconName; color: string; label: PlainKey }> = {
+  taken: { icon: 'checkmark-circle', color: colors.primary, label: 'medicines.status.taken' },
+  due: { icon: 'alarm', color: colors.warning, label: 'medicines.status.due' },
+  missed: { icon: 'alert-circle-outline', color: colors.warning, label: 'medicines.status.missed' },
+  upcoming: { icon: 'time-outline', color: colors.slate, label: 'medicines.status.upcoming' },
+};
+
+/**
+ * Today's doses for the medicines with reminders on this phone: a photo strip with "2 of 4 taken",
+ * then one ruled row per dose (time, medicine, status), with a tick right there for a dose that is
+ * due or was missed. Nothing shows until a reminder is set on the Medicines screen.
+ */
+function DosesCard({
+  schedule,
+  owner,
+  profileId,
+  onChange,
+}: {
+  schedule: ProfileSchedule;
+  owner: string;
+  profileId: string;
+  onChange: (s: ProfileSchedule) => void;
+}) {
+  const t = useT();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const now = new Date();
+  const doses = schedule.meds
+    .filter((m) => m.end === null || m.end > now.getTime())
+    .flatMap((m) => m.times.map((time) => ({ key: m.key, name: m.name, time, status: doseStatus(schedule, m.key, time, now) })))
+    .sort((a, b) => toMinutes(a.time) - toMinutes(b.time));
+  if (!doses.length) return null;
+  const taken = doses.filter((d) => d.status === 'taken').length;
+  const shown = doses.slice(0, MAX_DOSES);
+
+  async function mark(key: string, time: string) {
+    setBusy(`${key}@${time}`);
+    setFailed(false);
+    try {
+      onChange(await setDoseTaken(owner, profileId, key, time, true));
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <View style={[styles.section, styles.dosesCard]}>
+      <ScrimPhoto source={photos.pillOrganizer} style={styles.dosesHead} top={0.45} bottom={0.95}>
+        <View style={styles.dosesHeadInner}>
+          <Text style={styles.dosesTitle} accessibilityRole="header">
+            {t('home.meds.title')}
+          </Text>
+          <Text style={styles.dosesProgress}>{t('home.meds.progress', { taken, total: doses.length })}</Text>
+        </View>
+      </ScrimPhoto>
+      {shown.map((d) => {
+        const look = DOSE_LOOK[d.status];
+        const canMark = d.status === 'due' || d.status === 'missed';
+        const slot = formatSlot(d.time);
+        const id = `${d.key}@${d.time}`;
+        return (
+          <View key={id} style={styles.doseRow}>
+            <Text style={styles.doseTime}>{slot}</Text>
+            <View style={styles.flex}>
+              <Text style={[styles.doseName, d.status === 'taken' && styles.doseDone]} numberOfLines={2}>
+                {d.name}
+              </Text>
+              <View style={styles.doseState}>
+                <Ionicons name={look.icon} size={14} color={look.color} />
+                <Text style={[styles.doseStateText, { color: look.color }]}>{t(look.label)}</Text>
+              </View>
+            </View>
+            {canMark ? (
+              <TouchableOpacity
+                style={styles.markButton}
+                onPress={() => mark(d.key, d.time)}
+                disabled={busy !== null}
+                accessibilityRole="button"
+                accessibilityLabel={t('medicines.markA11y', { name: d.name, time: slot })}
+              >
+                {busy === id ? (
+                  <ActivityIndicator size="small" color={colors.primaryOnSoft} />
+                ) : (
+                  <Ionicons name="checkmark" size={22} color={colors.primaryOnSoft} />
+                )}
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        );
+      })}
+      {failed ? <Text style={styles.doseError}>{t('home.meds.saveFailed')}</Text> : null}
+      <TouchableOpacity style={styles.dosesFoot} onPress={() => router.push('/patient/medicines')} accessibilityRole="link">
+        {doses.length > MAX_DOSES ? (
+          <Text style={[styles.meta, styles.flex]}>{t('home.meds.more', { count: doses.length - MAX_DOSES })}</Text>
+        ) : (
+          <View style={styles.flex} />
+        )}
+        <Text style={styles.sectionActionText}>{t('home.meds.open')}</Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -334,7 +518,7 @@ function ActivationCard({ activation }: { activation: EmcrAccount['activation'] 
       accessibilityLabel={`${title}. ${text}`}
     >
       <View style={[styles.tile, needed ? styles.activateTile : styles.renewTile]}>
-        <Ionicons name={needed ? 'key-outline' : 'time-outline'} size={24} color={needed ? colors.primaryText : colors.warning} />
+        <Ionicons name={needed ? 'key-outline' : 'hourglass-outline'} size={24} color={needed ? colors.primaryText : colors.warning} />
       </View>
       <View style={styles.flex}>
         <Text style={styles.cardTitle}>{title}</Text>
@@ -385,60 +569,126 @@ function LoadingCard() {
   );
 }
 
-function MessageCard({ text, action }: { text: string; action?: { title: string; onPress: () => void } }) {
+function MessageCard({ text }: { text: string }) {
   return (
     <View style={[styles.card, styles.centerCard]}>
       <Text style={styles.meta}>{text}</Text>
-      {action ? (
-        <TouchableOpacity onPress={action.onPress} accessibilityRole="button" style={styles.messageAction}>
-          <Text style={styles.sectionActionText}>{action.title}</Text>
-        </TouchableOpacity>
-      ) : null}
     </View>
   );
 }
-
-const shadow = softShadow;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   scroll: { paddingBottom: spacing.xl },
   flex: { flex: 1 },
-  hero: { paddingHorizontal: spacing.md + 4, paddingBottom: spacing.xl + spacing.md, overflow: 'hidden' },
-  hello: { fontSize: 17, color: colors.text },
-  name: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4, marginTop: 2 },
-  tagline: { fontSize: 15, color: colors.textMuted, marginTop: spacing.xs },
-  body: { paddingHorizontal: spacing.md + 4, marginTop: -spacing.lg },
-  cta: {
+  header: { paddingHorizontal: spacing.md + 4 },
+  body: { paddingHorizontal: spacing.md + 4 },
+
+  band: { minHeight: 200, borderRadius: radius.lg },
+  bandInner: { flex: 1, justifyContent: 'space-between', padding: spacing.md + 4, gap: spacing.lg },
+  bandDate: { fontSize: 12, fontWeight: '700', color: colors.primaryText, textTransform: 'uppercase', letterSpacing: 0.8 },
+  hello: { fontSize: 15, color: colors.onNavyMuted },
+  name: { fontSize: 26, fontWeight: '800', color: colors.primaryText, letterSpacing: -0.4, marginTop: 2 },
+  statusLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, marginTop: spacing.sm },
+  statusText: { flexShrink: 1, fontSize: 14, color: colors.onNavyMuted, fontVariant: ['tabular-nums'] },
+  statusLive: { color: colors.primaryText, fontWeight: '600' },
+
+  bookEmpty: { minHeight: 236, borderRadius: radius.lg },
+  bookInner: { flex: 1, justifyContent: 'flex-end', padding: spacing.md + 4 },
+  bookTitle: { fontSize: 20, fontWeight: '700', color: colors.primaryText },
+  bookText: { fontSize: 13, lineHeight: 18, color: colors.onNavyMuted, marginTop: 2 },
+  bookButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    alignSelf: 'flex-start',
+    minHeight: 48,
+    paddingHorizontal: spacing.md + 4,
+    marginTop: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  bookButtonText: { fontSize: 15, fontWeight: '700', color: colors.primaryText },
+  bookRow: { minHeight: 96, borderRadius: radius.lg },
+  bookRowInner: { flex: 1, flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm + 4, padding: spacing.md },
+  bookIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bookRowTitle: { fontSize: 16, fontWeight: '700', color: colors.primaryText },
+
+  dosesCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  dosesHead: { minHeight: 92 },
+  dosesHeadInner: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 4 },
+  dosesTitle: { fontSize: 17, fontWeight: '700', color: colors.primaryText },
+  dosesProgress: { fontSize: 13, color: colors.onNavyMuted, marginTop: 2, fontVariant: ['tabular-nums'] },
+  doseRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm + 4,
-    backgroundColor: '#DDF3F1',
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: '#C6EAE7',
+    minHeight: 60,
+    paddingHorizontal: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
   },
-  ctaIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  doseTime: { width: 74, fontSize: 15, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
+  doseName: { fontSize: 15, fontWeight: '600', color: colors.text },
+  doseDone: { color: colors.textMuted },
+  doseState: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  doseStateText: { fontSize: 12, fontWeight: '600' },
+  markButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doseError: { fontSize: 13, color: colors.danger, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
+  dosesFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+
+  shortcutsTitle: { marginBottom: spacing.sm },
+  shortcuts: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm + 4 },
+  shortcut: {
+    flexBasis: '46%',
+    flexGrow: 1,
     backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ctaTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
-  ctaText: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  shortcuts: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.lg },
-  shortcut: { width: '23%', alignItems: 'center' },
-  shortcutIcon: {
-    width: '100%',
-    aspectRatio: 1.2,
     borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  shortcutIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: spacing.sm,
   },
-  shortcutLabel: { fontSize: 13, fontWeight: '600', color: colors.text, textAlign: 'center', marginTop: spacing.sm },
+  shortcutLabel: { fontSize: 15, fontWeight: '700', color: colors.text },
+  shortcutHint: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+
   section: { marginTop: spacing.lg },
   sectionHeader: {
     flexDirection: 'row',
@@ -455,29 +705,28 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
-    ...shadow,
+    borderColor: colors.border,
+    ...softShadow,
   },
   centerCard: { alignItems: 'center', paddingVertical: spacing.lg },
-  messageAction: { marginTop: spacing.xs, minHeight: 44, minWidth: 44, justifyContent: 'center', paddingHorizontal: spacing.sm },
   rowCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4 },
-  checkInCard: { marginTop: spacing.lg, borderColor: '#BFE3E0' },
-  activateCard: { marginBottom: spacing.lg, borderColor: colors.primary, borderWidth: 1.5 },
-  renewCard: { marginBottom: spacing.lg, borderColor: '#F1D9A6', backgroundColor: '#FFFBF2' },
+  checkInCard: { marginTop: spacing.lg, borderColor: colors.primary },
+  activateCard: { marginTop: spacing.lg, borderColor: colors.primary, borderWidth: 1.5 },
+  renewCard: { marginTop: spacing.lg, borderColor: colors.warningLine, backgroundColor: colors.warningTint },
   activateTile: { backgroundColor: colors.primary },
   renewTile: { backgroundColor: colors.warningSoft },
   cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   meta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  queueCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: '#F1F8FD' },
+  queueCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderColor: colors.primary },
   queueIcon: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  queueNumber: { fontSize: 30, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
+  queueNumber: { fontSize: 30, fontWeight: '800', color: colors.text, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
   queueLine: { fontSize: 14, color: colors.text, marginTop: 2 },
   queueTurn: { fontSize: 20, fontWeight: '800', color: colors.primary },
   tile: {
@@ -488,7 +737,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  balance: { fontSize: 24, fontWeight: '800', color: colors.text, marginTop: 2 },
+  balance: { fontSize: 24, fontWeight: '800', color: colors.text, marginTop: 2, fontVariant: ['tabular-nums'] },
   payNote: {
     flexDirection: 'row',
     alignItems: 'center',

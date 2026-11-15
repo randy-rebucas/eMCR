@@ -19,7 +19,7 @@ export function BrandMark({ size = 40 }: { size?: number }) {
       <Polyline
         points="3.5,11.5 8,11.5 9.5,8.5 11.5,15 13.5,7 15,11.5 20.5,11.5"
         fill="none"
-        stroke="#FFFFFF"
+        stroke={colors.primaryText}
         strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -28,26 +28,39 @@ export function BrandMark({ size = 40 }: { size?: number }) {
   );
 }
 
-/** Mark + "eMCR" wordmark + descriptor, as on the welcome and sign-in screens. */
-export function BrandLogo({ size = 'md', align = 'center' }: { size?: 'sm' | 'md' | 'lg'; align?: 'center' | 'left' }) {
+/**
+ * Mark + "eMCR" wordmark + descriptor, as on the welcome and sign-in screens. `tone="onNavy"` for
+ * the photo bands: white wordmark, the descriptor in onNavyMuted.
+ */
+export function BrandLogo({
+  size = 'md',
+  align = 'center',
+  tone = 'default',
+}: {
+  size?: 'sm' | 'md' | 'lg';
+  align?: 'center' | 'left';
+  tone?: 'default' | 'onNavy';
+}) {
   const s = SIZES[size];
+  const onNavy = tone === 'onNavy';
   return (
     <View style={[styles.row, align === 'left' && styles.left]} accessible accessibilityRole="header" accessibilityLabel="eMCR, Electronic MyClinic Record">
       <BrandMark size={s.mark} />
       <View>
-        <Text style={[styles.word, { fontSize: s.word, lineHeight: s.word * 1.05 }]}>
-          <Text style={styles.wordAccent}>e</Text>MCR
+        <Text style={[styles.word, onNavy && styles.wordOnNavy, { fontSize: s.word, lineHeight: s.word * 1.05 }]}>
+          <Text style={onNavy ? styles.wordAccentOnNavy : styles.wordAccent}>e</Text>MCR
         </Text>
-        <Text style={[styles.sub, { fontSize: s.sub }]}>Electronic MyClinic Record</Text>
+        <Text style={[styles.sub, onNavy && styles.subOnNavy, { fontSize: s.sub }]}>Electronic MyClinic Record</Text>
       </View>
     </View>
   );
 }
 
+// The descriptor was 9-10 pt; 11 is the smallest that stays legible in the header (sm).
 const SIZES = {
-  sm: { mark: 36, word: 26, sub: 9 },
-  md: { mark: 44, word: 34, sub: 10 },
-  lg: { mark: 60, word: 48, sub: 12 },
+  sm: { mark: 36, word: 26, sub: 11 },
+  md: { mark: 44, word: 34, sub: 12 },
+  lg: { mark: 60, word: 48, sub: 13 },
 };
 
 const styles = StyleSheet.create({
@@ -55,5 +68,9 @@ const styles = StyleSheet.create({
   left: { alignSelf: 'flex-start' },
   word: { fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
   wordAccent: { color: colors.primary },
+  wordOnNavy: { color: colors.primaryText },
+  // The brighter brand teal: `primary` is too dark to read on navy.
+  wordAccentOnNavy: { color: colors.accent },
   sub: { color: colors.textMuted, fontWeight: '500', marginTop: 1, letterSpacing: 0.2 },
+  subOnNavy: { color: colors.onNavyMuted },
 });

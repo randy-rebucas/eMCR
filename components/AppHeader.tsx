@@ -5,6 +5,7 @@ import { useProfile } from '@/lib/profile';
 import { possessiveName, useT } from '@/lib/i18n';
 import { useUnread } from '@/lib/unread';
 import { colors, radius, spacing } from '@/lib/theme';
+import { Avatar } from './Avatar';
 import { BrandLogo } from './BrandLogo';
 import { TourTarget } from './QuickTour';
 
@@ -18,7 +19,6 @@ export function AppHeader({ back = false }: { back?: boolean }) {
   const pathname = usePathname();
   const t = useT();
   const whose = viewing && !viewing.self ? possessiveName(viewing.firstName) : '';
-  const initials = viewing ? `${viewing.firstName?.[0] ?? ''}${viewing.lastName?.[0] ?? ''}`.toUpperCase() : '';
 
   return (
     <View style={styles.wrap}>
@@ -61,11 +61,7 @@ export function AppHeader({ back = false }: { back?: boolean }) {
               viewing && !viewing.self ? t('common.header.memberProfile', { name: viewing.firstName }) : t('common.header.yourProfile')
             }
           >
-            {initials ? (
-              <Text style={styles.avatarText}>{initials}</Text>
-            ) : (
-              <Ionicons name="person" size={20} color={colors.primary} />
-            )}
+            <Avatar image={viewing?.profileImage} firstName={viewing?.firstName} lastName={viewing?.lastName} size={40} tone="soft" />
           </TouchableOpacity>
         </View>
       </View>
@@ -128,7 +124,6 @@ const styles = StyleSheet.create({
     ...softShadow,
   },
   avatar: { backgroundColor: colors.primarySoft, borderWidth: 2, borderColor: colors.surface },
-  avatarText: { fontSize: 15, fontWeight: '700', color: colors.primaryOnSoft },
   badge: {
     position: 'absolute',
     top: -2,

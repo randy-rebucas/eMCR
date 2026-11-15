@@ -312,8 +312,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#F1D9A6',
-    marginBottom: spacing.lg,
+    borderColor: colors.warningLine,
+    // Home only: spaced from the photo band above it, like every other Home section.
+    marginTop: spacing.lg,
     ...softShadow,
   },
   tile: {

@@ -10,16 +10,13 @@ import { LoadingView, useBottomPadding } from '@/components/ui';
 import { ErrorState } from '@/components/ErrorState';
 import { useT } from '@/lib/i18n';
 
-/** The detail route also returns the appointment's clinic, which the booking form needs. */
-type AppointmentAtClinic = Appointment & { tenantId?: string };
-
 /** Move an appointment to another time with the same doctor (from the appointment's detail screen). */
 export default function RescheduleAppointmentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const t = useT();
   const navigation = useNavigation();
   const bottomPad = useBottomPadding();
-  const { data, loading, error, refresh } = useApiData<AppointmentAtClinic>(
+  const { data, loading, error, refresh } = useApiData<Appointment>(
     id ? `/api/patients/me/appointments/${encodeURIComponent(id)}` : null
   );
   const [moved, setMoved] = useState<BookedSummary | null>(null);

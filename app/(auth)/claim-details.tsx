@@ -150,7 +150,6 @@ export default function ClaimDetailsScreen() {
         title={relation === 'self' ? t('auth.claim.selfTitle') : t('auth.claim.otherTitle')}
         subtitle={relation === 'self' ? t('auth.claim.selfSubtitle') : t('auth.claim.otherSubtitle')}
       />
-      {errorText ? <Banner message={errorText} /> : null}
 
       <IconField
         icon="person-outline"
@@ -182,6 +181,7 @@ export default function ClaimDetailsScreen() {
         </View>
       ) : null}
 
+      {errorText ? <Banner message={errorText} /> : null}
       <Button title={relation === 'self' ? t('auth.claim.linkMine') : t('auth.claim.addThem')} onPress={submit} loading={submitting} />
     </AuthScreen>
   );

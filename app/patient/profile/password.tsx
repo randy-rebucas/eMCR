@@ -12,7 +12,7 @@ import { useApiData } from '@/lib/useApiData';
 import { PatientProfile } from '@/lib/types';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, KeyboardAvoider, LoadingView, useBottomPadding } from '@/components/ui';
-import { AppHeader, softShadow } from '@/components/AppHeader';
+import { AppHeader } from '@/components/AppHeader';
 import { ChecklistItem, IconField, OtpConfirm, PASSWORD_RULES } from '@/components/auth';
 import { useT } from '@/lib/i18n';
 
@@ -184,8 +184,6 @@ export default function PasswordScreen() {
               </Text>
             </View>
 
-            {error ? <Banner message={error} /> : null}
-
             {otpStep && codeNote ? <Banner tone="primary" message={codeNote} /> : null}
             {otpStep ? (
               <View style={styles.card}>
@@ -263,6 +261,11 @@ export default function PasswordScreen() {
                   </View>
                 </View>
 
+                {error ? (
+                  <View style={styles.errorSpacing}>
+                    <Banner message={error} />
+                  </View>
+                ) : null}
                 <Button
                   title={hasPassword ? t('profile.pw.update') : t('profile.pw.save')}
                   icon="lock-closed-outline"
@@ -315,9 +318,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm + 4,
-    backgroundColor: '#DDF3F1',
-    borderWidth: 1,
-    borderColor: '#C6EAE7',
+    backgroundColor: colors.primarySoft,
     borderRadius: radius.lg,
     padding: spacing.sm + 6,
     marginTop: spacing.lg,
@@ -331,14 +332,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  noticeText: { flex: 1, fontSize: 13, lineHeight: 19, color: colors.text },
+  noticeText: { flex: 1, fontSize: 13, lineHeight: 19, color: colors.primaryOnSoft },
+  errorSpacing: { marginTop: spacing.lg, marginBottom: -spacing.sm },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
+    borderColor: colors.border,
     padding: spacing.md,
-    ...softShadow,
   },
   label: { fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: 6 },
   rules: {

@@ -1,76 +1,96 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Medication, Prescription } from '@/lib/types';
-import { courseRange, frequencyLabel } from '@/lib/prescriptions';
+import { courseDay, courseRange, frequencyLabel } from '@/lib/prescriptions';
+import { clinicTodayYmd } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
-import { StatusBadge } from './StatusBadge';
 import { useT } from '@/lib/i18n';
 
 type McIcon = keyof typeof MaterialCommunityIcons.glyphMap;
 
-function formIcon(form: string | undefined): { icon: McIcon; bg: string; fg: string } {
+/**
+ * The medicine's form as an icon. One tile colour for all of them: the shape tells the form, and
+ * red stays reserved for destructive actions (injections and capsules used to be red).
+ */
+function formIcon(form: string | undefined): McIcon {
   const f = (form ?? '').toLowerCase();
-  if (/syrup|suspension|solution|liquid/.test(f)) return { icon: 'bottle-tonic-outline', bg: '#FDF1DC', fg: '#A15C00' };
-  if (/inject|vial|ampul/.test(f)) return { icon: 'needle', bg: '#FDE8E8', fg: '#B3261E' };
-  if (/drop/.test(f)) return { icon: 'eyedropper', bg: '#E6EEFB', fg: '#2F5FB3' };
-  if (/cream|ointment|gel|lotion|topical/.test(f)) return { icon: 'lotion-outline', bg: '#EEEAFB', fg: '#5B47B0' };
-  if (/inhal|nebul/.test(f)) return { icon: 'weather-windy', bg: '#E6EEFB', fg: '#2F5FB3' };
-  if (/capsule/.test(f)) return { icon: 'pill', bg: '#FDE8E8', fg: '#B3261E' };
-  return { icon: 'pill', bg: colors.primarySoft, fg: colors.primary };
+  if (/syrup|suspension|solution|liquid/.test(f)) return 'bottle-tonic-outline';
+  if (/inject|vial|ampul/.test(f)) return 'needle';
+  if (/drop/.test(f)) return 'eyedropper';
+  if (/cream|ointment|gel|lotion|topical/.test(f)) return 'lotion-outline';
+  if (/inhal|nebul/.test(f)) return 'weather-windy';
+  return 'pill';
 }
 
-/** One medication: name + strength, dosage and course boxes, and instructions. */
+/**
+ * One medicine: name + strength, how to take it, and its course. While a course runs it shows
+ * "Day 3 of 7" with a meter, which is what a patient checks mid-course. `compact` is the row
+ * inside a ruled card on the prescriptions list; otherwise a full card (prescription detail).
+ */
 export function MedicationCard({
   prescription,
   med,
-  showStatus = true,
+  compact = false,
+  first = true,
 }: {
   prescription: Prescription;
   med: Medication;
-  showStatus?: boolean;
+  compact?: boolean;
+  /** Compact rows draw a hairline above all but the first. */
+  first?: boolean;
 }) {
   const t = useT();
-  const look = formIcon(med.form);
   const title = [med.name, med.strength].filter(Boolean).join(' ');
   const dosage = [med.dose, frequencyLabel(med.frequency)].filter(Boolean).join(' · ');
   const range = courseRange(prescription, med);
+  const progress = courseDay(prescription, med, clinicTodayYmd());
   const sub = [med.genericName && med.genericName !== med.name ? med.genericName : null, med.form, med.route]
     .filter(Boolean)
     .join(' · ');
+  const length = med.durationDays
+    ? t('prescriptions.days', { count: med.durationDays })
+    : med.quantity
+      ? t('prescriptions.qty', { quantity: String(med.quantity) })
+      : null;
 
   return (
-    <View style={styles.card}>
+    <View
+      style={compact ? [styles.row, !first && styles.dividerTop] : styles.card}
+      accessible
+      accessibilityLabel={[
+        title,
+        sub,
+        dosage,
+        progress ? t('prescriptions.courseDay', { day: progress.day, total: progress.total }) : length,
+        range,
+        med.instructions,
+      ]
+        .filter(Boolean)
+        .join('. ')}
+    >
       <View style={styles.top}>
-        <View style={[styles.tile, { backgroundColor: look.bg }]}>
-          <MaterialCommunityIcons name={look.icon} size={30} color={look.fg} />
+        <View style={[styles.tile, compact && styles.tileCompact]}>
+          <MaterialCommunityIcons name={formIcon(med.form)} size={compact ? 22 : 28} color={colors.primaryOnSoft} />
         </View>
         <View style={styles.flex}>
-          <Text style={styles.title}>{title}</Text>
+          <Text style={[styles.title, compact && styles.titleCompact]}>{title}</Text>
           {sub ? <Text style={styles.sub}>{sub}</Text> : null}
+          {dosage ? <Text style={styles.dosage}>{dosage}</Text> : null}
         </View>
-        {showStatus ? <StatusBadge status={prescription.status} /> : null}
       </View>
 
-      {dosage || med.durationDays || med.quantity ? (
-        <View style={styles.facts}>
-          <View style={styles.fact}>
-            <Ionicons name="medical-outline" size={18} color={colors.primary} />
-            <View style={styles.flex}>
-              <Text style={styles.factLabel}>{t('prescriptions.dosage')}</Text>
-              <Text style={styles.factValue}>{dosage || '—'}</Text>
-            </View>
+      {progress ? (
+        <View style={styles.course}>
+          <View style={styles.courseTop}>
+            <Text style={styles.courseDay}>{t('prescriptions.courseDay', { day: progress.day, total: progress.total })}</Text>
+            {range ? <Text style={styles.courseRange}>{range}</Text> : null}
           </View>
-          <View style={styles.fact}>
-            <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-            <View style={styles.flex}>
-              <Text style={styles.factLabel}>{med.durationDays ? t('prescriptions.duration') : t('prescriptions.quantity')}</Text>
-              <Text style={styles.factValue}>
-                {med.durationDays ? t('prescriptions.days', { count: med.durationDays }) : med.quantity ?? '—'}
-              </Text>
-              {range ? <Text style={styles.factSub}>{range}</Text> : null}
-            </View>
+          <View style={styles.meter}>
+            <View style={[styles.meterFill, { width: `${(progress.day / progress.total) * 100}%` }]} />
           </View>
         </View>
+      ) : length || range ? (
+        <Text style={styles.courseRange}>{[length, range].filter(Boolean).join(' · ')}</Text>
       ) : null}
 
       {med.instructions ? (
@@ -87,28 +107,35 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
-    padding: spacing.sm + 6,
+    borderColor: colors.border,
+    padding: spacing.md,
     marginBottom: spacing.sm + 2,
+    gap: spacing.sm + 2,
   },
-  top: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4 },
-  tile: { width: 56, height: 56, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 17, fontWeight: '800', color: colors.text },
-  sub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  facts: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    backgroundColor: colors.surfaceMuted,
+  row: { paddingVertical: spacing.sm + 4, gap: spacing.sm },
+  dividerTop: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  top: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm + 4 },
+  tile: {
+    width: 48,
+    height: 48,
     borderRadius: radius.md,
-    padding: spacing.sm + 4,
-    marginTop: spacing.sm + 4,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  fact: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  factLabel: { fontSize: 12, color: colors.textMuted },
-  factValue: { fontSize: 14, fontWeight: '600', color: colors.text, marginTop: 2 },
-  factSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  instructions: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.sm + 2 },
+  tileCompact: { width: 40, height: 40 },
+  title: { fontSize: 17, fontWeight: '700', color: colors.text },
+  titleCompact: { fontSize: 15 },
+  sub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  dosage: { fontSize: 14, fontWeight: '600', color: colors.text, marginTop: spacing.xs },
+  course: { gap: spacing.xs + 2 },
+  courseTop: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.sm, flexWrap: 'wrap' },
+  courseDay: { fontSize: 13, fontWeight: '700', color: colors.primaryOnSoft, fontVariant: ['tabular-nums'] },
+  courseRange: { fontSize: 12, color: colors.textMuted, fontVariant: ['tabular-nums'] },
+  meter: { height: 6, borderRadius: 3, backgroundColor: colors.slateSoft, overflow: 'hidden' },
+  meterFill: { height: 6, borderRadius: 3, backgroundColor: colors.accent },
+  instructions: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   instructionsText: { flex: 1, fontSize: 13, lineHeight: 19, color: colors.slate },
 });

@@ -11,6 +11,8 @@ export interface PatientSummary {
   firstName: string;
   lastName: string;
   email: string | null;
+  /** Picture as a data URI; filled from `/api/patients/me` (sign-in responses don't carry it). */
+  profileImage?: string | null;
 }
 
 /** One entry of `GET /api/patients/me/clinics`: a clinic the patient is registered at. */
@@ -42,6 +44,8 @@ export interface PatientProfile {
   address?: { street?: string; city?: string; state?: string; zipCode?: string };
   emergencyContact?: { name?: string; phone?: string; relationship?: string };
   hasPassword?: boolean;
+  /** Picture the patient set (a data URI); null = none. Missing on servers before the photo route. */
+  profileImage?: string | null;
   /** Recorded by the clinic; read-only for the patient. */
   allergies?: Array<string | { substance: string; reaction?: string; severity?: string }>;
   preExistingConditions?: Array<{ condition: string; status?: 'active' | 'resolved' | 'chronic'; notes?: string }>;
@@ -84,6 +88,8 @@ export interface Appointment {
   room?: string;
   doctor?: DoctorRef | null;
   createdAt?: string;
+  /** The clinic (only the detail route sends it). Matches `PatientClinic.tenantId`. */
+  tenantId?: string;
   /** 'teleconsult' for a video visit. Missing on older servers (= in person). */
   modality?: 'in-person' | 'teleconsult';
   /** Video visit join details; null for in-person visits. */

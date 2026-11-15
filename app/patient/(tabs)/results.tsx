@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { usePaginatedList } from '@/lib/usePaginatedList';
 import { openDocument } from '@/lib/documents';
 import { errorMessage } from '@/lib/api';
-import { isReady, summarize } from '@/lib/labResults';
+import { isReady, ResultSummary, summarize } from '@/lib/labResults';
 import { LabResult, PatientDocument } from '@/lib/types';
 import { formatDate, formatFileSize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
@@ -23,6 +23,7 @@ import { Banner, Button, IconName, ListFooter, SearchMoreHint } from '@/componen
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { ResultStatusPill } from '@/components/ResultStatusPill';
+import { photos, ScrimPhoto } from '@/components/Photo';
 import { PlainKey, useT } from '@/lib/i18n';
 
 type Segment = 'lab' | 'imaging' | 'reports';
@@ -89,6 +90,16 @@ export default function ResultsScreen() {
       }),
     [labs.items, labFilter, q]
   );
+
+  const labCounts = useMemo(() => {
+    let ready = 0;
+    let processing = 0;
+    for (const r of labs.items) {
+      if (isReady(r.status)) ready++;
+      else if (r.status !== 'cancelled') processing++;
+    }
+    return { all: labs.items.length, ready, processing };
+  }, [labs.items]);
 
   const docList = segment === 'imaging' ? imaging : reports;
   const docItems = useMemo(
@@ -177,7 +188,10 @@ export default function ResultsScreen() {
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
               >
-                <Text style={[styles.filterText, selected && styles.filterTextSelected]}>{t(f.label)}</Text>
+                <Text style={[styles.filterText, selected && styles.filterTextSelected]}>
+                  {t(f.label)}
+                  {labCounts[f.value] > 0 ? <Text style={styles.filterCount}>{'  ' + labCounts[f.value]}</Text> : null}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -202,7 +216,16 @@ export default function ResultsScreen() {
     );
   } else {
     const filtered = q || (segment === 'lab' && labFilter !== 'all');
-    empty = (
+    empty = !filtered && segment === 'lab' ? (
+      <ScrimPhoto source={photos.labTubes} style={styles.emptyPhoto} top={0.35} bottom={0.97}>
+        <View style={styles.emptyPhotoInner}>
+          <Text style={styles.emptyPhotoTitle} accessibilityRole="header">
+            {t('results.empty.labTitle')}
+          </Text>
+          <Text style={styles.emptyPhotoText}>{t('results.empty.lab')}</Text>
+        </View>
+      </ScrimPhoto>
+    ) : (
       <View style={styles.empty}>
         <View style={styles.emptyIcon}>
           <Ionicons name={SEGMENTS.find((s) => s.value === segment)!.icon} size={32} color={colors.primary} />
@@ -284,7 +307,6 @@ function LabRow({ item }: { item: LabResult }) {
   const t = useT();
   const ready = isReady(item.status);
   const summary = ready ? summarize(item) : null;
-  const flagged = summary?.outOfRange ?? 0;
   return (
     <TouchableOpacity
       style={styles.row}
@@ -292,24 +314,74 @@ function LabRow({ item }: { item: LabResult }) {
       accessibilityRole="button"
     >
       <View style={styles.tile}>
-        <Ionicons name="flask-outline" size={24} color={colors.primary} />
+        <Ionicons name="flask-outline" size={24} color={colors.primaryOnSoft} />
       </View>
       <View style={styles.flex}>
-        <Text style={styles.rowTitle} numberOfLines={2}>
-          {item.request?.testType ?? t('results.labTest')}
-        </Text>
-        <Text style={styles.rowMeta}>{formatDate(item.resultDate ?? item.orderDate ?? item.createdAt)}</Text>
-        {flagged > 0 ? (
-          <Text style={styles.rowFlag}>
-            {t('results.outsideRange', { count: flagged })}
+        <View style={styles.rowHead}>
+          <Text style={[styles.rowTitle, styles.flex]} numberOfLines={2}>
+            {item.request?.testType ?? t('results.labTest')}
           </Text>
-        ) : item.requestCode ? (
-          <Text style={styles.rowMeta}>{t('results.ref', { code: item.requestCode })}</Text>
+          <ResultStatusPill status={item.status} />
+        </View>
+        <Text style={styles.rowMeta}>
+          {formatDate(item.resultDate ?? item.orderDate ?? item.createdAt)}
+          {item.requestCode ? ` · ${t('results.ref', { code: item.requestCode })}` : ''}
+        </Text>
+        {summary && summary.total > 0 ? (
+          <RangeSummary summary={summary} />
+        ) : !ready && item.status !== 'cancelled' ? (
+          <View style={styles.pendingLine}>
+            <Ionicons name="hourglass-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.rowMeta}>{t('results.pending')}</Text>
+          </View>
         ) : null}
       </View>
-      <ResultStatusPill status={item.status} />
       <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
     </TouchableOpacity>
+  );
+}
+
+/**
+ * How a ready result reads at a glance: a thin bar, one segment per group of values (in range
+ * teal, outside range amber, no range a neutral gap), and the same counts in words underneath.
+ * The words carry the meaning; the bar is hidden from screen readers in favour of one sentence.
+ */
+function RangeSummary({ summary }: { summary: ResultSummary }) {
+  const t = useT();
+  const outside = summary.outOfRange;
+  const unrated = summary.unrated;
+  const inRange = summary.total - outside - unrated;
+  const parts = [
+    { n: inRange, color: colors.accent },
+    { n: outside, color: colors.warning },
+    { n: unrated, color: colors.slateSoft },
+  ].filter((p) => p.n > 0);
+  return (
+    <View
+      style={styles.range}
+      accessible
+      accessibilityLabel={t('results.range.a11y', { inRange, outside, unrated })}
+    >
+      <View style={styles.rangeBar}>
+        {parts.map((p, i) => (
+          <View key={i} style={[styles.rangePart, { flex: p.n, backgroundColor: p.color }]} />
+        ))}
+      </View>
+      <View style={styles.rangeWords}>
+        {outside > 0 ? (
+          <>
+            <Ionicons name="alert-circle" size={14} color={colors.warning} />
+            <Text style={styles.rangeOut}>{t('results.range.someOut', { count: outside, total: summary.total })}</Text>
+          </>
+        ) : inRange > 0 ? (
+          <>
+            <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+            <Text style={styles.rangeIn}>{t('results.range.allIn', { count: inRange })}</Text>
+          </>
+        ) : null}
+        {unrated > 0 ? <Text style={styles.rowMeta}>{(outside > 0 || inRange > 0 ? '· ' : '') + t('results.range.unrated', { count: unrated })}</Text> : null}
+      </View>
+    </View>
   );
 }
 
@@ -331,7 +403,7 @@ function DocRow({
         <Ionicons
           name={imaging ? 'scan-outline' : 'document-text-outline'}
           size={24}
-          color={imaging ? '#2F5FB3' : colors.primary}
+          color={imaging ? colors.slate : colors.primaryOnSoft}
         />
       </View>
       <View style={styles.flex}>
@@ -374,7 +446,7 @@ const styles = StyleSheet.create({
     gap: 6,
     minHeight: 44,
     borderRadius: radius.md,
-    backgroundColor: '#E4EEF0',
+    backgroundColor: colors.slateSoft,
     paddingHorizontal: spacing.xs,
   },
   segmentSelected: { backgroundColor: colors.primary },
@@ -407,6 +479,7 @@ const styles = StyleSheet.create({
   filterSelected: { backgroundColor: colors.primarySoft, borderColor: colors.primary },
   filterText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
   filterTextSelected: { color: colors.primaryOnSoft },
+  filterCount: { fontWeight: '700', fontVariant: ['tabular-nums'] },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -414,7 +487,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
+    borderColor: colors.border,
     padding: spacing.sm + 6,
     marginBottom: spacing.sm + 2,
     ...softShadow,
@@ -427,10 +500,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tileImaging: { backgroundColor: '#E6EEFB' },
+  tileImaging: { backgroundColor: colors.slateSoft },
+  rowHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   rowTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
-  rowMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  rowFlag: { fontSize: 13, color: colors.danger, fontWeight: '600', marginTop: 2 },
+  rowMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2, fontVariant: ['tabular-nums'] },
+  pendingLine: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs },
+  range: { marginTop: spacing.sm },
+  // A 2px surface gap between segments; rounded ends on the bar as a whole.
+  rangeBar: { flexDirection: 'row', gap: 2, height: 6, borderRadius: 3, overflow: 'hidden' },
+  rangePart: { height: 6 },
+  rangeWords: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginTop: spacing.xs + 2 },
+  rangeIn: { fontSize: 13, fontWeight: '600', color: colors.primaryOnSoft, fontVariant: ['tabular-nums'] },
+  rangeOut: { fontSize: 13, fontWeight: '600', color: colors.warning, fontVariant: ['tabular-nums'] },
   empty: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md },
   emptyIcon: {
     width: 72,
@@ -443,4 +524,8 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: spacing.xs },
   emptyText: { fontSize: 14, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.sm },
+  emptyPhoto: { minHeight: 280, borderRadius: radius.lg },
+  emptyPhotoInner: { flex: 1, justifyContent: 'flex-end', padding: spacing.md + 4 },
+  emptyPhotoTitle: { fontSize: 20, fontWeight: '700', color: colors.primaryText },
+  emptyPhotoText: { fontSize: 14, lineHeight: 20, color: colors.onNavyMuted, marginTop: spacing.xs },
 });

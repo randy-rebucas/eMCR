@@ -17,6 +17,11 @@ export interface ViewingPerson {
    * guardian-only eMCR session, which is signed in on a managed record.
    */
   self: boolean;
+  /**
+   * The person's picture (data URI). For a family member it's fetched when their profile opens,
+   * so it is null (initials) until that lands.
+   */
+  profileImage?: string | null;
 }
 
 interface ProfileContextValue {
@@ -48,7 +53,34 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const { signedIn, patient, guardianOnly } = useAuth();
   const [family, setFamily] = useState<FamilyOverview | null>(null);
   const [active, setActive] = useState<FamilyMember | null>(null);
+  /** The active family member's picture; the family list carries none (it would be heavy). */
+  const [memberPhoto, setMemberPhoto] = useState<{ id: string; image: string | null } | null>(null);
   const pendingRoute = useRef<string | null>(null);
+
+  const activeId = active?.id ?? null;
+  const loadMemberPhoto = useCallback(async (id: string, isCurrent: () => boolean) => {
+    try {
+      // Sent with that member's X-Patient-Profile header, so /me answers for them.
+      const me = await apiRequest<{ profileImage?: string | null }>('/api/patients/me?include=photo');
+      if (isCurrent()) setMemberPhoto({ id, image: me?.profileImage ?? null });
+    } catch {
+      // Initials until the next switch or save; the screen itself shows any error.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!activeId) return;
+    let current = true;
+    loadMemberPhoto(activeId, () => current);
+    return () => {
+      current = false;
+    };
+  }, [activeId, loadMemberPhoto]);
+
+  // The profile screen saved or removed a picture.
+  useRefreshOn(activeId ? 'profile' : null, () => {
+    if (activeId) loadMemberPhoto(activeId, () => true);
+  });
 
   const refreshFamily = useCallback(async () => {
     try {
@@ -86,6 +118,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setActiveProfileId(null);
     setActive(null);
+    setMemberPhoto(null);
     setFamily(null);
     if (signedIn) refreshFamily();
   }, [signedIn, patient?.id, refreshFamily]);
@@ -106,12 +139,26 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   }, [refreshFamily, switchTo]);
 
   const viewing = useMemo<ViewingPerson | null>(() => {
-    if (active) return { id: active.id, firstName: active.firstName, lastName: active.lastName, self: false };
+    if (active) {
+      return {
+        id: active.id,
+        firstName: active.firstName,
+        lastName: active.lastName,
+        self: false,
+        profileImage: memberPhoto?.id === active.id ? memberPhoto.image : null,
+      };
+    }
     if (patient) {
-      return { id: patient.id, firstName: patient.firstName, lastName: patient.lastName, self: !guardianOnly };
+      return {
+        id: patient.id,
+        firstName: patient.firstName,
+        lastName: patient.lastName,
+        self: !guardianOnly,
+        profileImage: patient.profileImage ?? null,
+      };
     }
     return null;
-  }, [active, patient, guardianOnly]);
+  }, [active, memberPhoto, patient, guardianOnly]);
 
   const value = useMemo<ProfileContextValue>(
     () => ({
