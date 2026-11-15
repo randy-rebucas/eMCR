@@ -26,9 +26,7 @@ export default defineStrings({
     'checkIn.failedFallback': 'Please try again or check in at the front desk.',
     'checkIn.scanAgain': 'Scan again',
 
-    'qr.showA11y': 'Show check-in QR code',
     'qr.title': 'Check-in QR',
-    'qr.hint': 'Show at the clinic',
     'qr.sheetText': 'Show this at the front desk or scan it at the clinic kiosk.',
     'qr.show': 'Show QR Code',
 
@@ -45,11 +43,16 @@ export default defineStrings({
     'pill.missed': 'See the front desk',
     numberA11y: 'Queue number {number}',
 
-    'hero.proceedTo': 'Proceed to',
-    'hero.yourRoom': 'Your room',
-    'hero.estimatedWait': 'Estimated Wait',
-    'hero.minutes': '~{minutes} min',
-    'hero.patientsAhead': 'Patients Ahead',
+    'hero.goTo': 'Go to {room}',
+    'hero.goToRoom': 'Go to your room',
+    // The line under the number: who is ahead, and roughly how long.
+    'line.ahead': { one: '{count} patient ahead of you', other: '{count} patients ahead of you' },
+    'line.next': 'You’re next',
+    'line.wait': 'about {minutes} min',
+    'line.you': 'You',
+    'line.more': '+{count}',
+    // {time} is when the position was last loaded.
+    updated: 'Updated {time} · checks every 30 seconds',
 
     'status.turn': "It's your turn!",
     'status.inQueue': "You're in the queue!",
@@ -74,7 +77,7 @@ export default defineStrings({
     'step.done': 'Done',
     'step.now': 'Now',
     'step.next': 'Next',
-    note: 'Times are estimates and refresh about every 30 seconds. Keep your phone nearby and listen for your number.',
+    note: 'Waiting times are estimates. Keep your phone nearby and listen for your number.',
 
     'scanner.prompt': "Point the camera at the check-in QR code at the clinic's front desk or waiting-room screen.",
     'scanner.purpose': "To check in with the clinic's QR code",
@@ -105,9 +108,7 @@ export default defineStrings({
     'checkIn.failedFallback': 'Pakisubukan ulit o mag-check in sa front desk.',
     'checkIn.scanAgain': 'I-scan ulit',
 
-    'qr.showA11y': 'Ipakita ang check-in QR code',
     'qr.title': 'Check-in QR',
-    'qr.hint': 'Ipakita sa clinic',
     'qr.sheetText': 'Ipakita ito sa front desk o i-scan sa kiosk ng clinic.',
     'qr.show': 'Ipakita ang QR Code',
 
@@ -123,11 +124,14 @@ export default defineStrings({
     'pill.missed': 'Pumunta sa front desk',
     numberA11y: 'Queue number {number}',
 
-    'hero.proceedTo': 'Pumunta sa',
-    'hero.yourRoom': 'Kuwarto mo',
-    'hero.estimatedWait': 'Tantiyang Paghihintay',
-    'hero.minutes': '~{minutes} min',
-    'hero.patientsAhead': 'Nauuna sa Iyo',
+    'hero.goTo': 'Pumunta sa {room}',
+    'hero.goToRoom': 'Pumunta sa kuwarto mo',
+    'line.ahead': '{count} pasyente ang nauuna sa iyo',
+    'line.next': 'Ikaw na ang susunod',
+    'line.wait': 'mga {minutes} min',
+    'line.you': 'Ikaw',
+    'line.more': '+{count}',
+    updated: 'Na-update {time} · tumitingin kada 30 segundo',
 
     'status.turn': 'Ikaw na!',
     'status.inQueue': 'Nakapila ka na!',
@@ -152,7 +156,7 @@ export default defineStrings({
     'step.done': 'Tapos na',
     'step.now': 'Ngayon',
     'step.next': 'Susunod',
-    note: 'Tantiya lang ang mga oras at nag-a-update kada 30 segundo. Itabi ang phone mo at pakinggan kung tatawagin na ang number mo.',
+    note: 'Tantiya lang ang oras ng paghihintay. Itabi ang phone mo at pakinggan kung tatawagin na ang number mo.',
 
     'scanner.prompt': 'Itapat ang camera sa check-in QR code sa front desk o sa screen sa waiting area ng clinic.',
     'scanner.purpose': 'Para makapag-check in gamit ang QR code ng clinic',

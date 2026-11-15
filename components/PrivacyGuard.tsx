@@ -12,6 +12,7 @@ import {
   takeLaunchLock,
   takeLockDeferral,
 } from '@/lib/appLock';
+import { clearDocumentCache } from '@/lib/documents';
 import { colors, spacing } from '@/lib/theme';
 import { useT } from '@/lib/i18n';
 import { Button } from './ui';
@@ -82,9 +83,11 @@ export function PrivacyGuard() {
     else setMessage(result.message);
   }, []);
 
-  // Ask straight away when the lock comes up.
+  // Ask straight away when the lock comes up. Downloaded documents (unencrypted PHI) go too.
   useEffect(() => {
-    if (locked) unlock();
+    if (!locked) return;
+    clearDocumentCache();
+    unlock();
   }, [locked, unlock]);
 
   return (

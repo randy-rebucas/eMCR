@@ -49,14 +49,9 @@ export const STATE_LABEL: Record<MembershipState, PlainKey> = {
   inactive: 'membership.state.inactive',
 };
 
-/** Card colours per tier (background, text on it). */
-export const TIER_COLORS: Record<MembershipTier, { bg: string; fg: string; accent: string }> = {
-  bronze: { bg: '#8C5A33', fg: '#FFFFFF', accent: '#E8B98F' },
-  silver: { bg: '#5E6B78', fg: '#FFFFFF', accent: '#D5DDE5' },
-  gold: { bg: '#8A6A12', fg: '#FFFFFF', accent: '#F4D77A' },
-  platinum: { bg: '#24384F', fg: '#FFFFFF', accent: '#B8D4F0' },
-};
-
-export function tierColors(tier: string) {
-  return TIER_COLORS[tier as MembershipTier] ?? TIER_COLORS.bronze;
+/** Status chip tone: renewal due or expired needs the patient (amber); suspended is the clinic's call. */
+export function stateTone(state: MembershipState): 'teal' | 'attention' | 'neutral' {
+  if (state === 'active') return 'teal';
+  if (state === 'due' || state === 'expired') return 'attention';
+  return 'neutral';
 }

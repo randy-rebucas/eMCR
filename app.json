@@ -4,7 +4,7 @@
     "slug": "emcr",
     "description": "eMCR (Electronic MyClinic Record) — your appointments, results, prescriptions and bills from your MyClinicSoft clinic.",
     "scheme": "myclinicsoft",
-    "version": "1.1.4",
+    "version": "1.1.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -49,9 +49,17 @@
       ],
       "expo-sharing",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to use your photos so you can choose a profile picture.",
+          "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera to scan your clinic login QR code or take a profile picture.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-camera",
         {
-          "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera to scan your clinic login QR code.",
+          "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera to scan your clinic login QR code or take a profile picture.",
           "microphonePermission": false,
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true
@@ -74,7 +82,8 @@
         }
       ],
       "expo-web-browser",
-      "expo-localization"
+      "expo-localization",
+      "expo-status-bar"
     ],
     "extra": {
       "apiUrl": "http://localhost:3000",

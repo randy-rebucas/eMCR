@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,9 +9,10 @@ import { useProfile } from '@/lib/profile';
 import { doctorName, formatDate } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { leaveWaitlist, WAITLIST_PATH, waitlistExplainer, WaitlistEntry, WaitlistList } from '@/lib/waitlist';
-import { Badge, Button, LoadingView, RefreshErrorBanner, useBottomPadding } from '@/components/ui';
-import { AppHeader, softShadow } from '@/components/AppHeader';
+import { Button, LoadingView, RefreshErrorBanner, useBottomPadding } from '@/components/ui';
+import { AppHeader } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { useT } from '@/lib/i18n';
 
 /** "Thu, Nov 5, 2026" for a clinic day ("yyyy-MM-dd"). */
@@ -27,18 +28,22 @@ export default function WaitlistScreen() {
   const t = useT();
   const bottomPad = useBottomPadding();
   const { viewing } = useProfile();
-  const { data, setData, loading, refreshing, error, refresh } = useApiData<WaitlistList>(WAITLIST_PATH, {
+  const { data, setData, loading, refreshing, error, refresh, offline, stale, updatedAt } = useApiData<WaitlistList>(WAITLIST_PATH, {
     // A fill arrives as an appointment push, which refreshes "appointments".
     refreshOn: ['appointments', 'profile', 'family'],
+    offline: true,
   });
   const [leaving, setLeaving] = useState<string | null>(null);
+  const [showHow, setShowHow] = useState(false);
 
-  // possessive(viewing) === 'Your'
   const self = !viewing || viewing.self;
   const explainer = waitlistExplainer();
   const entries = data?.entries ?? [];
   const waiting = entries.filter((e) => e.status === 'waiting');
   const filled = entries.filter((e) => e.status === 'filled');
+  const lapsed = waiting.filter((e) => e.lapsed).length;
+  // Leaving is a server change: not from a saved copy.
+  const needsServer = offline || stale;
 
   function confirmLeave(entry: WaitlistEntry) {
     Alert.alert(
@@ -99,42 +104,61 @@ export default function WaitlistScreen() {
       showsVerticalScrollIndicator={false}
     >
       {header}
+      {offline ? (
+        <View style={styles.banner}>
+          <OfflineBanner offline={offline} updatedAt={updatedAt} subject={t('waitlist.offlineSubject')} />
+        </View>
+      ) : (
+        <RefreshErrorBanner error={error} show={!!data} />
+      )}
 
-      <View style={styles.explain} accessible accessibilityLabel={t('waitlist.explain.a11y', { lines: explainer.join(' ') })}>
-        <Text style={styles.explainTitle}>{t('waitlist.explain.title')}</Text>
-        {explainer.map((line) => (
-          <View key={line} style={styles.infoRow}>
-            <Ionicons name="ellipse" size={6} color={colors.slate} style={styles.bullet} />
-            <Text style={styles.infoText}>{line}</Text>
-          </View>
-        ))}
-      </View>
-
-      <RefreshErrorBanner error={error} show={!!data} />
       {error && !data ? (
         <ErrorState message={error} onRetry={refresh} />
       ) : (
         <>
+          {/* Where the waiting stands: how many doctors, and what was booked from it. */}
+          <View style={styles.hero}>
+            <Text style={styles.heroTitle}>
+              {waiting.length ? t('waitlist.hero.waiting', { count: waiting.length }) : t('waitlist.hero.none')}
+            </Text>
+            {data ? <Text style={styles.heroMeta}>{t('waitlist.max', { max: data.maxActive })}</Text> : null}
+            {filled.length || lapsed ? (
+              <View style={styles.heroFoot}>
+                {filled.length ? (
+                  <View style={styles.heroLine}>
+                    <Ionicons name="checkmark-circle" size={16} color={colors.accent} />
+                    <Text style={styles.heroLineText}>{t('waitlist.hero.filled', { count: filled.length })}</Text>
+                  </View>
+                ) : null}
+                {lapsed ? (
+                  <View style={styles.lapsedChip}>
+                    <Ionicons name="alert-circle" size={14} color={colors.warning} />
+                    <Text style={styles.lapsedChipText}>{t('waitlist.hero.lapsed', { count: lapsed })}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+
           <Text style={styles.sectionTitle} accessibilityRole="header">
             {t('waitlist.waiting')}
           </Text>
           {waiting.length ? (
-            <View style={[styles.card, styles.list]}>
+            <View style={styles.card}>
               {waiting.map((entry, i) => (
                 <EntryRow
                   key={entry._id}
                   entry={entry}
-                  last={i === waiting.length - 1}
+                  first={i === 0}
                   leaving={leaving === entry._id}
+                  leaveDisabled={needsServer}
                   onLeave={() => confirmLeave(entry)}
                 />
               ))}
             </View>
           ) : (
-            <View style={styles.empty}>
-              <Text style={styles.emptyText}>
-                {t('waitlist.empty')}
-              </Text>
+            <View style={[styles.card, styles.empty]}>
+              <Text style={styles.emptyText}>{t('waitlist.empty')}</Text>
               <Button
                 title={t('waitlist.book')}
                 icon="calendar-outline"
@@ -143,22 +167,43 @@ export default function WaitlistScreen() {
               />
             </View>
           )}
-          {data && waiting.length >= data.maxActive ? (
-            <Text style={styles.hint}>{t('waitlist.max', { max: data.maxActive })}</Text>
-          ) : null}
+          {needsServer && waiting.length ? <Text style={styles.hint}>{t('waitlist.leaveNeedsConnection')}</Text> : null}
 
           {filled.length ? (
             <>
               <Text style={styles.sectionTitle} accessibilityRole="header">
                 {t('waitlist.filledTitle')}
               </Text>
-              <View style={[styles.card, styles.list]}>
+              <View style={styles.card}>
                 {filled.map((entry, i) => (
-                  <EntryRow key={entry._id} entry={entry} last={i === filled.length - 1} />
+                  <EntryRow key={entry._id} entry={entry} first={i === 0} />
                 ))}
               </View>
             </>
           ) : null}
+
+          {/* The rules, for when the patient wants them: not in the way of their own entries. */}
+          <View style={[styles.card, styles.how]}>
+            <TouchableOpacity
+              style={styles.howToggle}
+              onPress={() => setShowHow((v) => !v)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showHow }}
+              accessibilityLabel={showHow ? undefined : t('waitlist.explain.a11y', { lines: explainer.join(' ') })}
+            >
+              <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
+              <Text style={styles.howTitle}>{t('waitlist.explain.title')}</Text>
+              <Ionicons name={showHow ? 'chevron-up' : 'chevron-down'} size={18} color={colors.primary} />
+            </TouchableOpacity>
+            {showHow
+              ? explainer.map((line, i) => (
+                  <View key={line} style={styles.howRow}>
+                    <Text style={styles.howNum}>{i + 1}</Text>
+                    <Text style={styles.howText}>{line}</Text>
+                  </View>
+                ))
+              : null}
+          </View>
         </>
       )}
     </ScrollView>
@@ -167,58 +212,75 @@ export default function WaitlistScreen() {
 
 function EntryRow({
   entry,
-  last,
+  first,
   leaving,
+  leaveDisabled,
   onLeave,
 }: {
   entry: WaitlistEntry;
-  last: boolean;
+  first: boolean;
   leaving?: boolean;
+  leaveDisabled?: boolean;
   onLeave?: () => void;
 }) {
   const t = useT();
   const who = doctorName(entry.doctor) ?? t('waitlist.entry.anyDoctor');
   const when = entry.preferredDate ? t('waitlist.entry.around', { date: dayText(entry.preferredDate) }) : t('waitlist.entry.anyDay');
+  const where = [entry.doctor?.specialization, entry.clinic.name].filter(Boolean).join(' · ');
   return (
-    <View style={[styles.row, !last && styles.divider]}>
+    <View style={[styles.row, !first && styles.rule]}>
       <View style={styles.rowTop}>
         <Text style={styles.rowTitle} numberOfLines={2}>
           {who}
         </Text>
         {entry.status === 'filled' ? (
-          <Badge label={t('waitlist.entry.booked')} tone="primary" />
+          <Chip label={t('waitlist.entry.booked')} tone="teal" />
         ) : entry.lapsed ? (
-          <Badge label={t('waitlist.entry.dayPassed')} tone="neutral" />
+          <Chip label={t('waitlist.entry.dayPassed')} tone="attention" />
         ) : (
-          <Badge label={t('waitlist.waiting')} tone="warning" />
+          <Chip label={t('waitlist.waiting')} tone="neutral" />
         )}
       </View>
-      {entry.doctor?.specialization ? <Text style={styles.rowLine}>{entry.doctor.specialization}</Text> : null}
-      {entry.clinic.name ? <Text style={styles.rowLine}>{entry.clinic.name}</Text> : null}
+      {where ? <Text style={styles.rowLine}>{where}</Text> : null}
       <Text style={styles.rowLine}>{when}</Text>
       {entry.joinedAt ? <Text style={styles.rowMeta}>{t('waitlist.entry.joined', { date: formatDate(entry.joinedAt) })}</Text> : null}
-      {entry.lapsed ? (
-        <Text style={styles.rowMeta}>{t('waitlist.entry.lapsed')}</Text>
-      ) : null}
+      {entry.lapsed ? <Text style={styles.rowAttention}>{t('waitlist.entry.lapsed')}</Text> : null}
       {entry.status === 'filled' && entry.appointmentId ? (
-        <Button
-          title={t('waitlist.entry.viewAppointment')}
-          icon="calendar-outline"
-          variant="secondary"
-          onPress={() => router.push(`/patient/appointments/${entry.appointmentId}`)}
+        <TouchableOpacity
           style={styles.action}
-        />
+          onPress={() => router.push(`/patient/appointments/${entry.appointmentId}`)}
+          accessibilityRole="button"
+        >
+          <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+          <Text style={styles.actionText}>{t('waitlist.entry.viewAppointment')}</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+        </TouchableOpacity>
       ) : null}
       {entry.status === 'waiting' && onLeave ? (
-        <Button
-          title={t('waitlist.entry.leave')}
-          variant="dangerOutline"
-          icon="exit-outline"
-          onPress={onLeave}
-          loading={leaving}
+        <TouchableOpacity
           style={styles.action}
-        />
+          onPress={onLeave}
+          disabled={leaving || leaveDisabled}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: leaving || leaveDisabled, busy: leaving }}
+        >
+          {leaving ? (
+            <ActivityIndicator color={colors.danger} />
+          ) : (
+            <Text style={[styles.leaveText, leaveDisabled && styles.leaveOff]}>{t('waitlist.entry.leave')}</Text>
+          )}
+        </TouchableOpacity>
       ) : null}
+    </View>
+  );
+}
+
+function Chip({ label, tone }: { label: string; tone: 'teal' | 'attention' | 'neutral' }) {
+  return (
+    <View style={[styles.chip, tone === 'teal' && styles.chipTeal, tone === 'attention' && styles.chipAttention]}>
+      <Text style={[styles.chipText, tone === 'teal' && styles.chipTextTeal, tone === 'attention' && styles.chipTextAttention]}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -228,29 +290,71 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.md + 4 },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2, marginBottom: spacing.lg },
-  explain: { backgroundColor: colors.slateSoft, borderRadius: radius.md, padding: spacing.sm + 4, gap: spacing.sm },
-  explainTitle: { fontSize: 14, fontWeight: '700', color: colors.slate },
-  infoRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
-  bullet: { marginTop: 7 },
-  infoText: { flex: 1, fontSize: 13, lineHeight: 18, color: colors.slate },
+  banner: { marginBottom: spacing.md },
+
+  hero: { backgroundColor: colors.navy, borderRadius: radius.lg, padding: spacing.md + 4 },
+  heroTitle: { fontSize: 22, fontWeight: '800', color: colors.primaryText },
+  heroMeta: { fontSize: 13, color: colors.onNavyMuted, marginTop: 4 },
+  heroFoot: {
+    marginTop: spacing.md,
+    paddingTop: spacing.sm + 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.navyLine,
+    gap: spacing.sm,
+  },
+  heroLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 },
+  heroLineText: { flexShrink: 1, fontSize: 14, color: colors.primaryText },
+  lapsedChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.warningSoft,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+  },
+  lapsedChipText: { fontSize: 12, fontWeight: '600', color: colors.warning },
+
+  sectionTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
+    borderColor: colors.border,
     paddingHorizontal: spacing.md,
-    ...softShadow,
   },
-  list: { paddingVertical: 0 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
   row: { paddingVertical: spacing.sm + 4 },
-  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  rule: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 2 },
   rowTitle: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.text },
   rowLine: { fontSize: 14, color: colors.text, marginTop: 2 },
-  rowMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  action: { marginTop: spacing.sm },
-  empty: { gap: spacing.sm, paddingVertical: spacing.sm },
+  rowMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2, fontVariant: ['tabular-nums'] },
+  rowAttention: { fontSize: 13, lineHeight: 18, color: colors.warning, marginTop: spacing.xs },
+  chip: { backgroundColor: colors.slateSoft, borderRadius: 999, paddingHorizontal: spacing.sm + 2, paddingVertical: 3 },
+  chipTeal: { backgroundColor: colors.primarySoft },
+  chipAttention: { backgroundColor: colors.warningSoft },
+  chipText: { fontSize: 12, fontWeight: '700', color: colors.slate },
+  chipTextTeal: { color: colors.primaryOnSoft },
+  chipTextAttention: { color: colors.warning },
+  action: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, minHeight: 44, alignSelf: 'flex-start', marginTop: spacing.xs },
+  actionText: { fontSize: 14, fontWeight: '600', color: colors.primary },
+  leaveText: { fontSize: 14, fontWeight: '600', color: colors.danger },
+  leaveOff: { color: colors.textMuted },
+  empty: { gap: spacing.sm + 4, paddingVertical: spacing.md },
   emptyText: { fontSize: 14, lineHeight: 20, color: colors.textMuted },
-  hint: { fontSize: 12, color: colors.textMuted, marginTop: spacing.xs },
+  hint: { fontSize: 13, color: colors.textMuted, marginTop: spacing.sm },
+
+  how: { marginTop: spacing.lg },
+  howToggle: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 52 },
+  howTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.text },
+  howRow: {
+    flexDirection: 'row',
+    gap: spacing.sm + 4,
+    paddingVertical: spacing.sm + 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  howNum: { width: 18, fontSize: 14, fontWeight: '700', color: colors.primary, fontVariant: ['tabular-nums'] },
+  howText: { flex: 1, fontSize: 14, lineHeight: 20, color: colors.text },
 });

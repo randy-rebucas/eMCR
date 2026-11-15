@@ -1,5 +1,16 @@
 import { useMemo, useState } from 'react';
-import { FlatList, LayoutChangeEvent, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  FlatList,
+  GestureResponderEvent,
+  LayoutChangeEvent,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,18 +30,21 @@ import {
 } from '@/lib/visits';
 import { colors, radius, spacing } from '@/lib/theme';
 import { LoadingView, useBottomPadding } from '@/components/ui';
-import { AppHeader, softShadow } from '@/components/AppHeader';
+import { AppHeader } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { t as translate, useT } from '@/lib/i18n';
 
-/** Second line colour (diastolic): a slate that reads apart from the teal. */
-const SECOND = colors.slate;
+/** The validated pair: teal for the main series (or systolic), slate for diastolic. */
+const LINE_COLORS = [colors.accent, colors.slate];
 
-/** Vitals recorded at clinic visits, one measure at a time, as a chart and a list. */
+/** Vitals recorded at clinic visits, one measure at a time: the latest reading, its trend, every reading. */
 export default function VitalsScreen() {
   const t = useT();
   const bottomPad = useBottomPadding();
-  const { data, loading, refreshing, error, refresh } = useApiData<VitalsEntry[]>('/api/patients/me/vitals?limit=100');
+  const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<VitalsEntry[]>('/api/patients/me/vitals?limit=100', {
+    offline: true,
+  });
   const entries = useMemo(() => data ?? [], [data]);
   const measures = useMemo(() => availableMeasures(entries), [entries]);
   const [picked, setPicked] = useState<MeasureKey | null>(null);
@@ -72,10 +86,18 @@ export default function VitalsScreen() {
   }
 
   const latest = newestFirst[0] ?? null;
+  const previous = newestFirst[1] ?? null;
 
   const header = (
     <View>
       {titleBlock}
+      {offline ? (
+        <View style={styles.banner}>
+          <OfflineBanner offline={offline} updatedAt={updatedAt} subject={t('vitals.offlineSubject')} />
+        </View>
+      ) : error ? (
+        <Text style={styles.stale}>{t('vitals.stale')}</Text>
+      ) : null}
 
       {measure ? (
         <>
@@ -104,21 +126,32 @@ export default function VitalsScreen() {
           </ScrollView>
 
           {latest ? (
+            // The newest reading is what the patient opens this for: on navy.
             <View
-              style={styles.latest}
+              style={styles.hero}
               accessible
-              accessibilityLabel={t('vitals.latestA11y', { measure: measure.label, value: spoken(measure, latest.values), date: formatDate(latest.date) })}
+              accessibilityLabel={[
+                t('vitals.latestA11y', { measure: measure.label, value: spoken(measure, latest.values), date: formatDate(latest.date) }),
+                previous ? t('vitals.previousA11y', { value: spoken(measure, previous.values), date: formatDate(previous.date) }) : null,
+              ]
+                .filter(Boolean)
+                .join('. ')}
             >
-              <Text style={styles.latestLabel}>{t('vitals.latest', { measure: measure.label })}</Text>
-              <Text style={styles.latestValue}>{formatReading(measure, latest.values)}</Text>
-              <Text style={styles.latestDate}>{formatDate(latest.date)}</Text>
-              {measure.key === 'bp' ? <Text style={styles.latestHint}>{t('vitals.bpHint')}</Text> : null}
+              <Text style={styles.heroEyebrow}>{t('vitals.latest', { measure: measure.label })}</Text>
+              <Text style={styles.heroValue}>{formatReading(measure, latest.values)}</Text>
+              <Text style={styles.heroDate}>{formatDate(latest.date, { month: 'long', day: 'numeric', year: 'numeric' })}</Text>
+              {previous ? (
+                <Text style={styles.heroPrevious}>
+                  {t('vitals.previous', { value: formatReading(measure, previous.values), date: formatDate(previous.date) })}
+                </Text>
+              ) : null}
+              {measure.key === 'bp' ? <Text style={styles.heroHint}>{t('vitals.bpHint')}</Text> : null}
             </View>
           ) : null}
 
           <View style={styles.card}>
             {readings.length >= 2 ? (
-              <TrendChart measure={measure} readings={readings} />
+              <TrendChart key={measure.key} measure={measure} readings={readings} />
             ) : (
               <View style={styles.single} accessible accessibilityLabel={t('vitals.singleA11y', { measure: measure.label })}>
                 <Ionicons name="analytics-outline" size={28} color={colors.textMuted} />
@@ -126,8 +159,6 @@ export default function VitalsScreen() {
               </View>
             )}
           </View>
-
-          {error ? <Text style={styles.stale}>{t('vitals.stale')}</Text> : null}
 
           <Text style={styles.listTitle} accessibilityRole="header">
             {t('vitals.readings', { count: readings.length })}
@@ -192,12 +223,10 @@ function chartSummary(measure: Measure, readings: Reading[]): string {
   const series = measure.key === 'bp' ? [translate('vitals.systolic'), translate('vitals.diastolic')] : [null];
   series.forEach((name, i) => {
     const vals = readings.map((r) => r.values[i]);
-    const low = Math.min(...vals);
-    const high = Math.max(...vals);
     const fmt = (v: number) => formatNumber(v, measure.decimals);
     const stats = {
-      low: fmt(low),
-      high: fmt(high),
+      low: fmt(Math.min(...vals)),
+      high: fmt(Math.max(...vals)),
       first: fmt(vals[0]),
       latest: fmt(vals[vals.length - 1]),
       unit: measure.unitSpoken ? ` ${measure.unitSpoken}` : '',
@@ -210,9 +239,15 @@ function chartSummary(measure: Measure, readings: Reading[]): string {
 const CHART_HEIGHT = 190;
 const PAD = { left: 40, right: 12, top: 12, bottom: 26 };
 
+/**
+ * One line per series over time, one y-axis. Tap anywhere on the plot to read the nearest reading
+ * in the line above it (the latest is shown until then); the reading list below carries every
+ * value for screen readers.
+ */
 function TrendChart({ measure, readings }: { measure: Measure; readings: Reading[] }) {
   const tr = useT();
   const [width, setWidth] = useState(0);
+  const [selected, setSelected] = useState(readings.length - 1);
   const onLayout = (e: LayoutChangeEvent) => setWidth(Math.round(e.nativeEvent.layout.width));
 
   const seriesCount = measure.key === 'bp' ? 2 : 1;
@@ -238,33 +273,55 @@ function TrendChart({ measure, readings }: { measure: Measure; readings: Reading
   const y = (v: number) => PAD.top + (1 - (v - lo) / (hi - lo)) * plotH;
   const ticks = [hi, (hi + lo) / 2, lo];
   const tickDecimals = hi - lo < 5 ? 1 : 0;
-  const lineColors = [colors.primary, SECOND];
+  const pick = readings[Math.min(selected, readings.length - 1)];
+  const pickIndex = readings.indexOf(pick);
+
+  function onPress(e: GestureResponderEvent) {
+    const tapX = e.nativeEvent.locationX;
+    let best = 0;
+    readings.forEach((r, i) => {
+      if (Math.abs(x(r, i) - tapX) < Math.abs(x(readings[best], best) - tapX)) best = i;
+    });
+    setSelected(best);
+  }
 
   return (
     <View>
-      <View
-        onLayout={onLayout}
-        accessible
-        accessibilityRole="image"
-        accessibilityLabel={chartSummary(measure, readings)}
-      >
+      {/* Readout: text colours only; the series colour stays on the marks. */}
+      <Text style={styles.readout} accessibilityLiveRegion="polite">
+        {tr('vitals.readout', {
+          date: formatDate(pick.date, { month: 'short', day: 'numeric', year: 'numeric' }),
+          value: formatReading(measure, pick.values),
+        })}
+      </Text>
+      <Pressable onLayout={onLayout} onPress={onPress} accessible accessibilityRole="image" accessibilityLabel={chartSummary(measure, readings)}>
         {width > 0 ? (
           <Svg width={width} height={CHART_HEIGHT}>
-            {ticks.map((t, i) => (
-              <Line key={`g${i}`} x1={PAD.left} x2={width - PAD.right} y1={y(t)} y2={y(t)} stroke={colors.border} strokeWidth={1} />
+            {ticks.map((tk, i) => (
+              <Line key={`g${i}`} x1={PAD.left} x2={width - PAD.right} y1={y(tk)} y2={y(tk)} stroke={colors.border} strokeWidth={1} />
             ))}
-            {ticks.map((t, i) => (
-              <SvgText key={`t${i}`} x={PAD.left - 6} y={y(t) + 4} fontSize={11} fill={colors.textMuted} textAnchor="end">
-                {formatNumber(t, tickDecimals)}
+            {ticks.map((tk, i) => (
+              <SvgText key={`t${i}`} x={PAD.left - 6} y={y(tk) + 4} fontSize={11} fill={colors.textMuted} textAnchor="end">
+                {formatNumber(tk, tickDecimals)}
               </SvgText>
             ))}
+            {/* The inspected reading: a hairline from top to bottom. */}
+            <Line
+              x1={x(pick, pickIndex)}
+              x2={x(pick, pickIndex)}
+              y1={PAD.top}
+              y2={CHART_HEIGHT - PAD.bottom}
+              stroke={colors.textMuted}
+              strokeWidth={1}
+              strokeDasharray="3,3"
+            />
             {Array.from({ length: seriesCount }, (_, s) => (
               <Polyline
                 key={`l${s}`}
                 points={readings.map((r, i) => `${x(r, i)},${y(r.values[s])}`).join(' ')}
                 fill="none"
-                stroke={lineColors[s]}
-                strokeWidth={2.5}
+                stroke={LINE_COLORS[s]}
+                strokeWidth={2}
                 strokeLinejoin="round"
                 strokeLinecap="round"
               />
@@ -275,9 +332,9 @@ function TrendChart({ measure, readings }: { measure: Measure; readings: Reading
                   key={`p${s}-${i}`}
                   cx={x(r, i)}
                   cy={y(r.values[s])}
-                  r={i === readings.length - 1 ? 4.5 : 3}
-                  fill={i === readings.length - 1 ? lineColors[s] : colors.surface}
-                  stroke={lineColors[s]}
+                  r={i === pickIndex ? 5 : 3.5}
+                  fill={i === pickIndex ? LINE_COLORS[s] : colors.surface}
+                  stroke={i === pickIndex ? colors.surface : LINE_COLORS[s]}
                   strokeWidth={2}
                 />
               ))
@@ -292,16 +349,15 @@ function TrendChart({ measure, readings }: { measure: Measure; readings: Reading
         ) : (
           <View style={{ height: CHART_HEIGHT }} />
         )}
-      </View>
+      </Pressable>
       <View style={styles.legend} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
         {measure.key === 'bp' ? (
           <>
-            <LegendItem color={lineColors[0]} label={tr('vitals.legendSystolic')} />
-            <LegendItem color={lineColors[1]} label={tr('vitals.legendDiastolic')} />
+            <LegendItem color={LINE_COLORS[0]} label={tr('vitals.legendSystolic')} />
+            <LegendItem color={LINE_COLORS[1]} label={tr('vitals.legendDiastolic')} />
           </>
-        ) : (
-          <LegendItem color={lineColors[0]} label={measure.unit ? `${measure.label} (${measure.unit})` : measure.label} />
-        )}
+        ) : null}
+        <Text style={styles.legendHint}>{tr('vitals.tapHint')}</Text>
       </View>
     </View>
   );
@@ -333,7 +389,7 @@ function ReadingRow({
   const type = visitTypeLabel(visitType);
   return (
     <TouchableOpacity
-      style={[styles.row, first && styles.rowFirst, last && styles.rowLast]}
+      style={[styles.row, first && styles.rowFirst, last && styles.rowLast, !first && styles.rowDivider]}
       onPress={() => router.push(`/patient/visits/${reading.visitId}`)}
       accessibilityRole="button"
       accessibilityLabel={`${formatDate(reading.date)}, ${spoken(measure, reading.values)}. ${type}`}
@@ -356,6 +412,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
+  banner: { marginTop: spacing.md },
+  stale: { fontSize: 13, color: colors.warning, marginTop: spacing.sm },
   chipRow: { marginTop: spacing.lg, marginHorizontal: -(spacing.md + 4) },
   chips: { gap: spacing.sm, paddingHorizontal: spacing.md + 4 },
   chip: {
@@ -370,33 +428,40 @@ const styles = StyleSheet.create({
   chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
   chipTextSelected: { color: colors.primaryText },
-  latest: {
+
+  hero: { marginTop: spacing.md, backgroundColor: colors.navy, borderRadius: radius.lg, padding: spacing.md + 4 },
+  heroEyebrow: { fontSize: 12, fontWeight: '700', color: colors.onNavyMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
+  heroValue: { fontSize: 34, fontWeight: '800', color: colors.primaryText, marginTop: spacing.xs, fontVariant: ['tabular-nums'] },
+  heroDate: { fontSize: 14, color: colors.onNavyMuted, marginTop: 2, fontVariant: ['tabular-nums'] },
+  heroPrevious: {
+    fontSize: 14,
+    color: colors.primaryText,
     marginTop: spacing.md,
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.lg,
-    padding: spacing.md,
+    paddingTop: spacing.sm + 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.navyLine,
+    fontVariant: ['tabular-nums'],
   },
-  latestLabel: { fontSize: 13, fontWeight: '700', color: colors.primaryOnSoft },
-  latestValue: { fontSize: 30, fontWeight: '800', color: colors.text, marginTop: 2 },
-  latestDate: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  latestHint: { fontSize: 12, color: colors.textMuted, marginTop: spacing.xs },
+  heroHint: { fontSize: 12, color: colors.onNavyMuted, marginTop: spacing.xs },
+
   card: {
     marginTop: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
+    borderColor: colors.border,
     padding: spacing.sm + 4,
-    ...softShadow,
   },
+  readout: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: spacing.xs, paddingLeft: spacing.xs, fontVariant: ['tabular-nums'] },
   single: { alignItems: 'center', paddingVertical: spacing.lg, gap: spacing.sm },
   singleText: { fontSize: 14, color: colors.textMuted, textAlign: 'center' },
-  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm, paddingLeft: PAD.left },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm, paddingLeft: PAD.left },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendSwatch: { width: 14, height: 4, borderRadius: 2 },
   legendText: { fontSize: 12, color: colors.textMuted },
-  stale: { fontSize: 12, color: colors.warning, marginTop: spacing.sm, textAlign: 'center' },
-  listTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
+  legendHint: { fontSize: 12, color: colors.textMuted },
+  listTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
+  // Rows draw one ruled card: outer border on every row, corners on the ends.
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -405,14 +470,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     backgroundColor: colors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 1,
   },
-  rowFirst: { borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
-  rowLast: { borderBottomWidth: 0, borderBottomLeftRadius: radius.lg, borderBottomRightRadius: radius.lg },
-  rowDate: { fontSize: 15, fontWeight: '600', color: colors.text },
+  rowFirst: { borderTopWidth: 1, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
+  rowLast: { borderBottomWidth: 1, borderBottomLeftRadius: radius.lg, borderBottomRightRadius: radius.lg },
+  rowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  rowDate: { fontSize: 15, fontWeight: '600', color: colors.text, fontVariant: ['tabular-nums'] },
   rowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  rowValue: { fontSize: 16, fontWeight: '700', color: colors.text },
+  rowValue: { fontSize: 16, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
   empty: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md },
   emptyIcon: {
     width: 72,

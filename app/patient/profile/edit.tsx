@@ -18,7 +18,7 @@ import { PatientProfile, PatientProfileUpdate } from '@/lib/types';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName, KeyboardAvoider, LoadingView, useKeyboardVisible } from '@/components/ui';
 import { ErrorState } from '@/components/ErrorState';
-import { AppHeader, softShadow } from '@/components/AppHeader';
+import { AppHeader } from '@/components/AppHeader';
 import { IconField } from '@/components/auth';
 import { t as translate, useT } from '@/lib/i18n';
 
@@ -122,6 +122,11 @@ export default function EditProfileScreen() {
       next.contactEmail = t('profile.edit.emailRequired');
     }
     if (f.ecPhone.trim() && !/^[+0-9 ()-]*$/.test(f.ecPhone.trim())) next.ecPhone = t('profile.edit.phoneChars');
+    // A name without a number (or the reverse) can't be called. Checked only when these were
+    // touched, so an old half-filled record doesn't block saving an address.
+    const ecTouched = f.ecName.trim() !== initial!.ecName.trim() || f.ecPhone.trim() !== initial!.ecPhone.trim();
+    if (ecTouched && f.ecName.trim() && !f.ecPhone.trim()) next.ecPhone = t('profile.edit.ecPhoneNeeded');
+    if (ecTouched && f.ecPhone.trim() && !f.ecName.trim()) next.ecName = t('profile.edit.ecNameNeeded');
     // The clinic record requires these; they can be edited but not blanked.
     if (initial!.street && !f.street.trim()) next.street = t('profile.edit.streetBlank');
     if (initial!.city && !f.city.trim()) next.city = t('profile.edit.cityBlank');
@@ -183,12 +188,6 @@ export default function EditProfileScreen() {
           <Text style={styles.subtitle}>{t('profile.edit.subtitle')}</Text>
         </SafeAreaView>
 
-        {saveError ? (
-          <View style={styles.bannerSpacing}>
-            <Banner message={saveError} />
-          </View>
-        ) : null}
-
         <Section icon="mail-outline" title={t('profile.edit.contact')}>
           <Field
             label={t('profile.edit.contactEmail')}
@@ -244,7 +243,16 @@ export default function EditProfileScreen() {
         </Section>
 
         <Section icon="medkit-outline" title={t('profile.edit.emergencyContact')}>
-          <Field label={t('profile.edit.fullName')} icon="person-outline" value={form.ecName} onChangeText={set('ecName')} maxLength={200} autoComplete="name" />
+          <Field
+            label={t('profile.edit.fullName')}
+            icon="person-outline"
+            value={form.ecName}
+            onChangeText={set('ecName')}
+            error={errors.ecName}
+            maxLength={200}
+            autoComplete="name"
+            hint={t('profile.edit.ecHint')}
+          />
           <Field
             label={t('profile.edit.phone')}
             icon="call-outline"
@@ -281,7 +289,7 @@ export default function EditProfileScreen() {
         </Section>
 
         <View style={styles.note}>
-          <Ionicons name="information-circle-outline" size={18} color={colors.slate} />
+          <Ionicons name="business-outline" size={18} color={colors.textMuted} />
           <Text style={styles.noteText}>
             {t('profile.edit.clinicManaged')}
           </Text>
@@ -289,7 +297,13 @@ export default function EditProfileScreen() {
       </ScrollView>
 
       {/* Above the keyboard the home-indicator inset is just a dead gap. */}
-      <SafeAreaView edges={keyboardVisible ? [] : ['bottom']} style={styles.bar}>
+      <SafeAreaView edges={keyboardVisible ? [] : ['bottom']} style={styles.barWrap}>
+        {saveError ? (
+          <View style={styles.barError}>
+            <Banner message={saveError} />
+          </View>
+        ) : null}
+        <View style={styles.bar}>
         <Button title={t('common.cancel')} variant="secondary" onPress={() => router.back()} style={styles.barButton} disabled={isSaving} />
         <Button
           title={t('profile.edit.save')}
@@ -299,6 +313,7 @@ export default function EditProfileScreen() {
           disabled={!dirty}
           style={[styles.barButton, styles.barPrimary]}
         />
+        </View>
       </SafeAreaView>
     </KeyboardAvoider>
   );
@@ -349,7 +364,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
-  bannerSpacing: { marginTop: spacing.md },
   section: { marginTop: spacing.lg },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
   sectionIcon: {
@@ -365,10 +379,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
+    borderColor: colors.border,
     padding: spacing.md,
     paddingBottom: spacing.xs,
-    ...softShadow,
   },
   field: { marginBottom: spacing.xs },
   label: { fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: 6 },
@@ -394,15 +407,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
-    backgroundColor: colors.slateSoft,
-    borderRadius: radius.md,
-    padding: spacing.sm + 4,
+    paddingHorizontal: spacing.xs,
     marginTop: spacing.lg,
   },
-  noteText: { flex: 1, fontSize: 12, lineHeight: 18, color: colors.slate },
-  bar: {
-    flexDirection: 'row',
-    gap: spacing.sm + 4,
+  noteText: { flex: 1, fontSize: 13, lineHeight: 19, color: colors.textMuted },
+  barWrap: {
     paddingHorizontal: spacing.md + 4,
     paddingTop: spacing.sm + 4,
     paddingBottom: spacing.sm,
@@ -410,6 +419,8 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
+  barError: { marginBottom: spacing.sm },
+  bar: { flexDirection: 'row', gap: spacing.sm + 4 },
   barButton: { flex: 1, marginTop: 0 },
   barPrimary: { flex: 1.4 },
 });

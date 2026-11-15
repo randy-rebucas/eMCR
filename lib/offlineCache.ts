@@ -1,4 +1,5 @@
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
+import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as SecureStore from 'expo-secure-store';
@@ -9,9 +10,12 @@ import * as SecureStore from 'expo-secure-store';
  *
  * - each entry is sealed with XChaCha20-Poly1305 (authenticated) under a random 256-bit key
  *   kept only in SecureStore (this device only, never in backups)
- * - the cache key (request path + active family profile) is the cipher's associated data, so a
- *   file can only ever decrypt as the entry it was written for; file names are a keyed hash
- *   of it, so the folder doesn't reveal which records are cached
+ * - the cache key (request path + active family profile) plus the app version is the cipher's
+ *   associated data, so a file can only ever decrypt as the entry it was written for, by the app
+ *   version that wrote it: after a store update, older copies (maybe an older response shape) no
+ *   longer open and are deleted on first read. File names are a keyed hash of the cache key alone
+ *   (not the version), so the new version's copy overwrites the old file; the folder doesn't
+ *   reveal which records are cached
  * - entries expire after `MAX_AGE_MS`; the folder is capped at `MAX_TOTAL_BYTES`
  * - `clearOfflineCache` (every sign-out path, via `clearSession`) deletes the files and the key
  *
@@ -27,6 +31,14 @@ export const MAX_TOTAL_BYTES = 8 * 1024 * 1024;
 export const MAX_ENTRY_BYTES = 1024 * 1024;
 
 const KEY_STORE_NAME = 'offline_cache_key';
+
+/** The installed app version (app.json `version`, baked into each build), bound into every entry. */
+const APP_VERSION = Constants.expoConfig?.version ?? '0';
+
+/** The associated data an entry is sealed with: its cache key, for this app version only. */
+export function associatedData(cacheKey: string, appVersion = APP_VERSION): string {
+  return `v${appVersion}|${cacheKey}`;
+}
 const DIR_NAME = 'offline-records';
 const FILE_EXT = '.bin';
 
@@ -179,8 +191,13 @@ export function selectEvictions(
   return evict;
 }
 
-/** Errors that mean the copy must not be shown (signed out, no access, record gone). */
-export function shouldDropCacheOnStatus(status: number | undefined): boolean {
+/**
+ * Errors that mean the copy must not be shown (signed out, no access, record gone). Not a 403
+ * PASSWORD_CHANGE_REQUIRED: the records are still the patient's, only locked until they choose
+ * their own password.
+ */
+export function shouldDropCacheOnStatus(status: number | undefined, code?: string): boolean {
+  if (status === 403 && code === 'PASSWORD_CHANGE_REQUIRED') return false;
   return status === 401 || status === 402 || status === 403 || status === 404 || status === 410;
 }
 
@@ -262,7 +279,7 @@ export async function readOffline<T>(cacheKey: string): Promise<CachedEntry<T> |
     if (!key || startEpoch !== epoch) return null;
     const file = await fileFor(key, cacheKey);
     if (!file.exists) return null;
-    const entry = openEntry<T>(key, cacheKey, await file.bytes());
+    const entry = openEntry<T>(key, associatedData(cacheKey), await file.bytes());
     if (startEpoch !== epoch) return null;
     if (!entry || isExpired(entry.savedAt, Date.now())) {
       file.delete();
@@ -282,7 +299,7 @@ export async function writeOffline<T>(cacheKey: string, data: T, ifEpoch: number
   try {
     if (ifEpoch !== epoch) return;
     const key = await getKey();
-    const sealed = sealEntry(key, Crypto.getRandomBytes(NONCE_BYTES), cacheKey, { data, savedAt: Date.now() });
+    const sealed = sealEntry(key, Crypto.getRandomBytes(NONCE_BYTES), associatedData(cacheKey), { data, savedAt: Date.now() });
     const file = await fileFor(key, cacheKey);
     if (ifEpoch !== epoch) return;
     if (sealed.length > MAX_ENTRY_BYTES) {

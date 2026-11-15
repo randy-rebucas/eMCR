@@ -5,20 +5,22 @@ import { Invoice } from './types';
 export interface InvoiceLook {
   icon: IconName;
   label: string;
-  bg: string;
-  fg: string;
 }
 
-/** Icon + label from the first line item's category (or description as a fallback). Call while rendering (label is translated). */
+/**
+ * Icon + label from the first line item's category (or description as a fallback). Call while
+ * rendering (label is translated). One teal tile for every kind: the icon tells them apart, colour
+ * is kept for what needs the patient (an unpaid balance).
+ */
 export function invoiceLook(invoice: Invoice): InvoiceLook {
   const first = invoice.items?.[0];
   const hint = `${first?.category ?? ''} ${first?.description ?? ''}`.toLowerCase();
-  if (/lab|cbc|blood|urin|test/.test(hint)) return { icon: 'flask-outline', label: t('invoices.look.laboratory'), bg: '#FDE8E8', fg: '#B3261E' };
-  if (/x-?ray|imaging|ultra|radio|ct|mri/.test(hint)) return { icon: 'scan-outline', label: t('invoices.look.imaging'), bg: '#EEEAFB', fg: '#5B47B0' };
-  if (/med|drug|pharm|rx/.test(hint)) return { icon: 'medical-outline', label: t('invoices.look.medicines'), bg: '#E3F5EC', fg: '#1F7A4A' };
-  if (/procedure|surg/.test(hint)) return { icon: 'bandage-outline', label: t('invoices.look.procedure'), bg: '#FDF1DC', fg: '#A15C00' };
-  if (/consult|check|visit|follow/.test(hint)) return { icon: 'calendar-outline', label: t('invoices.look.consultation'), bg: '#E6EEFB', fg: '#2F5FB3' };
-  return { icon: 'receipt-outline', label: t('invoices.look.clinicServices'), bg: '#E3F6F5', fg: '#0A7F7E' };
+  if (/lab|cbc|blood|urin|test/.test(hint)) return { icon: 'flask-outline', label: t('invoices.look.laboratory') };
+  if (/x-?ray|imaging|ultra|radio|ct|mri/.test(hint)) return { icon: 'scan-outline', label: t('invoices.look.imaging') };
+  if (/med|drug|pharm|rx/.test(hint)) return { icon: 'medical-outline', label: t('invoices.look.medicines') };
+  if (/procedure|surg/.test(hint)) return { icon: 'bandage-outline', label: t('invoices.look.procedure') };
+  if (/consult|check|visit|follow/.test(hint)) return { icon: 'calendar-outline', label: t('invoices.look.consultation') };
+  return { icon: 'receipt-outline', label: t('invoices.look.clinicServices') };
 }
 
 export function amountPaid(invoice: Invoice): number {

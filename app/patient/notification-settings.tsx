@@ -14,7 +14,7 @@ import {
 } from '@/lib/push';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName, LoadingView, useBottomPadding } from '@/components/ui';
-import { AppHeader, softShadow } from '@/components/AppHeader';
+import { AppHeader } from '@/components/AppHeader';
 import { PlainKey, t as translate, useT } from '@/lib/i18n';
 
 const SMS_ENDPOINT = '/api/patients/me/sms-preference';
@@ -153,7 +153,8 @@ export default function NotificationSettingsScreen() {
     }
   }
 
-  if (permission === null || (!prefs && !loadError)) return <LoadingView />;
+  // Without push on this phone there are no device prefs to wait for.
+  if (permission === null || (permission !== 'unavailable' && !prefs && !loadError)) return <LoadingView />;
 
   const pushOn = permission === 'granted';
 
@@ -173,10 +174,18 @@ export default function NotificationSettingsScreen() {
 
       <PermissionCard permission={permission} asking={asking} onTurnOn={turnOn} />
 
+      {permission !== 'unavailable' ? (
+      <>
       <Text style={styles.groupTitle} accessibilityRole="header">
         {t('patient.notifSettings.notifyMe')}
       </Text>
-      {saveError ? <Banner message={saveError} /> : null}
+      {/* The switches can't do anything while the phone blocks alerts: say why they're greyed. */}
+      {prefs && !pushOn ? <Text style={styles.offNote}>{t('notifications.settings.offNote')}</Text> : null}
+      {saveError ? (
+        <View style={styles.errorSpacing}>
+          <Banner message={saveError} />
+        </View>
+      ) : null}
       {loadError ? (
         <View style={styles.card}>
           <Text style={styles.errorText}>{loadError}</Text>
@@ -206,6 +215,8 @@ export default function NotificationSettingsScreen() {
             </View>
           ))}
         </View>
+      ) : null}
+      </>
       ) : null}
 
       {sms?.hasPhone ? (
@@ -245,7 +256,7 @@ export default function NotificationSettingsScreen() {
       </Text>
 
       {pushOn ? (
-        <TouchableOpacity style={styles.link} onPress={() => Linking.openSettings()} accessibilityRole="link">
+        <TouchableOpacity style={styles.link} onPress={() => Linking.openSettings().catch(() => {})} accessibilityRole="link">
           <Text style={styles.linkText}>{t('patient.notifSettings.soundsLink')}</Text>
           <Ionicons name="open-outline" size={16} color={colors.primary} />
         </TouchableOpacity>
@@ -254,6 +265,10 @@ export default function NotificationSettingsScreen() {
   );
 }
 
+/**
+ * Will alerts reach this phone? Solid navy, one answer, and the one fix inline: allow, or open the
+ * phone's settings once it was refused.
+ */
 function PermissionCard({
   permission,
   asking,
@@ -264,57 +279,50 @@ function PermissionCard({
   onTurnOn: () => void;
 }) {
   const t = useT();
-  if (permission === 'granted') {
-    return (
-      <View style={[styles.status, styles.statusOn]}>
-        <View style={styles.statusIcon}>
-          <Ionicons name="notifications" size={22} color={colors.primary} />
-        </View>
-        <View style={styles.flex}>
-          <Text style={styles.statusTitle}>{t('patient.notifSettings.onTitle')}</Text>
-          <Text style={styles.statusText}>{t('patient.notifSettings.onBody')}</Text>
-        </View>
-      </View>
-    );
-  }
-
-  if (permission === 'unavailable') {
-    return (
-      <View style={[styles.status, styles.statusOff]}>
-        <View style={styles.statusIcon}>
-          <Ionicons name="phone-portrait-outline" size={22} color={colors.slate} />
-        </View>
-        <View style={styles.flex}>
-          <Text style={styles.statusTitle}>{t('patient.notifSettings.unavailableTitle')}</Text>
-          <Text style={styles.statusText}>
-            {t('patient.notifSettings.unavailableBody')}
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
+  const on = permission === 'granted';
+  const unavailable = permission === 'unavailable';
   const denied = permission === 'denied';
+  const title = on
+    ? t('patient.notifSettings.onTitle')
+    : unavailable
+      ? t('patient.notifSettings.unavailableTitle')
+      : t('patient.notifSettings.offTitle');
+  const body = on
+    ? t('patient.notifSettings.onBody')
+    : unavailable
+      ? t('patient.notifSettings.unavailableBody')
+      : denied
+        ? t('patient.notifSettings.offDenied')
+        : t('patient.notifSettings.offAsk');
   return (
-    <View style={[styles.status, styles.statusWarn, styles.statusStack]}>
-      <View style={styles.statusRow}>
-        <View style={styles.statusIcon}>
-          <Ionicons name="notifications-off-outline" size={22} color={colors.warning} />
-        </View>
-        <View style={styles.flex}>
-          <Text style={styles.statusTitle}>{t('patient.notifSettings.offTitle')}</Text>
-          <Text style={styles.statusText}>
-            {denied
-              ? t('patient.notifSettings.offDenied')
-              : t('patient.notifSettings.offAsk')}
+    <View style={styles.hero} accessibilityLiveRegion="polite">
+      <View style={styles.heroTop}>
+        <Text style={styles.heroEyebrow}>{t('notifications.settings.eyebrow')}</Text>
+        <View style={[styles.heroChip, !on && !unavailable && styles.heroChipWarn]}>
+          <Ionicons
+            name={on ? 'checkmark-circle' : unavailable ? 'phone-portrait-outline' : 'notifications-off-outline'}
+            size={14}
+            color={on ? colors.accent : unavailable ? colors.onNavyMuted : colors.warning}
+          />
+          <Text style={[styles.heroChipText, !on && !unavailable && styles.heroChipTextWarn]}>
+            {on ? t('notifications.settings.chipOn') : unavailable ? t('notifications.settings.chipUnavailable') : t('notifications.settings.chipOff')}
           </Text>
         </View>
       </View>
-      {denied ? (
-        <Button title={t('patient.notifSettings.openSettings')} icon="settings-outline" onPress={() => Linking.openSettings()} />
-      ) : (
-        <Button title={t('patient.notifSettings.turnOn')} icon="notifications-outline" onPress={onTurnOn} loading={asking} />
-      )}
+      <Text style={styles.heroTitle}>{title}</Text>
+      <Text style={styles.heroBody}>{body}</Text>
+      {!on && !unavailable ? (
+        denied ? (
+          <Button
+            title={t('patient.notifSettings.openSettings')}
+            icon="settings-outline"
+            onPress={() => Linking.openSettings().catch(() => {})}
+            style={styles.heroButton}
+          />
+        ) : (
+          <Button title={t('patient.notifSettings.turnOn')} icon="notifications-outline" onPress={onTurnOn} loading={asking} style={styles.heroButton} />
+        )
+      ) : null}
     </View>
   );
 }
@@ -325,38 +333,32 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
-  status: {
+  hero: { backgroundColor: colors.navy, borderRadius: radius.lg, padding: spacing.md + 4, marginTop: spacing.lg },
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  heroEyebrow: { fontSize: 12, fontWeight: '700', color: colors.onNavyMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
+  heroChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm + 4,
+    gap: 6,
     borderWidth: 1,
-    borderRadius: radius.lg,
-    padding: spacing.sm + 6,
-    marginTop: spacing.lg,
+    borderColor: colors.navyLine,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 4,
   },
-  statusStack: { flexDirection: 'column', alignItems: 'stretch', gap: spacing.md },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4 },
-  statusOn: { backgroundColor: '#DDF3F1', borderColor: '#C6EAE7' },
-  statusOff: { backgroundColor: colors.slateSoft, borderColor: colors.border },
-  statusWarn: { backgroundColor: colors.warningSoft, borderColor: '#F3DFAE' },
-  statusIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statusTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
-  statusText: { fontSize: 13, lineHeight: 19, color: colors.text, marginTop: 2 },
+  heroChipWarn: { backgroundColor: colors.warningSoft, borderColor: colors.warningSoft },
+  heroChipText: { fontSize: 12, fontWeight: '600', color: colors.primaryText },
+  heroChipTextWarn: { color: colors.warning },
+  heroTitle: { fontSize: 20, fontWeight: '700', color: colors.primaryText, marginTop: spacing.sm + 4 },
+  heroBody: { fontSize: 14, lineHeight: 20, color: colors.onNavyMuted, marginTop: spacing.xs },
+  heroButton: { marginTop: spacing.md },
   groupTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
+    borderColor: colors.border,
     padding: spacing.md,
-    ...softShadow,
   },
   list: { paddingVertical: 0, paddingHorizontal: spacing.sm + 4 },
   dimmed: { opacity: 0.55 },
@@ -376,6 +378,8 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 14, color: colors.text },
   retry: { marginTop: spacing.md },
   footnote: { fontSize: 13, lineHeight: 19, color: colors.textMuted, marginTop: spacing.md },
-  link: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.md, paddingVertical: spacing.xs },
+  link: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm, minHeight: 44 },
+  offNote: { fontSize: 13, lineHeight: 18, color: colors.warning, fontWeight: '600', marginBottom: spacing.sm },
+  errorSpacing: { marginBottom: spacing.sm },
   linkText: { fontSize: 14, fontWeight: '600', color: colors.primary },
 });

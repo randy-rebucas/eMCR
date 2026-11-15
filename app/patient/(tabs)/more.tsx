@@ -15,23 +15,27 @@ import { useApiData } from '@/lib/useApiData';
 import { canUseAppLock, getAppLockEnabled, setAppLock } from '@/lib/appLock';
 import { colors, radius, spacing } from '@/lib/theme';
 import { IconName } from '@/components/ui';
+import { Avatar } from '@/components/Avatar';
 import { AppHeader, softShadow } from '@/components/AppHeader';
 import { useTour } from '@/components/QuickTour';
 import { LanguagePicker, useLanguageSummary } from '@/components/LanguagePicker';
 import { t as translate, useT } from '@/lib/i18n';
 
-type Tint = 'teal' | 'blue' | 'purple' | 'amber' | 'rose';
+/**
+ * Icon tiles carry meaning, not decoration: teal for everything ordinary, amber when something
+ * needs the patient (eMCR not activated), red only for destructive actions (delete, sign out).
+ */
+type Tone = 'default' | 'attention' | 'danger';
 
-const TINTS: Record<Tint, { bg: string; fg: string }> = {
-  teal: { bg: '#E3F6F5', fg: '#0A7F7E' },
-  blue: { bg: '#E6EEFB', fg: '#2F5FB3' },
-  purple: { bg: '#EEEAFB', fg: '#5B47B0' },
-  amber: { bg: '#FDF1DC', fg: '#A15C00' },
-  rose: { bg: '#FDE8E8', fg: '#B3261E' },
+const TONES: Record<Tone, { bg: string; fg: string }> = {
+  default: { bg: colors.primarySoft, fg: colors.primaryOnSoft },
+  attention: { bg: colors.warningSoft, fg: colors.warning },
+  danger: { bg: colors.dangerSoft, fg: colors.danger },
 };
 
 const PRIVACY_URL = 'https://www.myclinicsoft.solutions/privacy';
 const TERMS_URL = 'https://www.myclinicsoft.solutions/terms';
+const DELETE_ACCOUNT_URL = 'https://www.myclinicsoft.solutions/delete-account';
 
 function openWebPage(url: string) {
   Linking.openURL(url).catch(() =>
@@ -55,6 +59,7 @@ export default function MoreScreen() {
       : activation.expiresAt
         ? t('more.activation.ended')
         : t('more.activation.enter');
+  const needsActivation = !!activation && !activation.active && activation.enforced;
   const { viewing, family } = useProfile();
   const self = viewing?.self !== false;
   // The profile card shows whoever's records are on screen.
@@ -80,7 +85,6 @@ export default function MoreScreen() {
   }
 
   const fullName = patient ? `${patient.firstName} ${patient.lastName}`.trim() : t('more.yourProfile');
-  const initials = patient ? `${patient.firstName?.[0] ?? ''}${patient.lastName?.[0] ?? ''}`.toUpperCase() : '';
 
   async function runSignOut(everywhere: boolean) {
     setSigningOut(true);
@@ -125,44 +129,62 @@ export default function MoreScreen() {
         <Text style={styles.subtitle}>{t('more.subtitle')}</Text>
       </SafeAreaView>
 
-      {/* Profile card */}
+      {/* Whose records these are, and whether eMCR is active: solid navy, no shadow. */}
       <TouchableOpacity
         style={styles.profile}
         onPress={() => router.push('/patient/profile')}
         accessibilityRole="button"
         accessibilityLabel={self ? t('more.profile.a11y', { name: fullName }) : t('more.profile.a11yMember', { name: fullName })}
       >
-        <View style={styles.avatar}>
-          {initials ? (
-            <Text style={styles.avatarText}>{initials}</Text>
+        <View style={styles.profileTop}>
+          <Avatar image={patient?.profileImage} firstName={patient?.firstName} lastName={patient?.lastName} size={64} />
+          <View style={styles.flex}>
+            <Text style={styles.profileName} numberOfLines={1}>
+              {fullName}
+            </Text>
+            {!self ? <Text style={styles.profileMeta}>{t('more.profile.member')}</Text> : null}
+            {patient?.patientCode ? <Text style={styles.profileMeta}>{t('more.profile.patientId', { id: patient.patientCode })}</Text> : null}
+            {self && account.data?.loginId ? (
+              <Text style={styles.profileMeta} numberOfLines={1} selectable>
+                {t('more.profile.loginId', { id: account.data.loginId })}
+              </Text>
+            ) : null}
+            {patient?.email ? (
+              <Text style={styles.profileMeta} numberOfLines={1}>
+                {patient.email}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+        <View style={styles.profileFoot}>
+          {activation ? (
+            <View style={[styles.chip, needsActivation && styles.chipAttention]}>
+              <Ionicons
+                name={activation.active ? 'checkmark-circle' : needsActivation ? 'key-outline' : 'information-circle-outline'}
+                size={14}
+                color={activation.active ? colors.accent : needsActivation ? colors.warning : colors.onNavyMuted}
+              />
+              <Text style={[styles.chipText, needsActivation && styles.chipTextAttention]} numberOfLines={1}>
+                {activation.active && activation.expiresAt
+                  ? t('more.activation.activeUntil', {
+                      date: formatDate(activation.expiresAt, { month: 'short', day: 'numeric', year: 'numeric' }),
+                    })
+                  : t('more.hero.notActive')}
+              </Text>
+            </View>
           ) : (
-            <Ionicons name="person" size={26} color={colors.primary} />
+            <View style={styles.flex} />
           )}
+          <View style={styles.viewLink}>
+            <Text style={styles.viewLinkText}>{t('more.hero.view')}</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.primaryText} />
+          </View>
         </View>
-        <View style={styles.flex}>
-          <Text style={styles.profileName} numberOfLines={1}>
-            {fullName}
-          </Text>
-          {!self ? <Text style={styles.profileMeta}>{t('more.profile.member')}</Text> : null}
-          {patient?.patientCode ? <Text style={styles.profileMeta}>{t('more.profile.patientId', { id: patient.patientCode })}</Text> : null}
-          {self && account.data?.loginId ? (
-            <Text style={styles.profileMeta} numberOfLines={1} selectable>
-              {t('more.profile.loginId', { id: account.data.loginId })}
-            </Text>
-          ) : null}
-          {patient?.email ? (
-            <Text style={styles.profileMeta} numberOfLines={1}>
-              {patient.email}
-            </Text>
-          ) : null}
-        </View>
-        <Ionicons name="chevron-forward" size={20} color={colors.primary} />
       </TouchableOpacity>
 
       <Group title={t('more.group.family')}>
         <Row
           icon="people-outline"
-          tint="rose"
           label={self ? t('more.family.label') : t('more.family.switch')}
           detail={
             guardianOnly
@@ -179,76 +201,60 @@ export default function MoreScreen() {
         />
       </Group>
 
-      <Group title={t('more.group.records')}>
+      <Group title={t('more.group.health')}>
         <Row
           icon="heart-outline"
-          tint="rose"
           label={t('more.healthSummary.label')}
           detail={t('more.healthSummary.detail')}
           onPress={() => router.push('/patient/health-summary')}
         />
+        <Row icon="medkit-outline" label={t('more.visits.label')} detail={t('more.visits.detail')} onPress={() => router.push('/patient/visits')} />
+        <Row icon="pulse-outline" label={t('more.vitals.label')} detail={t('more.vitals.detail')} onPress={() => router.push('/patient/vitals')} />
         <Row
-          icon="medkit-outline"
-          tint="teal"
-          label={t('more.visits.label')}
-          detail={t('more.visits.detail')}
-          onPress={() => router.push('/patient/visits')}
-        />
-        <Row
-          icon="pulse-outline"
-          tint="blue"
-          label={t('more.vitals.label')}
-          detail={t('more.vitals.detail')}
-          onPress={() => router.push('/patient/vitals')}
-        />
-        <Row
-          icon="git-branch-outline"
-          tint="amber"
-          label={t('more.referrals.label')}
-          detail={t('more.referrals.detail')}
-          onPress={() => router.push('/patient/referrals')}
-        />
-        <Row
-          icon="hourglass-outline"
-          tint="blue"
-          label={t('more.waitlist.label')}
-          detail={t('more.waitlist.detail')}
-          onPress={() => router.push('/patient/waitlist')}
-        />
-        <Row
-          icon="share-social-outline"
-          tint="purple"
-          label={t('more.share.label')}
-          detail={t('more.share.detail')}
-          onPress={() => router.push('/patient/share')}
-        />
-        <Row
-          icon="business-outline"
-          tint="amber"
-          label={t('more.clinics.label')}
-          detail={t('more.clinics.detail')}
-          onPress={() => router.push('/patient/clinics')}
-        />
-        <Row
-          icon="bandage-outline"
-          tint="teal"
+          icon="document-text-outline"
           label={t('more.prescriptions.label')}
           detail={t('more.prescriptions.detail')}
           onPress={() => router.push('/patient/prescriptions')}
         />
         <Row
           icon="alarm-outline"
-          tint="teal"
           label={t('more.medicines.label')}
           detail={t('more.medicines.detail')}
           onPress={() => router.push('/patient/medicines')}
+          last
         />
+      </Group>
+
+      <Group title={t('more.group.records')}>
         <Row
-          icon="document-text-outline"
-          tint="purple"
+          icon="folder-open-outline"
           label={t('more.documents.label')}
           detail={t('more.documents.detail')}
           onPress={() => router.push('/patient/documents')}
+        />
+        <Row
+          icon="arrow-redo-outline"
+          label={t('more.referrals.label')}
+          detail={t('more.referrals.detail')}
+          onPress={() => router.push('/patient/referrals')}
+        />
+        <Row
+          icon="hourglass-outline"
+          label={t('more.waitlist.label')}
+          detail={t('more.waitlist.detail')}
+          onPress={() => router.push('/patient/waitlist')}
+        />
+        <Row
+          icon="share-social-outline"
+          label={t('more.share.label')}
+          detail={t('more.share.detail')}
+          onPress={() => router.push('/patient/share')}
+        />
+        <Row
+          icon="business-outline"
+          label={t('more.clinics.label')}
+          detail={t('more.clinics.detail')}
+          onPress={() => router.push('/patient/clinics')}
           last
         />
       </Group>
@@ -256,14 +262,12 @@ export default function MoreScreen() {
       <Group title={t('more.group.billing')}>
         <Row
           icon="receipt-outline"
-          tint="blue"
           label={t('more.invoices.label')}
           detail={t('more.invoices.detail')}
           onPress={() => router.push('/patient/invoices')}
         />
         <Row
           icon="card-outline"
-          tint="amber"
           label={t('more.membership.label')}
           detail={t('more.membership.detail')}
           onPress={() => router.push('/patient/membership')}
@@ -274,22 +278,14 @@ export default function MoreScreen() {
       <Group title={t('more.group.account')}>
         <Row
           icon="key-outline"
-          tint={activation && !activation.active && activation.enforced ? 'amber' : 'teal'}
+          tone={needsActivation ? 'attention' : 'default'}
           label={t('more.activation.label')}
           detail={activationDetail}
           onPress={() => router.push('/patient/activate')}
         />
-        <Row
-          icon="person-outline"
-          tint="blue"
-          label={t('more.profile.label')}
-          detail={t('more.profile.detail')}
-          onPress={() => router.push('/patient/profile')}
-        />
         {self && !guardianOnly ? (
           <Row
             icon="lock-closed-outline"
-            tint="purple"
             label={t('more.password.label')}
             detail={t('more.password.detail')}
             onPress={() => router.push('/patient/profile/password')}
@@ -298,7 +294,6 @@ export default function MoreScreen() {
         {appLock !== null ? (
           <Row
             icon="finger-print-outline"
-            tint="rose"
             label={t('more.appLock.label')}
             detail={appLock ? t('more.appLock.on') : t('more.appLock.off')}
             onPress={toggleAppLock}
@@ -306,14 +301,12 @@ export default function MoreScreen() {
         ) : null}
         <Row
           icon="language-outline"
-          tint="blue"
           label={t('more.language.label')}
           detail={languageSummary}
           onPress={() => setPickingLanguage(true)}
         />
         <Row
           icon="mail-unread-outline"
-          tint="teal"
           label={t('more.notifications.label')}
           detail={unreadCount ? t('more.notifications.unread', { count: unreadCount }) : t('more.notifications.detail')}
           badge={unreadCount}
@@ -321,7 +314,6 @@ export default function MoreScreen() {
         />
         <Row
           icon="notifications-outline"
-          tint="amber"
           label={t('more.notificationSettings.label')}
           detail={t('more.notificationSettings.detail')}
           onPress={() => router.push('/patient/notification-settings')}
@@ -332,7 +324,6 @@ export default function MoreScreen() {
       <Group title={t('more.group.help')}>
         <Row
           icon="compass-outline"
-          tint="teal"
           label={t('more.tour.label')}
           detail={t('more.tour.detail')}
           onPress={replayTour}
@@ -343,19 +334,25 @@ export default function MoreScreen() {
       <Group title={t('more.group.legal')}>
         <Row
           icon="shield-checkmark-outline"
-          tint="purple"
           label={t('more.privacy.label')}
           detail={t('more.privacy.detail')}
           external
           onPress={() => openWebPage(PRIVACY_URL)}
         />
         <Row
-          icon="information-circle-outline"
-          tint="teal"
+          icon="reader-outline"
           label={t('more.terms.label')}
           detail={t('more.terms.detail')}
           external
           onPress={() => openWebPage(TERMS_URL)}
+        />
+        <Row
+          icon="trash-outline"
+          tone="danger"
+          label={t('more.deleteAccount.label')}
+          detail={t('more.deleteAccount.detail')}
+          external
+          onPress={() => openWebPage(DELETE_ACCOUNT_URL)}
           last
         />
       </Group>
@@ -367,7 +364,7 @@ export default function MoreScreen() {
         accessibilityRole="button"
         accessibilityState={{ busy: signingOut }}
       >
-        <View style={[styles.rowIcon, { backgroundColor: TINTS.rose.bg }]}>
+        <View style={[styles.rowIcon, { backgroundColor: TONES.danger.bg }]}>
           <Ionicons name="log-out-outline" size={22} color={colors.danger} />
         </View>
         <Text style={styles.signOutText}>{t('more.signOut.button')}</Text>
@@ -393,7 +390,7 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 
 function Row({
   icon,
-  tint,
+  tone = 'default',
   label,
   detail,
   onPress,
@@ -402,7 +399,7 @@ function Row({
   last,
 }: {
   icon: IconName;
-  tint: Tint;
+  tone?: Tone;
   label: string;
   detail: string;
   onPress: () => void;
@@ -410,7 +407,7 @@ function Row({
   external?: boolean;
   last?: boolean;
 }) {
-  const t = TINTS[tint];
+  const t = TONES[tone];
   return (
     <TouchableOpacity
       style={[styles.row, !last && styles.rowDivider]}
@@ -422,7 +419,7 @@ function Row({
         <Ionicons name={icon} size={22} color={t.fg} />
       </View>
       <View style={styles.flex}>
-        <Text style={styles.rowLabel}>{label}</Text>
+        <Text style={[styles.rowLabel, tone === 'danger' && styles.rowLabelDanger]}>{label}</Text>
         <Text style={styles.rowDetail}>{detail}</Text>
       </View>
       {badge ? (
@@ -441,35 +438,42 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
-  profile: {
+  profile: { backgroundColor: colors.navy, borderRadius: radius.lg, padding: spacing.md + 4, marginTop: spacing.lg },
+  profileTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  profileName: { fontSize: 20, fontWeight: '700', color: colors.primaryText },
+  profileMeta: { fontSize: 13, color: colors.onNavyMuted, marginTop: 2, fontVariant: ['tabular-nums'] },
+  profileFoot: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: '#DDF3F1',
-    borderWidth: 1,
-    borderColor: '#C6EAE7',
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    marginTop: spacing.lg,
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingTop: spacing.sm + 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.navyLine,
   },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: colors.surface,
+  chip: {
+    flexShrink: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.navyLine,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
   },
-  avatarText: { fontSize: 20, fontWeight: '800', color: colors.primary },
-  profileName: { fontSize: 18, fontWeight: '700', color: colors.text },
-  profileMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  chipAttention: { backgroundColor: colors.warningSoft, borderColor: colors.warningSoft },
+  chipText: { flexShrink: 1, fontSize: 12, fontWeight: '600', color: colors.primaryText },
+  chipTextAttention: { color: colors.warning },
+  viewLink: { flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 'auto', minHeight: 44 },
+  viewLinkText: { fontSize: 14, fontWeight: '600', color: colors.primaryText },
   group: { marginTop: spacing.lg },
   groupTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
+    borderColor: colors.border,
     paddingHorizontal: spacing.sm + 4,
     ...softShadow,
   },
@@ -477,23 +481,25 @@ const styles = StyleSheet.create({
   rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   rowIcon: { width: 46, height: 46, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   rowLabel: { fontSize: 16, fontWeight: '600', color: colors.text },
+  rowLabelDanger: { color: colors.danger },
   rowDetail: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  // Unread count on teal, as on the header bell: "something here for you", not an error.
   badge: {
-    backgroundColor: '#E5484D',
+    backgroundColor: colors.primary,
     borderRadius: 999,
     minWidth: 22,
     paddingHorizontal: 6,
     paddingVertical: 2,
     alignItems: 'center',
   },
-  badgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  badgeText: { color: colors.primaryText, fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'] },
   signOut: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm + 6,
-    backgroundColor: '#FFF5F5',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#F6CACA',
+    borderColor: colors.border,
     borderRadius: radius.lg,
     padding: spacing.sm + 4,
     marginTop: spacing.lg,

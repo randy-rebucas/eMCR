@@ -202,7 +202,6 @@ export default function PhoneScreen() {
     return (
       <AuthScreen back>
         <AuthHeader title={copy.title} subtitle={copy.subtitle} />
-        {errorText ? <Banner message={errorText} /> : null}
         <PhPhoneField
           value={local}
           onChange={setLocal}
@@ -210,6 +209,7 @@ export default function PhoneScreen() {
           onSubmitEditing={sendCode}
           autoFocus
         />
+        {errorText ? <Banner message={errorText} /> : null}
         <Button title={t('auth.sendCode')} onPress={sendCode} loading={submitting} />
       </AuthScreen>
     );
@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   error: { color: colors.danger, fontSize: 14, textAlign: 'center', marginTop: -spacing.sm, marginBottom: spacing.sm },
   resend: { alignItems: 'center', marginTop: spacing.lg, gap: spacing.xs },
   resendRow: { flexDirection: 'row', alignItems: 'center' },
-  resendText: { fontSize: 14, color: colors.textMuted },
+  resendText: { fontSize: 14, color: colors.textMuted, fontVariant: ['tabular-nums'] },
   change: { marginTop: spacing.md },
   inviteHint: { alignItems: 'center', marginTop: spacing.lg, gap: spacing.xs, paddingHorizontal: spacing.md },
 });

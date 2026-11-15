@@ -125,3 +125,41 @@ export async function openReferralLetter(r: Referral): Promise<void> {
   const link = await apiRequest<{ url: string }>(`${REFERRALS_PATH}/${encodeURIComponent(r._id)}/pdf-link`, { method: 'POST' });
   await openPdfLink(link.url, t('referrals.letterFileName', { code: r.referralCode ?? r._id }), t('referrals.letterTitle'));
 }
+
+/**
+ * Chip tone per status: sent is waiting (amber), accepted/completed teal, declined and cancelled
+ * neutral. Red is kept for destructive actions; a declined referral isn't one.
+ */
+export function statusTone(status: ReferralStatus): 'attention' | 'teal' | 'neutral' {
+  if (status === 'pending') return 'attention';
+  if (status === 'accepted' || status === 'completed') return 'teal';
+  return 'neutral';
+}
+
+export interface ReferralStep {
+  key: 'referred' | 'accepted' | 'seen';
+  state: 'done' | 'current' | 'todo' | 'ended';
+  date: string | null;
+}
+
+/**
+ * Referred → accepted → seen, with the dates the clinic recorded. A declined or cancelled
+ * referral ends at the step it stopped on.
+ */
+export function referralProgress(r: Referral): ReferralStep[] {
+  const referred: ReferralStep = { key: 'referred', state: 'done', date: r.referredDate };
+  switch (r.status) {
+    case 'completed':
+      return [referred, { key: 'accepted', state: 'done', date: r.acceptedDate }, { key: 'seen', state: 'done', date: r.completedDate }];
+    case 'accepted':
+      return [referred, { key: 'accepted', state: 'done', date: r.acceptedDate }, { key: 'seen', state: 'current', date: null }];
+    case 'declined':
+      return [referred, { key: 'accepted', state: 'ended', date: r.declinedDate }];
+    case 'cancelled':
+      return r.acceptedDate
+        ? [referred, { key: 'accepted', state: 'done', date: r.acceptedDate }, { key: 'seen', state: 'ended', date: null }]
+        : [referred, { key: 'accepted', state: 'ended', date: null }];
+    default:
+      return [referred, { key: 'accepted', state: 'current', date: null }, { key: 'seen', state: 'todo', date: null }];
+  }
+}

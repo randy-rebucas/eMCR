@@ -4,25 +4,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { usePaginatedList } from '@/lib/usePaginatedList';
 import { formatDate } from '@/lib/format';
-import { Referral, REFERRALS_PATH, referredToText, STATUS_LABEL, URGENCY_LABEL } from '@/lib/referrals';
+import { Referral, REFERRALS_PATH, referredToText, STATUS_LABEL, statusTone, URGENCY_LABEL } from '@/lib/referrals';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Badge, Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
-import { AppHeader, softShadow } from '@/components/AppHeader';
+import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
+import { AppHeader } from '@/components/AppHeader';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { useT } from '@/lib/i18n';
 
-const TONE: Record<Referral['status'], 'primary' | 'warning' | 'danger' | 'neutral'> = {
-  pending: 'warning',
-  accepted: 'primary',
-  completed: 'primary',
-  declined: 'danger',
-  cancelled: 'neutral',
-};
-
-/** Referrals to a specialist or another clinic, newest first. */
+/** Referrals to a specialist or another clinic, newest first, as one ruled card. */
 export default function ReferralsScreen() {
   const t = useT();
   const bottomPad = useBottomPadding();
-  const list = usePaginatedList<Referral>(REFERRALS_PATH, { limit: 20, refreshOn: ['profile', 'family'] });
+  const list = usePaginatedList<Referral>(REFERRALS_PATH, { limit: 20, refreshOn: ['profile', 'family'], offline: true });
 
   const header = (
     <SafeAreaView edges={['top']}>
@@ -31,7 +24,8 @@ export default function ReferralsScreen() {
         {t('referrals.title')}
       </Text>
       <Text style={styles.subtitle}>{t('referrals.subtitle')}</Text>
-      {list.error && list.items.length > 0 ? <Banner message={list.error} /> : null}
+      <OfflineBanner offline={list.offline} updatedAt={list.updatedAt} subject={t('referrals.offlineSubject')} />
+      {list.error && list.items.length > 0 && !list.offline ? <Banner message={list.error} /> : null}
     </SafeAreaView>
   );
 
@@ -47,22 +41,21 @@ export default function ReferralsScreen() {
     );
   } else {
     empty = (
-      <View style={styles.empty}>
-        <View style={styles.emptyIcon}>
-          <Ionicons name="git-branch-outline" size={32} color={colors.primary} />
-        </View>
+      <View style={styles.emptyCard}>
+        <Ionicons name="git-branch-outline" size={28} color={colors.primary} />
         <Text style={styles.emptyTitle}>{t('referrals.empty.title')}</Text>
         <Text style={styles.emptyText}>{t('referrals.empty.text')}</Text>
       </View>
     );
   }
 
+  const last = list.items.length - 1;
   return (
     <FlatList
       style={styles.root}
       data={list.items}
       keyExtractor={(r) => r._id}
-      renderItem={({ item }) => <ReferralCard referral={item} />}
+      renderItem={({ item, index }) => <ReferralRow referral={item} first={index === 0} last={index === last} />}
       ListHeaderComponent={header}
       ListHeaderComponentStyle={styles.headerSpacing}
       ListEmptyComponent={empty}
@@ -75,49 +68,56 @@ export default function ReferralsScreen() {
   );
 }
 
-function ReferralCard({ referral: r }: { referral: Referral }) {
+function ReferralRow({ referral: r, first, last }: { referral: Referral; first: boolean; last: boolean }) {
   const t = useT();
   const to = referredToText(r);
   const urgency = URGENCY_LABEL[r.urgency];
+  const tone = statusTone(r.status);
+  const status = STATUS_LABEL[r.status] ?? r.status;
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.row, first && styles.rowFirst, last && styles.rowLast]}
       onPress={() => router.push(`/patient/referrals/${r._id}`)}
       accessibilityRole="button"
       accessibilityLabel={
         r.referredDate
-          ? t('referrals.cardA11yDate', { to, status: STATUS_LABEL[r.status] ?? r.status, date: formatDate(r.referredDate) })
-          : t('referrals.cardA11y', { to, status: STATUS_LABEL[r.status] ?? r.status })
+          ? t('referrals.cardA11yDate', { to, status, date: formatDate(r.referredDate) })
+          : t('referrals.cardA11y', { to, status })
       }
     >
-      <View style={styles.cardTop}>
-        <View style={styles.icon}>
-          <Ionicons name="git-branch-outline" size={20} color={colors.primary} />
-        </View>
+      <View style={[styles.rowInner, !first && styles.rowRule]}>
         <View style={styles.flex}>
-          <Text style={styles.cardTitle} numberOfLines={2}>
+          <Text style={styles.rowTitle} numberOfLines={2}>
             {to}
           </Text>
-          <Text style={styles.cardMeta}>
+          {r.reason ? (
+            <Text style={styles.reason} numberOfLines={2}>
+              {r.reason}
+            </Text>
+          ) : null}
+          <Text style={styles.rowMeta}>
             {[r.referredDate ? formatDate(r.referredDate) : null, r.referralCode].filter(Boolean).join(' · ')}
           </Text>
-        </View>
-        <Badge label={STATUS_LABEL[r.status] ?? r.status} tone={TONE[r.status] ?? 'neutral'} />
-      </View>
-      {r.reason ? (
-        <Text style={styles.reason} numberOfLines={2}>
-          {r.reason}
-        </Text>
-      ) : null}
-      <View style={styles.cardBottom}>
-        {urgency ? <Badge label={urgency} tone="danger" /> : null}
-        {r.appointment ? (
-          <View style={styles.appt}>
-            <Ionicons name="calendar-outline" size={14} color={colors.textMuted} />
-            <Text style={styles.cardMeta}>{t('referrals.apptBooked')}</Text>
+          <View style={styles.chips}>
+            <View style={[styles.chip, tone === 'attention' && styles.chipAttention, tone === 'teal' && styles.chipTeal]}>
+              <Text style={[styles.chipText, tone === 'attention' && styles.chipTextAttention, tone === 'teal' && styles.chipTextTeal]}>
+                {status}
+              </Text>
+            </View>
+            {urgency ? (
+              <View style={[styles.chip, styles.chipAttention]}>
+                <Ionicons name="alert-circle" size={12} color={colors.warning} />
+                <Text style={[styles.chipText, styles.chipTextAttention]}>{urgency}</Text>
+              </View>
+            ) : null}
+            {r.appointment ? (
+              <View style={styles.appt}>
+                <Ionicons name="calendar-outline" size={14} color={colors.textMuted} />
+                <Text style={styles.rowMeta}>{t('referrals.apptBooked')}</Text>
+              </View>
+            ) : null}
           </View>
-        ) : null}
-        <View style={styles.flex} />
+        </View>
         <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
       </View>
     </TouchableOpacity>
@@ -132,40 +132,49 @@ const styles = StyleSheet.create({
   stretch: { alignSelf: 'stretch' },
   loading: { marginVertical: spacing.xl },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
-  subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
-  card: {
+  subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2, marginBottom: spacing.sm },
+
+  row: {
+    backgroundColor: colors.surface,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+  },
+  rowFirst: { borderTopWidth: 1, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
+  rowLast: { borderBottomWidth: 1, borderBottomLeftRadius: radius.lg, borderBottomRightRadius: radius.lg },
+  rowInner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4, paddingVertical: spacing.sm + 6 },
+  rowRule: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  rowTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  reason: { fontSize: 14, lineHeight: 19, color: colors.text, marginTop: 2 },
+  rowMeta: { fontSize: 13, color: colors.textMuted, marginTop: 4, fontVariant: ['tabular-nums'] },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.slateSoft,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 3,
+  },
+  chipAttention: { backgroundColor: colors.warningSoft },
+  chipTeal: { backgroundColor: colors.primarySoft },
+  chipText: { fontSize: 12, fontWeight: '700', color: colors.slate },
+  chipTextAttention: { color: colors.warning },
+  chipTextTeal: { color: colors.primaryOnSoft },
+  appt: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+
+  empty: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md, gap: spacing.sm },
+  emptyCard: {
+    alignItems: 'center',
+    gap: spacing.sm,
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
-    padding: spacing.sm + 4,
-    marginBottom: spacing.md,
-    ...softShadow,
+    borderColor: colors.border,
+    padding: spacing.lg,
   },
-  cardTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 2 },
-  icon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
-  cardMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  reason: { fontSize: 14, color: colors.text, marginTop: spacing.sm },
-  cardBottom: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
-  appt: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  empty: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md },
-  emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: spacing.xs },
-  emptyText: { fontSize: 14, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.sm },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  emptyText: { fontSize: 14, lineHeight: 20, color: colors.textMuted, textAlign: 'center' },
 });

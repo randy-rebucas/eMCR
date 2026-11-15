@@ -47,6 +47,14 @@ export default defineStrings({
     createdAt: 'Created {date}',
     createdByFamily: 'Created {date} by a family manager',
 
+    heroTitle: 'Health summary PDF',
+    openNow: { one: '{count} link open now (of {max} allowed)', other: '{count} links open now (of {max} allowed)' },
+    noneOpen: 'No links are open right now.',
+    newLink: 'New link',
+    openLinks: 'Open links',
+    endedLinks: 'Ended',
+    revokeA11y: 'Revoke the link for {label}',
+
     // lib/shareLinks.ts
     'duration.24h': '24 hours',
     'duration.7d': '7 days',
@@ -104,5 +112,12 @@ export default defineStrings({
     'status.active': 'Aktibo',
     'status.expired': 'Expired na',
     'status.revoked': 'Binawi',
+    heroTitle: 'Health summary PDF',
+    openNow: '{count} link ang bukas ngayon (sa {max} na puwede)',
+    noneOpen: 'Walang bukas na link ngayon.',
+    newLink: 'Bagong link',
+    openLinks: 'Mga bukas na link',
+    endedLinks: 'Tapos na',
+    revokeA11y: 'Bawiin ang link para kay {label}',
   },
 });

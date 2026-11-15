@@ -1,5 +1,69 @@
 # eMCR release notes
 
+## 1.1.5
+
+1.1.4 with a new look across the app, a profile picture for you and your family members, more
+reliable medicine reminders, and the fixes from the 2026-11-15 audit.
+
+**New native modules:** `expo-image-picker` and `expo-image-manipulator` (choose or take a profile
+picture, then shrink it before upload). This cannot ship over the air: it reaches devices only
+through a new store build. The photo library is opened through the system picker, and the camera
+permission the app already had for QR sign-in now also covers taking a picture. After
+`expo prebuild`, check the merged Android manifest for any storage/media permission the picker adds
+(1.1.1 removed the unused ones), and remove it if the system photo picker covers it.
+
+Deploy the backend first (clinic-management `feat/patient-photo`, plus the audit fixes). It adds the
+`/api/patients/me/photo` route and returns the picture from `GET /api/patients/me` only when asked
+(`?include=photo`). On an older server the app still works: the camera button is hidden and
+everyone shows their initials.
+
+### Store privacy declarations (update before submitting)
+
+- **Google Play, Data safety:** declare **Photos and videos > Photos** as collected. Purpose: App
+  functionality. Not shared with third parties. Optional (the patient chooses to add one). Encrypted
+  in transit. Users can delete it (Remove picture in the app, or an account deletion request).
+- **Apple, App Privacy:** add **Photos or Videos** under data linked to the user, used for App
+  Functionality, not used for tracking.
+
+### Google Play "What's new" (under 500 characters)
+
+```
+• A fresh new look across the app
+• Add a profile picture for you and your family members
+• Medicine reminders are more reliable for long courses and many prescriptions
+• Clearer calendar: days you can't book are easy to tell apart
+• Works better with large text and screen readers
+• Bug fixes and improvements
+```
+
+### Full notes
+
+**New look**
+- Every screen is redesigned: clinic photos on sign-in and empty screens, a clearer home screen, and
+  appointments grouped by month in your history.
+
+**Profile picture**
+- Take a photo or choose one from your photos for your profile and your family members' profiles.
+  It shows in the header, on More and on Family.
+- Removing a picture now asks you to confirm first.
+
+**Medicine reminders**
+- Tapping a reminder opens the right medicine on every day of the course, not only the first.
+- Reminders keep working for patients with more than 50 prescriptions.
+- A course ends at the end of its last day in clinic (Manila) time, wherever the phone is set.
+
+**Privacy and security**
+- When the clinic or the patient changes the password, the app asks you to sign in with the new one
+  where it is required.
+
+**Also**
+- Titles on photo banners and the welcome slides no longer get cut off with large text or on short
+  phones.
+- Long medicine names on the home screen wrap to two lines.
+- Days you can't book on the calendar are faded and struck through.
+- Screen readers announce when appointments are loading.
+- Moving an appointment no longer loads your clinic list.
+
 ## 1.1.4
 
 1.1.3 plus the fixes from the 2026-11-08 audit. Medicine reminders are more reliable. Password

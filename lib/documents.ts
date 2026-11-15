@@ -1,5 +1,6 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import { Platform } from 'react-native';
 import {
   ApiError,
   authHeaders,
@@ -15,8 +16,9 @@ import { PatientDocument } from './types';
 /**
  * Patient documents are fetched with the Bearer header into the app's cache and
  * handed to the OS share/open sheet. The URL is never given to a browser (it
- * wouldn't send the token). Files are PHI: the folder is emptied before every
- * download and on sign-out.
+ * wouldn't send the token). Files are PHI and are stored unencrypted while open, so each file is
+ * deleted as soon as the share/open sheet is done with it, and the folder is emptied before every
+ * download, on sign-out and when App Lock locks the app.
  */
 function cacheDir(): Directory {
   return new Directory(Paths.cache, 'patient-documents');
@@ -102,10 +104,25 @@ export async function openPdfLink(url: string, fileName: string, title: string):
 }
 
 async function share(file: File, type: { mimeType?: string; UTI?: string }, title?: string): Promise<void> {
-  if (!(await Sharing.isAvailableAsync())) {
-    throw new ApiError(t('documents.notSupported'), 0);
+  try {
+    if (!(await Sharing.isAvailableAsync())) {
+      throw new ApiError(t('documents.notSupported'), 0);
+    }
+    await Sharing.shareAsync(file.uri, { ...type, dialogTitle: title });
+  } finally {
+    // iOS resolves once the sheet has closed and any copy is made, so the file can go now. Android
+    // can resolve while the viewer app is still reading it through the content URI, so leave it:
+    // the folder is emptied before the next download, on sign-out and when App Lock locks.
+    if (Platform.OS === 'ios') deleteQuietly(file);
   }
-  await Sharing.shareAsync(file.uri, { ...type, dialogTitle: title });
+}
+
+function deleteQuietly(file: File): void {
+  try {
+    if (file.exists) file.delete();
+  } catch {
+    // Best effort: the folder is emptied again before the next download and on sign-out.
+  }
 }
 
 function toApiError(error: unknown): ApiError {
@@ -117,7 +134,8 @@ function toApiError(error: unknown): ApiError {
   if (status === 403) {
     // The download can't read the JSON code, so a plain API call with the same profile asks
     // again: if the server refuses the family profile (PROFILE_FORBIDDEN) or the account
-    // (ACCOUNT_INACTIVE), the api layer's own handlers take over from there.
+    // (ACCOUNT_INACTIVE) or wants the temporary password replaced (PASSWORD_CHANGE_REQUIRED), the
+    // api layer's own handlers take over from there. No `include=photo`: only the status matters.
     apiRequest('/api/patients/me').catch(() => {});
     return new ApiError(t('documents.downloadFailed'), 403);
   }

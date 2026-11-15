@@ -1,5 +1,5 @@
 import { ReactNode, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,8 +10,8 @@ import { useProfile } from '@/lib/profile';
 import { HealthSummary, SummaryMedication } from '@/lib/types';
 import { formatDate, humanize } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Button, IconName, LoadingView, useBottomPadding } from '@/components/ui';
-import { AppHeader, softShadow } from '@/components/AppHeader';
+import { IconName, LoadingView, useBottomPadding } from '@/components/ui';
+import { AppHeader } from '@/components/AppHeader';
 import { ErrorState } from '@/components/ErrorState';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { possessiveName, useT } from '@/lib/i18n';
@@ -26,7 +26,7 @@ export default function HealthSummaryScreen() {
   const t = useT();
   const bottomPad = useBottomPadding();
   const { viewing } = useProfile();
-  const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<HealthSummary>(
+  const { data, loading, refreshing, error, refresh, offline, stale, updatedAt } = useApiData<HealthSummary>(
     '/api/patients/me/health-summary',
     { refreshOn: ['prescriptions', 'profile'], offline: true }
   );
@@ -83,14 +83,61 @@ export default function HealthSummaryScreen() {
         <ErrorState message={error} onRetry={refresh} />
       ) : s ? (
         <>
-          <Button title={t('healthSummary.downloadPdf')} icon="download-outline" onPress={downloadPdf} loading={downloading} />
-          <Button
-            title={t('healthSummary.shareWithDoctor')}
-            variant="secondary"
-            icon="share-social-outline"
-            onPress={() => router.push('/patient/share')}
-            style={styles.shareButton}
-          />
+          {/* What a new clinic would see first, and the two ways to hand it over: on navy. */}
+          <View style={styles.hero}>
+            <Text style={styles.heroEyebrow}>{t('healthSummary.heroEyebrow')}</Text>
+            <Text style={styles.heroName}>
+              {[s.patient.firstName, s.patient.middleName, s.patient.lastName, s.patient.suffix].filter(Boolean).join(' ')}
+            </Text>
+            {s.patient.dateOfBirth ? (
+              <Text style={styles.heroMeta}>
+                {t('healthSummary.born', { date: formatDate(s.patient.dateOfBirth, { utc: true, month: 'long', day: 'numeric', year: 'numeric' }) })}
+              </Text>
+            ) : null}
+            <View style={styles.heroFacts}>
+              {s.allergies.length ? (
+                <View style={styles.allergyChip}>
+                  <Ionicons name="alert-circle" size={14} color={colors.warning} />
+                  <Text style={styles.allergyChipText}>
+                    {t('healthSummary.allergicTo', { list: s.allergies.map((a) => a.substance).join(', ') })}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.heroFact}>{t('healthSummary.noAllergiesShort')}</Text>
+              )}
+              <Text style={styles.heroFact}>
+                {t('healthSummary.counts', {
+                  meds: t('healthSummary.medsCount', { count: s.medications.current.length }),
+                  conditions: t('healthSummary.conditionsCount', { count: s.conditions.filter((c) => c.status !== 'resolved').length }),
+                })}
+              </Text>
+            </View>
+            <View style={styles.heroActions}>
+              <TouchableOpacity
+                style={[styles.heroButton, styles.heroButtonPrimary, (offline || stale) && styles.heroButtonOff]}
+                onPress={downloadPdf}
+                disabled={downloading || offline || stale}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: downloading || offline || stale, busy: downloading }}
+              >
+                {downloading ? (
+                  <ActivityIndicator color={colors.primaryText} />
+                ) : (
+                  <Ionicons name="download-outline" size={18} color={colors.primaryText} />
+                )}
+                <Text style={styles.heroButtonText}>{t('healthSummary.downloadPdf')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.heroButton, styles.heroButtonGhost]}
+                onPress={() => router.push('/patient/share')}
+                accessibilityRole="button"
+              >
+                <Ionicons name="share-social-outline" size={18} color={colors.primaryText} />
+                <Text style={styles.heroButtonText}>{t('healthSummary.shareWithDoctor')}</Text>
+              </TouchableOpacity>
+            </View>
+            {offline || stale ? <Text style={styles.heroNote}>{t('healthSummary.pdfNeedsConnection')}</Text> : null}
+          </View>
           {s.clinics.length ? (
             <Text style={styles.sources}>
               {t('healthSummary.sources', { clinics: s.clinics.map((c) => c.name).join(', '), date: formatDate(s.generatedAt) })}
@@ -199,7 +246,7 @@ function Section({ title, icon, alert, children }: { title: string; icon: IconNa
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Ionicons name={icon} size={20} color={alert ? colors.danger : colors.primary} />
+        <Ionicons name={icon} size={20} color={alert ? colors.warning : colors.primary} />
         <Text style={[styles.sectionTitle, alert && styles.alert]} accessibilityRole="header">
           {title}
         </Text>
@@ -263,19 +310,58 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.md + 4 },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2, marginBottom: spacing.lg },
-  shareButton: { marginTop: spacing.sm },
+  hero: { backgroundColor: colors.navy, borderRadius: radius.lg, padding: spacing.md + 4 },
+  heroEyebrow: { fontSize: 12, fontWeight: '700', color: colors.onNavyMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
+  heroName: { fontSize: 22, lineHeight: 28, fontWeight: '800', color: colors.primaryText, marginTop: spacing.sm },
+  heroMeta: { fontSize: 14, color: colors.onNavyMuted, marginTop: 2, fontVariant: ['tabular-nums'] },
+  heroFacts: {
+    marginTop: spacing.md,
+    paddingTop: spacing.sm + 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.navyLine,
+    gap: spacing.sm,
+  },
+  heroFact: { fontSize: 14, color: colors.primaryText, fontVariant: ['tabular-nums'] },
+  allergyChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.warningSoft,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+    maxWidth: '100%',
+  },
+  allergyChipText: { flexShrink: 1, fontSize: 13, fontWeight: '700', color: colors.warning },
+  heroActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md + 4 },
+  heroButton: {
+    flexGrow: 1,
+    flexBasis: 140,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    minHeight: 48,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+  },
+  heroButtonPrimary: { backgroundColor: colors.primary },
+  heroButtonGhost: { borderWidth: 1, borderColor: colors.navyLine },
+  heroButtonOff: { backgroundColor: colors.navyLine },
+  heroButtonText: { fontSize: 15, fontWeight: '600', color: colors.primaryText },
+  heroNote: { fontSize: 13, color: colors.onNavyMuted, marginTop: spacing.sm },
   sources: { fontSize: 12, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },
   section: { marginTop: spacing.lg },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
-  alert: { color: colors.danger },
+  alert: { color: colors.warning },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
+    borderColor: colors.border,
     paddingHorizontal: spacing.md,
-    ...softShadow,
   },
   item: { paddingVertical: spacing.sm + 4 },
   divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
@@ -283,8 +369,9 @@ const styles = StyleSheet.create({
   itemTitle: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.text },
   itemLine: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   mutedText: { color: colors.textMuted },
-  flag: { backgroundColor: colors.dangerSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 },
-  flagText: { fontSize: 12, fontWeight: '700', color: colors.danger },
+  // Severe allergy: needs attention (amber), not an error; red is kept for destructive actions.
+  flag: { backgroundColor: colors.warningSoft, borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 2 },
+  flagText: { fontSize: 12, fontWeight: '700', color: colors.warning },
   empty: { fontSize: 14, color: colors.textMuted, paddingVertical: spacing.md },
   note: {
     flexDirection: 'row',

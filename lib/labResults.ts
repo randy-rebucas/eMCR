@@ -75,3 +75,14 @@ export function summarize(result: LabResult): ResultSummary {
   }
   return { total: keys.length, outOfRange, unrated };
 }
+
+/**
+ * Where a numeric value sits against its reference range, for the range meter on the result
+ * screen. Null when the value isn't a number or the range has no two bounds to draw.
+ */
+export function rangeOf(result: LabResult, key: string): { value: number; low: number; high: number } | null {
+  const value = numberIn(result.results?.[key]);
+  const b = parseRange(result.referenceRanges?.[key]);
+  if (value === null || !b || b.low === null || b.high === null || !(b.high > b.low)) return null;
+  return { value, low: b.low, high: b.high };
+}

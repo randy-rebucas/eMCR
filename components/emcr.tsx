@@ -103,7 +103,8 @@ const styles = StyleSheet.create({
   pickerLabel: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: spacing.sm },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   chip: {
-    minHeight: 40,
+    // 44pt: the relationship chips are the only way to answer this step.
+    minHeight: 44,
     paddingHorizontal: spacing.md,
     borderRadius: 999,
     borderWidth: 1,

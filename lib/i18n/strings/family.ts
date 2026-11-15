@@ -32,7 +32,6 @@ export default defineStrings({
     confirmToAdd: 'Confirm it’s you to add {name}',
     born: 'Born {year}',
     addA11y: 'Add {name} to your family',
-    adding: 'Adding…',
     add: 'Add',
     adultNote:
       'Adding a parent or another adult? Their clinic confirms it with them in person first, then they appear here. You can also ask the front desk to link you.',
@@ -40,6 +39,12 @@ export default defineStrings({
     switchA11y: 'Switch to {name}',
     showing: 'Showing',
     stopA11y: 'Stop managing {name}',
+    showingNow: 'Showing records of',
+    yourOwnRecords: 'Your own records',
+    backToYou: 'Back to your records',
+    people: 'People you manage',
+    peopleGuardian: 'People you look after',
+    addTitle: 'Add someone',
   },
   fil: {
     loadFailed: 'Hindi na-load ang listahan ng pamilya mo. Hilahin pababa para subukan ulit.',
@@ -71,7 +76,6 @@ export default defineStrings({
     confirmToAdd: 'Kumpirmahing ikaw ito para maidagdag si {name}',
     born: 'Ipinanganak noong {year}',
     addA11y: 'Idagdag si {name} sa pamilya mo',
-    adding: 'Idinadagdag…',
     add: 'Idagdag',
     adultNote:
       'Magdadagdag ng magulang o ibang adult? Kukumpirmahin muna ito ng clinic nila nang personal, saka sila lalabas dito. Puwede ka ring magpa-link sa front desk.',
@@ -79,5 +83,11 @@ export default defineStrings({
     switchA11y: 'Lumipat kay {name}',
     showing: 'Ipinapakita',
     stopA11y: 'Itigil ang paghawak sa records ni {name}',
+    showingNow: 'Ipinapakita ang records ni',
+    yourOwnRecords: 'Ang sarili mong records',
+    backToYou: 'Bumalik sa records mo',
+    people: 'Mga hawak mo',
+    peopleGuardian: 'Mga inaalagaan mo',
+    addTitle: 'Magdagdag',
   },
 });

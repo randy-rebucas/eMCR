@@ -14,7 +14,6 @@ import {
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import QRCode from 'react-native-qrcode-svg';
 import { useApiData } from '@/lib/useApiData';
 import { ApiError, apiRequest, errorMessage } from '@/lib/api';
@@ -26,7 +25,7 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName } from '@/components/ui';
 import { OfflineBanner, savedAtLabel } from '@/components/OfflineBanner';
 import { AppHeader, softShadow } from '@/components/AppHeader';
-import { BrandMark } from '@/components/BrandLogo';
+import { photos, ScrimPhoto } from '@/components/Photo';
 import { PlainKey, useT } from '@/lib/i18n';
 
 /**
@@ -38,6 +37,9 @@ import { PlainKey, useT } from '@/lib/i18n';
  * (`POST /api/patients/me/check-in`). Opened directly with `?scan=1` from Home.
  */
 const POLL_INTERVAL_MS = 30000;
+
+/** Most people drawn in the line; anyone further back is counted ("+4"). */
+const MAX_DOTS = 8;
 
 const QUEUE_TYPE_LABEL: Record<string, PlainKey> = {
   appointment: 'queue.type.appointment',
@@ -83,8 +85,8 @@ export default function QueueScreen() {
               ? t('queue.status.missedText')
               : t('queue.status.atLabText')
             : q.position && q.position > 1
-            ? t('queue.checkIn.ahead', { count: q.position - 1 })
-            : t('queue.checkIn.next');
+              ? t('queue.checkIn.ahead', { count: q.position - 1 })
+              : t('queue.checkIn.next');
       Alert.alert(
         result.status === 'already-checked-in' ? t('queue.checkIn.already') : t('queue.checkIn.done'),
         t('queue.checkIn.body', { number: q.queueNumber, where, line })
@@ -149,28 +151,11 @@ export default function QueueScreen() {
       >
         <SafeAreaView edges={['top']}>
           <AppHeader />
-          <View style={styles.titleRow}>
-            <View style={styles.flex}>
-              <Text style={styles.title} accessibilityRole="header">
-                {t('queue.title')}
-              </Text>
-              <Text style={styles.subtitle}>{t('queue.subtitle')}</Text>
-            </View>
-            {canShowQr ? (
-              <TouchableOpacity
-                style={styles.qrButton}
-                onPress={() => setShowQr(true)}
-                accessibilityRole="button"
-                accessibilityLabel={t('queue.qr.showA11y')}
-              >
-                <Ionicons name="qr-code-outline" size={24} color={colors.primary} />
-                <View>
-                  <Text style={styles.qrButtonTitle}>{t('queue.qr.title')}</Text>
-                  <Text style={styles.qrButtonText}>{t('queue.qr.hint')}</Text>
-                </View>
-              </TouchableOpacity>
-            ) : null}
-          </View>
+          {/* No QR button up here: the status card below has it, next to what to do with it. */}
+          <Text style={styles.title} accessibilityRole="header">
+            {t('queue.title')}
+          </Text>
+          <Text style={styles.subtitle}>{t('queue.subtitle')}</Text>
         </SafeAreaView>
 
         {loading ? (
@@ -191,16 +176,9 @@ export default function QueueScreen() {
           <>
             {/* A saved copy from an earlier visit: the position has almost certainly moved on. */}
             {stale && !offline ? (
-              <Banner
-                tone="warning"
-                message={updatedAt ? t('queue.staleWhen', { when: savedAtLabel(updatedAt) }) : t('queue.stale')}
-              />
+              <Banner tone="warning" message={updatedAt ? t('queue.staleWhen', { when: savedAtLabel(updatedAt) }) : t('queue.stale')} />
             ) : null}
-            <OfflineBanner
-              offline={offline}
-              updatedAt={updatedAt}
-              subject={t('queue.offlineSubject')}
-            />
+            <OfflineBanner offline={offline} updatedAt={updatedAt} subject={t('queue.offlineSubject')} />
             {/* A failed poll keeps the last position on screen; say it may be out of date. */}
             {error && !offline ? (
               <Banner
@@ -208,68 +186,96 @@ export default function QueueScreen() {
                 message={updatedAt ? t('queue.updateFailedAt', { time: formatTime(updatedAt) }) : t('queue.updateFailed')}
               />
             ) : null}
-            {/* Hero */}
-            <View style={styles.hero}>
-              <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" preserveAspectRatio="none">
-                <Defs>
-                  <LinearGradient id="queueHero" x1="0" y1="0" x2="1" y2="1">
-                    {/* Kept to the darker teals so white text stays >= 4.8:1 across the whole card. */}
-                    <Stop offset="0" stopColor={colors.primaryPressed} />
-                    <Stop offset="1" stopColor={colors.primary} />
-                  </LinearGradient>
-                </Defs>
-                <Rect x="0" y="0" width="100%" height="100%" fill="url(#queueHero)" />
-              </Svg>
-              <View style={styles.heroMark} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-                <BrandMark size={110} />
-              </View>
 
-              <View style={styles.heroLeft}>
-                <View style={styles.pill}>
-                  <View style={[styles.pillDot, { backgroundColor: serving ? '#22C55E' : checkedIn ? '#38BDF8' : '#F59E0B' }]} />
-                  <Text style={styles.pillText}>{serving ? t('queue.pill.serving') : missed ? t('queue.pill.missed') : atLab ? t('queue.pill.atLab') : checkedIn ? t('common.status.waiting') : t('queue.pill.notCheckedIn')}</Text>
-                </View>
-                <Text style={styles.number} adjustsFontSizeToFit numberOfLines={1} accessibilityLabel={t('queue.numberA11y', { number: active.queueNumber })}>
-                  {active.queueNumber}
+            {/* The number, and where the patient stands. Navy while waiting; teal when it's their turn. */}
+            <View style={[styles.hero, serving && styles.heroServing]}>
+              <View style={styles.pill}>
+                <Ionicons
+                  name={
+                    serving
+                      ? 'notifications'
+                      : missed
+                        ? 'alert-circle'
+                        : atLab
+                          ? 'flask-outline'
+                          : checkedIn
+                            ? 'checkmark-circle'
+                            : 'scan-outline'
+                  }
+                  size={14}
+                  color={serving ? colors.primaryText : checkedIn && !away ? colors.accent : colors.onNavyMuted}
+                />
+                <Text style={styles.pillText}>
+                  {serving
+                    ? t('queue.pill.serving')
+                    : missed
+                      ? t('queue.pill.missed')
+                      : atLab
+                        ? t('queue.pill.atLab')
+                        : checkedIn
+                          ? t('common.status.waiting')
+                          : t('queue.pill.notCheckedIn')}
                 </Text>
-                <Text style={styles.heroType}>{t(QUEUE_TYPE_LABEL[active.queueType ?? ''] ?? 'queue.type.consultation')}</Text>
-                {active.doctor ? <Text style={styles.heroSub}>{doctorName(active.doctor)}</Text> : null}
               </View>
 
-              <View style={styles.heroDivider} />
+              <Text
+                style={styles.number}
+                adjustsFontSizeToFit
+                numberOfLines={1}
+                accessibilityLabel={t('queue.numberA11y', { number: active.queueNumber })}
+              >
+                {active.queueNumber}
+              </Text>
+              <Text style={[styles.heroType, serving && styles.onTeal]}>
+                {t(QUEUE_TYPE_LABEL[active.queueType ?? ''] ?? 'queue.type.consultation')}
+                {active.doctor ? ` · ${doctorName(active.doctor)}` : ''}
+              </Text>
 
-              <View style={styles.heroRight}>
-                {serving ? (
-                  <HeroStat icon="location-outline" label={t('queue.hero.proceedTo')} value={active.room?.name ?? t('queue.hero.yourRoom')} />
-                ) : (
-                  <>
-                    <HeroStat
-                      icon="time-outline"
-                      label={t('queue.hero.estimatedWait')}
-                      value={active.estimatedWaitTime ? t('queue.hero.minutes', { minutes: active.estimatedWaitTime }) : '—'}
-                    />
-                    <HeroStat
-                      icon="people-outline"
-                      label={t('queue.hero.patientsAhead')}
-                      value={typeof active.position === 'number' && isFinite(active.position) ? String(Math.max(0, active.position - 1)) : '—'}
-                    />
-                  </>
-                )}
-              </View>
+              <View style={styles.heroRule} />
+              {serving ? (
+                <View style={styles.goTo}>
+                  <Ionicons name="walk-outline" size={24} color={colors.primaryText} />
+                  <Text style={styles.goToText}>
+                    {active.room?.name ? t('queue.hero.goTo', { room: active.room.name }) : t('queue.hero.goToRoom')}
+                  </Text>
+                </View>
+              ) : !away && typeof active.position === 'number' && isFinite(active.position) ? (
+                <QueueLine ahead={Math.max(0, active.position - 1)} minutes={active.estimatedWaitTime} />
+              ) : null}
+
+              {updatedAt ? <Text style={[styles.updated, serving && styles.onTeal]}>{t('queue.updated', { time: formatTime(updatedAt) })}</Text> : null}
             </View>
 
             {/* What to do now */}
             <View style={[styles.card, styles.statusCard]}>
               <View style={styles.statusIcon}>
                 <Ionicons
-                  name={serving ? 'walk-outline' : missed ? 'alert-circle-outline' : atLab ? 'flask-outline' : checkedIn ? 'hourglass-outline' : 'qr-code-outline'}
+                  name={
+                    serving
+                      ? 'walk-outline'
+                      : missed
+                        ? 'alert-circle-outline'
+                        : atLab
+                          ? 'flask-outline'
+                          : checkedIn
+                            ? 'hourglass-outline'
+                            : 'qr-code-outline'
+                  }
                   size={28}
-                  color={colors.primary}
+                  color={colors.primaryOnSoft}
                 />
               </View>
               <View style={styles.flex}>
                 <Text style={styles.statusTitle}>
-                  {serving ? t('queue.status.turn') : missed ? t('queue.status.missed') : atLab ? t('queue.status.atLab') : checkedIn ? t('queue.status.inQueue') : t('queue.status.checkIn')}
+                  {serving
+                    ? t('queue.status.turn')
+                    : missed
+                      ? t('queue.status.missed')
+                      : atLab
+                        ? t('queue.status.atLab')
+                        : checkedIn
+                          ? t('queue.status.inQueue')
+                          : t('queue.status.checkIn')}
                 </Text>
                 <Text style={styles.statusText}>
                   {serving
@@ -317,9 +323,7 @@ export default function QueueScreen() {
 
             <View style={styles.note}>
               <Ionicons name="information-circle-outline" size={18} color={colors.slate} />
-              <Text style={styles.noteText}>
-                {t('queue.note')}
-              </Text>
+              <Text style={styles.noteText}>{t('queue.note')}</Text>
             </View>
           </>
         )}
@@ -353,40 +357,58 @@ export default function QueueScreen() {
   );
 }
 
-function NotInQueue({ onScan, checkingIn }: { onScan: () => void; checkingIn: boolean }) {
+/**
+ * The line ahead of the patient, drawn: one dot per patient ahead (up to MAX_DOTS, then "+n"),
+ * then the patient as a ringed "You". The words under it carry the numbers, so the dots are
+ * decoration for screen readers; the whole line reads as one sentence.
+ */
+function QueueLine({ ahead, minutes }: { ahead: number; minutes?: number | null }) {
   const t = useT();
+  const shown = Math.min(ahead, MAX_DOTS);
+  const words = ahead === 0 ? t('queue.line.next') : t('queue.line.ahead', { count: ahead });
+  const wait = ahead > 0 && minutes ? t('queue.line.wait', { minutes }) : null;
   return (
-    <View style={[styles.card, styles.emptyCard]}>
-      <View style={styles.emptyIcon}>
-        <Ionicons name="people-outline" size={36} color={colors.primary} />
+    <View accessible accessibilityLabel={wait ? `${words}, ${wait}` : words}>
+      <View style={styles.line}>
+        {Array.from({ length: shown }).map((_, i) => (
+          <View key={i} style={styles.dot}>
+            <Ionicons name="person" size={14} color={colors.onNavyMuted} />
+          </View>
+        ))}
+        {ahead > shown ? <Text style={styles.more}>{t('queue.line.more', { count: ahead - shown })}</Text> : null}
+        <View style={styles.you}>
+          <Text style={styles.youText}>{t('queue.line.you')}</Text>
+        </View>
       </View>
-      <Text style={styles.statusTitle}>{t('queue.notIn.title')}</Text>
-      <Text style={[styles.statusText, styles.centerText]}>
-        {t('queue.notIn.text')}
+      <Text style={styles.lineWords}>
+        {words}
+        {wait ? <Text style={styles.lineWait}>{` · ${wait}`}</Text> : null}
       </Text>
-      <Button title={t('queue.notIn.scan')} icon="scan-outline" onPress={onScan} loading={checkingIn} style={styles.stretch} />
-      <Button
-        title={t('queue.notIn.viewAppointments')}
-        variant="secondary"
-        icon="calendar-outline"
-        onPress={() => router.push('/patient/appointments')}
-        style={styles.stretch}
-      />
     </View>
   );
 }
 
-function HeroStat({ icon, label, value }: { icon: IconName; label: string; value: string }) {
+/** Not in line: a waiting-room photo with how check-in works, and the two ways in. */
+function NotInQueue({ onScan, checkingIn }: { onScan: () => void; checkingIn: boolean }) {
+  const t = useT();
   return (
-    <View style={styles.stat}>
-      <Ionicons name={icon} size={22} color="#FFFFFF" />
-      <View style={styles.flex}>
-        <Text style={styles.statLabel}>{label}</Text>
-        <Text style={styles.statValue} numberOfLines={2}>
-          {value}
+    <ScrimPhoto source={photos.waitingRoom} style={styles.notIn} top={0.3} bottom={0.97}>
+      <View style={styles.notInInner}>
+        <Text style={styles.notInTitle} accessibilityRole="header">
+          {t('queue.notIn.title')}
         </Text>
+        <Text style={styles.notInText}>{t('queue.notIn.text')}</Text>
+        <Button title={t('queue.notIn.scan')} icon="scan-outline" onPress={onScan} loading={checkingIn} style={styles.notInButton} />
+        <TouchableOpacity
+          style={styles.notInLink}
+          onPress={() => router.push('/patient/appointments')}
+          accessibilityRole="link"
+        >
+          <Ionicons name="calendar-outline" size={18} color={colors.primaryText} />
+          <Text style={styles.notInLinkText}>{t('queue.notIn.viewAppointments')}</Text>
+        </TouchableOpacity>
       </View>
-    </View>
+    </ScrimPhoto>
   );
 }
 
@@ -418,62 +440,71 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   stretch: { alignSelf: 'stretch' },
   muted: { fontSize: 14, color: colors.textMuted, textAlign: 'center' },
-  centerText: { textAlign: 'center', marginBottom: spacing.sm },
   loading: { paddingVertical: spacing.xl * 2 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
-  subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
-  qrButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderColor: '#BFE3E0',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.sm + 4,
-    paddingVertical: spacing.sm,
-    minHeight: 44,
-  },
-  qrButtonTitle: { fontSize: 14, fontWeight: '700', color: colors.primary },
-  qrButtonText: { fontSize: 11, color: colors.textMuted },
+  subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2, marginBottom: spacing.lg },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
+    borderColor: colors.border,
     ...softShadow,
   },
-  hero: {
-    flexDirection: 'row',
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-    padding: spacing.md + 4,
-    minHeight: 180,
-  },
-  heroMark: { position: 'absolute', right: -18, bottom: -24, opacity: 0.12 },
-  heroLeft: { flex: 1.15, justifyContent: 'center' },
+
+  // Solid fill, no gradient or watermark: the number is the picture.
+  hero: { backgroundColor: colors.navy, borderRadius: radius.lg, padding: spacing.md + 4 },
+  heroServing: { backgroundColor: colors.primary },
+  // Muted navy text is too faint on teal (about 2:1): white there.
+  onTeal: { color: colors.primaryText },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+    borderColor: colors.navyLine,
     borderRadius: 999,
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 5,
   },
-  pillDot: { width: 8, height: 8, borderRadius: 4 },
-  pillText: { fontSize: 12, fontWeight: '700', color: colors.primaryPressed },
-  number: { fontSize: 48, fontWeight: '800', color: '#FFFFFF', letterSpacing: -1, marginTop: spacing.sm },
-  heroType: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginTop: 2 },
-  heroSub: { fontSize: 14, color: '#FFFFFF', marginTop: 2 },
-  heroDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: spacing.md },
-  heroRight: { flex: 1, justifyContent: 'center', gap: spacing.md + 4 },
-  stat: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  statLabel: { fontSize: 13, fontWeight: '600', color: '#FFFFFF' },
-  statValue: { fontSize: 20, fontWeight: '800', color: '#FFFFFF', marginTop: 2 },
+  pillText: { fontSize: 12, fontWeight: '700', color: colors.primaryText },
+  number: {
+    fontSize: 56,
+    fontWeight: '800',
+    color: colors.primaryText,
+    letterSpacing: -1,
+    marginTop: spacing.sm,
+    fontVariant: ['tabular-nums'],
+  },
+  heroType: { fontSize: 15, fontWeight: '600', color: colors.onNavyMuted },
+  heroRule: { height: StyleSheet.hairlineWidth, backgroundColor: colors.navyLine, marginVertical: spacing.md },
+  goTo: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  goToText: { flex: 1, fontSize: 22, fontWeight: '800', color: colors.primaryText },
+  line: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  dot: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.navyLine,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  more: { fontSize: 13, fontWeight: '700', color: colors.onNavyMuted, fontVariant: ['tabular-nums'] },
+  you: {
+    height: 30,
+    paddingHorizontal: spacing.sm + 2,
+    borderRadius: 15,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
+  },
+  youText: { fontSize: 13, fontWeight: '800', color: colors.navy },
+  lineWords: { fontSize: 17, fontWeight: '700', color: colors.primaryText, marginTop: spacing.sm + 2, fontVariant: ['tabular-nums'] },
+  lineWait: { fontWeight: '500', color: colors.onNavyMuted },
+  updated: { fontSize: 12, color: colors.onNavyMuted, marginTop: spacing.md, fontVariant: ['tabular-nums'] },
+
   statusCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md },
   statusIcon: {
     width: 60,
@@ -531,18 +562,25 @@ const styles = StyleSheet.create({
   },
   noteText: { flex: 1, fontSize: 12, lineHeight: 17, color: colors.slate },
   emptyCard: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.xs },
-  emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.primarySoft,
+
+  notIn: { minHeight: 420, borderRadius: radius.lg },
+  notInInner: { flex: 1, justifyContent: 'flex-end', padding: spacing.md + 4 },
+  notInTitle: { fontSize: 20, fontWeight: '700', color: colors.primaryText },
+  notInText: { fontSize: 14, lineHeight: 20, color: colors.onNavyMuted, marginTop: spacing.xs },
+  notInButton: { marginTop: spacing.md },
+  notInLink: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.sm,
+    gap: spacing.sm,
+    minHeight: 48,
+    marginTop: spacing.xs,
   },
+  notInLinkText: { fontSize: 15, fontWeight: '600', color: colors.primaryText },
+
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(11,33,54,0.55)',
+    backgroundColor: colors.backdrop,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.lg,
@@ -559,11 +597,18 @@ const styles = StyleSheet.create({
   sheetText: { fontSize: 14, color: colors.textMuted, textAlign: 'center', marginTop: spacing.xs },
   qrFrame: {
     padding: spacing.md,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     marginTop: spacing.lg,
   },
-  sheetNumber: { fontSize: 28, fontWeight: '800', color: colors.primary, marginTop: spacing.md, marginBottom: spacing.sm },
+  sheetNumber: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: colors.primary,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+    fontVariant: ['tabular-nums'],
+  },
 });

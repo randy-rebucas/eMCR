@@ -138,7 +138,6 @@ export default function RequestAccessScreen() {
         title={t('auth.request.title')}
         subtitle={t('auth.request.subtitle')}
       />
-      {errorText ? <Banner message={errorText} /> : null}
 
       <Text style={styles.label}>{t('auth.request.yourClinic')}</Text>
       {clinic ? (
@@ -246,6 +245,7 @@ export default function RequestAccessScreen() {
         onSubmitEditing={submit}
       />
 
+      {errorText ? <Banner message={errorText} /> : null}
       <Button title={t('auth.request.send')} onPress={submit} loading={submitting} />
     </AuthScreen>
   );

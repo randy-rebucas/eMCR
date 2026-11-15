@@ -7,11 +7,10 @@ import { emitRefresh } from '@/lib/events';
 import { useApiData } from '@/lib/useApiData';
 import { appointmentStart, isUpcoming, rescheduleAppointment } from '@/lib/appointments';
 import { joinWaitlist } from '@/lib/waitlist';
-import { Appointment, BookingDoctor, BookingOptions } from '@/lib/types';
+import { Appointment, BookingDoctor, BookingOptions, PatientClinic } from '@/lib/types';
 import { clinicEpoch, clinicTodayYmd, clinicYmd, doctorName, formatDate, FormatDateOptions, formatTime, toYmd } from '@/lib/format';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, IconName } from './ui';
-import { softShadow } from './AppHeader';
 import { PlainKey, t as translate, useT } from '@/lib/i18n';
 
 /** Matches the server's booking horizon; older servers without `bookableDates` get 30 days. */
@@ -145,8 +144,23 @@ export function BookingForm({
   reschedule?: Appointment;
 }) {
   const t = useT();
-  const clinicParam = tenantId ? `tenantId=${encodeURIComponent(tenantId)}` : '';
-  const doctorsQuery = useApiData<BookingOptions>(`/api/patients/appointments${clinicParam ? `?${clinicParam}` : ''}`);
+  // Which clinic: the caller's, else the patient picks when they're registered at more than one
+  // (without a tenantId the server quietly takes their first clinic).
+  // Not needed to move an appointment (same clinic, and the clinic line is hidden): null skips it.
+  // Still fetched with a tenantId, which only names the clinic ("At <clinic>") from this list.
+  const clinicsQuery = useApiData<PatientClinic[]>(reschedule ? null : '/api/patients/me/clinics', { offline: true });
+  const clinicList = clinicsQuery.data ?? [];
+  const chooseClinic = !tenantId && !reschedule && clinicList.length > 1;
+  const [pickedClinic, setPickedClinic] = useState<string | null>(null);
+  const activeClinic = tenantId ?? (chooseClinic ? (pickedClinic ?? clinicList[0].tenantId) : undefined);
+  const clinicName =
+    clinicList.find((c) => c.tenantId === activeClinic)?.name ?? (!tenantId && clinicList.length === 1 ? clinicList[0].name : null);
+  // Hold the doctor list until the clinics are known, so it never shows another clinic's doctors.
+  const waitForClinics = !tenantId && !reschedule && clinicsQuery.loading;
+  const clinicParam = activeClinic ? `tenantId=${encodeURIComponent(activeClinic)}` : '';
+  const doctorsQuery = useApiData<BookingOptions>(
+    waitForClinics ? null : `/api/patients/appointments${clinicParam ? `?${clinicParam}` : ''}`
+  );
   // Calendar days are plain y/m/d values; "today" is the clinic's date, not the phone's.
   const todayKey = useClinicToday();
   const today = useMemo(() => fromYmd(todayKey), [todayKey]);
@@ -240,7 +254,7 @@ export function BookingForm({
     })).filter((g) => g.slots.length > 0);
   }, [slots, currentTime]);
 
-  if (doctorsQuery.loading) {
+  if (doctorsQuery.loading || waitForClinics) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.primary} />
@@ -283,6 +297,15 @@ export function BookingForm({
   function isBookable(d: Date): boolean {
     if (d < today || d > lastDay) return false;
     return bookable ? bookable.has(toYmd(d)) : true;
+  }
+
+  function pickClinic(id: string) {
+    if (id === activeClinic) return;
+    setPickedClinic(id);
+    setSpecialty(ALL);
+    setDoctorId(null);
+    setDate(null);
+    setError(null);
   }
 
   function chooseSpecialty(value: string) {
@@ -377,6 +400,42 @@ export function BookingForm({
 
   return (
     <View style={styles.panel}>
+      {chooseClinic ? (
+        <Step n={nextStep()} title={t('appointments.book.step.clinic')} done>
+          <View accessibilityRole="radiogroup" style={styles.clinics}>
+            {clinicList.map((c) => {
+              const selected = c.tenantId === activeClinic;
+              const where = [c.address?.street, c.address?.city].filter(Boolean).join(', ');
+              return (
+                <TouchableOpacity
+                  key={c.tenantId}
+                  style={[styles.clinic, selected && styles.selected]}
+                  onPress={() => pickClinic(c.tenantId)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={where ? `${c.name}, ${where}` : c.name}
+                >
+                  <Ionicons name="business-outline" size={22} color={colors.primary} />
+                  <View style={styles.flex}>
+                    <Text style={styles.clinicName}>{c.name}</Text>
+                    {where ? <Text style={styles.clinicWhere}>{where}</Text> : null}
+                  </View>
+                  <Ionicons
+                    name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={22}
+                    color={selected ? colors.primary : colors.border}
+                  />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </Step>
+      ) : !moving && clinicName ? (
+        <View style={styles.atClinic}>
+          <Ionicons name="business-outline" size={16} color={colors.primaryOnSoft} />
+          <Text style={styles.atClinicText}>{t('appointments.book.atClinic', { clinic: clinicName })}</Text>
+        </View>
+      ) : null}
       {showSpecialties ? (
         <Step n={nextStep()} title={t('appointments.book.step.specialty')} done={specialty !== ALL}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList}>
@@ -849,9 +908,34 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
-    ...softShadow,
+    borderColor: colors.border,
   },
+  clinics: { gap: spacing.sm },
+  clinic: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + 4,
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  clinicName: { fontSize: 15, fontWeight: '600', color: colors.text },
+  clinicWhere: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  atClinic: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primarySoft,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: spacing.xs + 2,
+    marginBottom: spacing.md,
+  },
+  atClinicText: { flexShrink: 1, fontSize: 13, fontWeight: '600', color: colors.primaryOnSoft },
   center: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md },
   retry: { marginTop: spacing.xs, minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.sm },
   link: { color: colors.primary, fontWeight: '600', fontSize: 14 },
@@ -869,7 +953,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepNumLocked: { backgroundColor: '#B8C3CC' },
+  stepNumLocked: { backgroundColor: colors.textMuted },
   stepNumText: { color: colors.primaryText, fontSize: 13, fontWeight: '700' },
   stepTitle: { fontSize: 16, fontWeight: '700', color: colors.text, flex: 1 },
   stepTitleLocked: { color: colors.textMuted },
@@ -883,7 +967,7 @@ const styles = StyleSheet.create({
     minHeight: 96,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E3ECEE',
+    borderColor: colors.border,
     backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
@@ -895,7 +979,7 @@ const styles = StyleSheet.create({
     width: 220,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E3ECEE',
+    borderColor: colors.border,
     backgroundColor: colors.surface,
     padding: spacing.sm + 4,
   },
@@ -917,7 +1001,7 @@ const styles = StyleSheet.create({
   doctorHours: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginTop: spacing.sm },
   doctorHoursText: { flex: 1, fontSize: 12, color: colors.textMuted },
   radio: { position: 'absolute', top: 8, right: 8 },
-  calendar: { borderWidth: 1, borderColor: '#E3ECEE', borderRadius: radius.md, padding: spacing.sm + 4 },
+  calendar: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm + 4 },
   calHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -936,15 +1020,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
     borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: '#E3ECEE',
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dayCellSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  dayCellDisabled: { borderColor: 'transparent', backgroundColor: '#F2F5F7' },
+  // Unbookable days: no box and a faint, struck-through number, so they read as off at a glance
+  // (bookable days keep the bordered cell and the availability dot).
+  dayCellDisabled: { borderColor: 'transparent', backgroundColor: 'transparent' },
   dayNum: { fontSize: 15, fontWeight: '600', color: colors.text },
   dayNumSelected: { color: colors.primaryText },
-  dayNumDisabled: { color: '#B8C3CC', fontWeight: '400' },
+  dayNumDisabled: { color: '#B8C3CC', fontWeight: '400', textDecorationLine: 'line-through' },
   availDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.accent, marginTop: 5 },
   availDotHidden: { backgroundColor: 'transparent' },
   legend: { fontSize: 11, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },
@@ -958,7 +1044,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: '#E3ECEE',
+    borderColor: colors.border,
     backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
@@ -972,7 +1058,7 @@ const styles = StyleSheet.create({
   reason: {
     minHeight: 80,
     borderWidth: 1,
-    borderColor: '#E3ECEE',
+    borderColor: colors.border,
     borderRadius: radius.md,
     backgroundColor: colors.surfaceMuted,
     padding: spacing.sm + 4,
@@ -987,7 +1073,7 @@ const styles = StyleSheet.create({
     minHeight: 96,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E3ECEE',
+    borderColor: colors.border,
     backgroundColor: colors.surfaceMuted,
     padding: spacing.sm + 4,
     gap: 4,

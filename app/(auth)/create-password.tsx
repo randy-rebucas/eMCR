@@ -6,19 +6,32 @@ import { useAuth } from '@/lib/auth';
 import { getCredentialStep, rememberIssuedLoginId, saveAccountPassword, setCredentialStep } from '@/lib/emcr';
 import { colors, spacing } from '@/lib/theme';
 import { Banner, Button } from '@/components/ui';
-import { AuthHeader, AuthScreen, ChecklistItem, IconField, PASSWORD_RULES, StatusScreen, IconBadge, useBlockHardwareBack } from '@/components/auth';
+import {
+  AuthHeader,
+  AuthScreen,
+  ChecklistItem,
+  IconField,
+  PASSWORD_RULES,
+  StatusScreen,
+  IconBadge,
+  TextLink,
+  useBlockHardwareBack,
+} from '@/components/auth';
 import { useT } from '@/lib/i18n';
 
 /**
  * The eMCR sign-in credential (mobile number + password), owed right after a sign-in
  * (lib/emcr.ts `CredentialStep`): a first password after the phone was proven, the
  * replacement for the clinic's temporary one, or a reset. Not skippable: without it the
- * person could only ever get back in by SMS code.
+ * person could only ever get back in by SMS code. A `temp` step without the temporary password in
+ * memory (the app was relaunched, or the server answered PASSWORD_CHANGE_REQUIRED) asks for it;
+ * a patient who no longer has it signs in with an SMS code instead (forgot password).
  */
 export default function CreatePasswordScreen() {
   const { signedIn, signOut, applyRotatedTokens } = useAuth();
   const t = useT();
   const [step] = useState(getCredentialStep);
+  const [current, setCurrent] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -31,9 +44,11 @@ export default function CreatePasswordScreen() {
   if (!signedIn) return <Redirect href="/login" />;
   if (!step) return <Redirect href="/enable-notifications" />;
 
+  /** The temporary password has to be typed in: the app doesn't have it any more. */
+  const asksCurrent = step.mode === 'temp' && !step.currentPassword;
   const copy = {
     title: t(`auth.createPw.${step.mode}.title`),
-    subtitle: t(`auth.createPw.${step.mode}.subtitle`),
+    subtitle: asksCurrent ? t('auth.createPw.temp.askSubtitle') : t(`auth.createPw.${step.mode}.subtitle`),
   };
   const rulesMet = PASSWORD_RULES.every((rule) => rule.test(password));
   const matches = confirm.length > 0 && confirm === password;
@@ -56,8 +71,15 @@ export default function CreatePasswordScreen() {
     );
   }
 
+  async function signInWithCodeInstead() {
+    setCredentialStep(null);
+    await signOut().catch(() => {});
+    router.replace('/phone?purpose=forgot');
+  }
+
   async function save() {
     if (inFlight.current || !step) return;
+    if (asksCurrent && !current) return setError(t('auth.createPw.enterTemp'));
     if (!rulesMet) return setError(t('auth.pw.rulesError'));
     if (!matches) return setError(t('auth.pw.mismatch'));
     inFlight.current = true;
@@ -66,7 +88,10 @@ export default function CreatePasswordScreen() {
     try {
       // Held: other calls don't refresh (and lose) the session while the token pair rotates.
       const result = await withSessionHold(async () => {
-        const saved = await saveAccountPassword(password, step.mode === 'temp' ? step.currentPassword : undefined);
+        const saved = await saveAccountPassword(
+          password,
+          step.mode === 'temp' ? step.currentPassword || current : undefined
+        );
         await applyRotatedTokens(saved);
         return saved;
       });
@@ -83,6 +108,10 @@ export default function CreatePasswordScreen() {
         setStale(true);
         return;
       }
+      if (asksCurrent && err instanceof ApiError && err.code === 'WRONG_CURRENT_PASSWORD') {
+        setError(t('auth.createPw.wrongTemp'));
+        return;
+      }
       setError(
         err instanceof ApiError && err.code === 'NETWORK'
           ? t('common.network')
@@ -97,7 +126,18 @@ export default function CreatePasswordScreen() {
   return (
     <AuthScreen>
       <AuthHeader title={copy.title} subtitle={copy.subtitle} />
-      {error ? <Banner message={error} /> : null}
+      {asksCurrent ? (
+        <IconField
+          icon="key-outline"
+          label={t('auth.createPw.tempField')}
+          value={current}
+          onChangeText={setCurrent}
+          secureTextEntry
+          autoComplete="current-password"
+          textContentType="password"
+          returnKeyType="next"
+        />
+      ) : null}
       <IconField
         icon="lock-closed-outline"
         label={step.mode === 'create' ? t('auth.pw.create') : t('auth.pw.new')}
@@ -127,7 +167,11 @@ export default function CreatePasswordScreen() {
         ))}
         <ChecklistItem label={t('auth.pw.match')} met={matches} />
       </View>
+      {error ? <Banner message={error} /> : null}
       <Button title={t('auth.pw.saveAndContinue')} onPress={save} loading={saving} />
+      {asksCurrent ? (
+        <TextLink title={t('auth.createPw.useCode')} onPress={signInWithCodeInstead} disabled={saving} style={styles.useCode} />
+      ) : null}
     </AuthScreen>
   );
 }
@@ -135,4 +179,5 @@ export default function CreatePasswordScreen() {
 const styles = StyleSheet.create({
   rules: { marginTop: spacing.xs, marginBottom: spacing.md },
   rulesTitle: { fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: spacing.sm },
+  useCode: { marginTop: spacing.md },
 });

@@ -26,6 +26,7 @@ import {
   activeMedicines,
   daysLeft,
   doseStatus,
+  fetchAllPrescriptions,
   DoseStatus,
   formatSlot,
   fromMinutes,
@@ -48,7 +49,8 @@ import {
 } from '@/lib/medicineReminders';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, useBottomPadding } from '@/components/ui';
-import { AppHeader, softShadow } from '@/components/AppHeader';
+import { AppHeader } from '@/components/AppHeader';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { PlainKey, possessiveName, useT } from '@/lib/i18n';
 
 const MAX_TIMES = 6;
@@ -56,11 +58,14 @@ const STEP_MIN = 30;
 /** Set once the patient hid the Android "reminders on time" tip. Not PHI. */
 const EXACT_HINT_DISMISSED_KEY = 'medrem_exact_hint_dismissed';
 
+/** The server's page size for the list below (`limit=50` in MEDICINE_PRESCRIPTIONS_PATH). */
+const MEDICINE_PAGE_SIZE = 50;
+
 const STATUS: Record<DoseStatus, { label: PlainKey; fg: string; bg: string; icon: keyof typeof Ionicons.glyphMap }> = {
   taken: { label: 'medicines.status.taken', fg: colors.primaryOnSoft, bg: colors.primarySoft, icon: 'checkmark-circle' },
   due: { label: 'medicines.status.due', fg: colors.warning, bg: colors.warningSoft, icon: 'alarm-outline' },
-  missed: { label: 'medicines.status.missed', fg: colors.danger, bg: colors.dangerSoft, icon: 'close-circle-outline' },
-  upcoming: { label: 'medicines.status.upcoming', fg: colors.slate, bg: colors.slateSoft, icon: 'time-outline' },
+  missed: { label: 'medicines.status.missed', fg: colors.slate, bg: colors.slateSoft, icon: 'close-circle-outline' },
+  upcoming: { label: 'medicines.status.upcoming', fg: colors.textMuted, bg: colors.surfaceMuted, icon: 'time-outline' },
 };
 
 /**
@@ -80,21 +85,43 @@ export default function MedicinesScreen() {
     [viewing]
   );
 
-  const { data, loading, refreshing, error, refresh } = useApiData<Prescription[]>(MEDICINE_PRESCRIPTIONS_PATH, {
+  // Kept on the phone: reminders and today's doses must still read right with no signal.
+  const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<Prescription[]>(MEDICINE_PRESCRIPTIONS_PATH, {
     refreshOn: ['prescriptions'],
+    offline: true,
   });
+  // The screen loads one page (the newest 50). A full page may not be everything: an older
+  // maintenance prescription can sit past it, so then the rest is read page by page, online only.
+  const [allRx, setAllRx] = useState<{ base: Prescription[]; list: Prescription[]; complete: boolean } | null>(null);
+  const needsMore = !!data && data.length >= MEDICINE_PAGE_SIZE && !offline;
+  useEffect(() => {
+    if (!needsMore || !data || !profile || !owner) return;
+    let current = true;
+    fetchAllPrescriptions(profile.id === owner ? null : profile.id)
+      .then((all) => {
+        if (current) setAllRx({ base: data, list: all.prescriptions, complete: all.complete });
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [needsMore, data, profile, owner]);
+  const fullList = allRx && allRx.base === data ? allRx : null;
+  const prescriptions = fullList?.list ?? data;
+
   const [schedule, setSchedule] = useState<ProfileSchedule | null>(null);
   // Medicines with reminders stay listed while their prescription is open (maintenance medicines
   // without a duration), so their reminders can still be changed or turned off.
   const scheduledKeys = useMemo(() => [...reminderKeys(schedule)].sort().join('|'), [schedule]);
   const medicines = useMemo(
-    () => activeMedicines(data ?? [], Date.now(), new Set(scheduledKeys ? scheduledKeys.split('|') : [])),
-    [data, scheduledKeys]
+    () => activeMedicines(prescriptions ?? [], Date.now(), new Set(scheduledKeys ? scheduledKeys.split('|') : [])),
+    [prescriptions, scheduledKeys]
   );
   const [permission, setPermission] = useState<ReminderPermission | null>(null);
   const [editing, setEditing] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  /** What failed and where to show it: a medicine's card (its key) or today's doses ('today'). */
+  const [saveError, setSaveError] = useState<{ at: string; message: string } | null>(null);
   const [now, setNow] = useState(() => new Date());
   // Android: reminders can only fire on the minute with "Alarms & reminders" allowed.
   const [exactAllowed, setExactAllowed] = useState<boolean | null>(null);
@@ -107,11 +134,11 @@ export default function MedicinesScreen() {
   }, [profile]);
 
   useEffect(() => {
-    if (!data || !owner || !profile) return;
-    syncMedicineReminders(owner, profile, data)
+    if (!prescriptions || !owner || !profile) return;
+    syncMedicineReminders(owner, profile, prescriptions, fullList ? fullList.complete : undefined)
       .then(setSchedule)
       .catch(() => {});
-  }, [data, owner, profile]);
+  }, [prescriptions, fullList, owner, profile]);
 
   const lastPermission = useRef<ReminderPermission | null>(null);
   const lastExact = useRef<boolean | null>(null);
@@ -170,7 +197,7 @@ export default function MedicinesScreen() {
   async function save(medicine: ActiveMedicine, times: string[]) {
     // Opened offline: who is signed in isn't known yet, and schedules are saved per account.
     if (!owner || !profile) {
-      setSaveError(t('medicines.notReady'));
+      setSaveError({ at: medicine.key, message: t('medicines.notReady') });
       return;
     }
     setBusy(medicine.key);
@@ -180,7 +207,7 @@ export default function MedicinesScreen() {
       setSchedule(await setMedicineReminder(owner, profile, medicine, times));
       setEditing(({ [medicine.key]: _, ...rest }) => rest);
     } catch {
-      setSaveError(t('medicines.saveFailed'));
+      setSaveError({ at: medicine.key, message: t('medicines.saveFailed') });
     } finally {
       setBusy(null);
     }
@@ -199,13 +226,14 @@ export default function MedicinesScreen() {
 
   async function markTaken(key: string, time: string, taken: boolean) {
     if (!owner || !profile) {
-      setSaveError(t('medicines.notReady'));
+      setSaveError({ at: 'today', message: t('medicines.notReady') });
       return;
     }
+    setSaveError(null);
     try {
       setSchedule(await setDoseTaken(owner, profile.id, key, time, taken));
     } catch {
-      setSaveError(t('medicines.markFailed'));
+      setSaveError({ at: 'today', message: t('medicines.markFailed') });
     }
   }
 
@@ -227,6 +255,8 @@ export default function MedicinesScreen() {
   }, [schedule, medicines, now]);
 
   const hasReminders = (schedule?.meds.length ?? 0) > 0;
+  const takenCount = doses.filter((d) => d.status === 'taken').length;
+  const nextDose = doses.find((d) => d.status === 'due') ?? doses.find((d) => d.status === 'upcoming') ?? null;
 
   return (
     <ScrollView
@@ -253,14 +283,21 @@ export default function MedicinesScreen() {
       {hasReminders && permission === 'granted' && exactAllowed === false && !exactHintDismissed ? (
         <ExactAlarmHint onAllow={allowExact} onDismiss={dismissExactHint} />
       ) : null}
-      {saveError ? <Banner message={saveError} /> : null}
-      {error && data ? <Banner message={error} /> : null}
+      {offline ? (
+        <View style={styles.banner}>
+          <OfflineBanner offline={offline} updatedAt={updatedAt} subject={t('medicines.offlineSubject')} />
+        </View>
+      ) : error && data ? (
+        <Banner message={error} />
+      ) : null}
 
       {doses.length ? (
         <>
+          <TodayHero doses={doses} taken={takenCount} next={nextDose} />
           <Text style={styles.groupTitle} accessibilityRole="header">
             {t('medicines.today')}
           </Text>
+          {saveError?.at === 'today' ? <Banner message={saveError.message} /> : null}
           <View style={[styles.card, styles.list]}>
             {doses.map((d, i) => {
               const s = STATUS[d.status];
@@ -327,9 +364,12 @@ export default function MedicinesScreen() {
           <Text style={styles.rowDetail}>{t('medicines.empty.text')}</Text>
         </View>
       ) : (
-        medicines.map((m) => (
+        <View style={[styles.card, styles.list]}>
+        {medicines.map((m, i) => (
           <MedicineCard
             key={m.key}
+            first={i === 0}
+            error={saveError?.at === m.key ? saveError.message : null}
             medicine={m}
             times={reminderFor(m.key)?.times ?? null}
             draft={editing[m.key] ?? null}
@@ -339,7 +379,8 @@ export default function MedicinesScreen() {
             onCancel={() => setEditing(({ [m.key]: _, ...rest }) => rest)}
             onSave={(times) => save(m, times)}
           />
-        ))
+        ))}
+        </View>
       )}
 
       <Text style={styles.footnote}>{t('medicines.footnote')}</Text>
@@ -347,7 +388,57 @@ export default function MedicinesScreen() {
   );
 }
 
+type Dose = { key: string; time: string; medicine: ActiveMedicine; status: DoseStatus };
+
+/**
+ * Today at a glance, on navy: how many doses are taken, one segment per dose in time order
+ * (teal = taken), and what's next. Tap a segment to read that dose.
+ */
+function TodayHero({ doses, taken, next }: { doses: Dose[]; taken: number; next: Dose | null }) {
+  const t = useT();
+  const [picked, setPicked] = useState<string | null>(null);
+  const pickedDose = doses.find((d) => `${d.key}@${d.time}` === picked) ?? null;
+  const nameOf = (d: Dose) => [d.medicine.med.name, d.medicine.med.strength].filter(Boolean).join(' ');
+  const readout = pickedDose
+    ? t('medicines.hero.readout', { time: formatSlot(pickedDose.time), name: nameOf(pickedDose), status: t(STATUS[pickedDose.status].label) })
+    : next
+      ? next.status === 'due'
+        ? t('medicines.hero.dueNow', { time: formatSlot(next.time), name: nameOf(next) })
+        : t('medicines.hero.next', { time: formatSlot(next.time), name: nameOf(next) })
+      : taken === doses.length
+        ? t('medicines.hero.allTaken')
+        : t('medicines.hero.noneLeft');
+  return (
+    <View style={styles.hero}>
+      <Text style={styles.heroEyebrow}>{t('medicines.today')}</Text>
+      <Text style={styles.heroTitle}>{t('medicines.hero.taken', { taken, total: doses.length })}</Text>
+      <View style={styles.meter}>
+        {doses.map((d) => {
+          const id = `${d.key}@${d.time}`;
+          const on = d.status === 'taken';
+          return (
+            <TouchableOpacity
+              key={id}
+              style={styles.segmentHit}
+              onPress={() => setPicked((p) => (p === id ? null : id))}
+              accessibilityRole="button"
+              accessibilityLabel={t('medicines.hero.readout', { time: formatSlot(d.time), name: nameOf(d), status: t(STATUS[d.status].label) })}
+            >
+              <View style={[styles.segment, on && styles.segmentOn, picked === id && styles.segmentPicked]} />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <Text style={styles.heroReadout} accessibilityLiveRegion="polite">
+        {readout}
+      </Text>
+    </View>
+  );
+}
+
 function MedicineCard({
+  first,
+  error,
   medicine,
   times,
   draft,
@@ -357,6 +448,9 @@ function MedicineCard({
   onCancel,
   onSave,
 }: {
+  first: boolean;
+  /** Why the last save of this medicine's reminders failed, shown right here. */
+  error: string | null;
   medicine: ActiveMedicine;
   /** Saved reminder times, or null when reminders are off. */
   times: string[] | null;
@@ -383,7 +477,7 @@ function MedicineCard({
   const on = times !== null || draft !== null;
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.medRow, !first && styles.rowRule]}>
       <View style={styles.medTop}>
         <View style={styles.rowIcon}>
           <Ionicons name="medkit-outline" size={22} color={colors.primaryOnSoft} />
@@ -419,12 +513,17 @@ function MedicineCard({
         <View style={styles.savedRow}>
           <Ionicons name="alarm-outline" size={18} color={colors.primary} />
           <Text style={[styles.bodyText, styles.flex]}>{times.map(formatSlot).join(', ')}</Text>
-          <TouchableOpacity onPress={() => onEdit(times)} accessibilityRole="button" hitSlop={8}>
+          <TouchableOpacity onPress={() => onEdit(times)} accessibilityRole="button" style={styles.linkButton}>
             <Text style={styles.linkText}>{t('medicines.changeTimes')}</Text>
           </TouchableOpacity>
         </View>
       ) : suggestion.kind === 'prn' ? (
         <Text style={styles.hint}>{t('medicines.prnNoReminder')}</Text>
+      ) : null}
+      {error ? (
+        <View style={styles.inlineError}>
+          <Banner message={error} />
+        </View>
       ) : null}
     </View>
   );
@@ -536,14 +635,14 @@ function ExactAlarmHint({ onAllow, onDismiss }: { onAllow: () => void; onDismiss
         <Text style={styles.statusTitle}>{t('medicines.exact.title')}</Text>
         <Text style={styles.bodyText}>{t('medicines.exact.body')}</Text>
         <View style={styles.hintActions}>
-          <TouchableOpacity onPress={onAllow} accessibilityRole="button" hitSlop={8}>
+          <TouchableOpacity onPress={onAllow} accessibilityRole="button" style={styles.linkButton}>
             <Text style={styles.linkText}>{t('medicines.exact.allow')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onDismiss}
             accessibilityRole="button"
             accessibilityLabel={t('medicines.exact.dismissA11y')}
-            hitSlop={8}
+            style={styles.linkButton}
           >
             <Text style={styles.mutedLink}>{t('medicines.exact.dismiss')}</Text>
           </TouchableOpacity>
@@ -594,20 +693,34 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
   groupTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
+  banner: { marginTop: spacing.md },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
+    borderColor: colors.border,
     padding: spacing.md,
     marginBottom: spacing.sm + 4,
-    ...softShadow,
   },
   list: { paddingVertical: 0, paddingHorizontal: spacing.sm + 4 },
+  rowRule: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  medRow: { paddingVertical: spacing.md },
+  inlineError: { marginTop: spacing.sm },
+  linkButton: { minHeight: 44, justifyContent: 'center' },
+  hero: { backgroundColor: colors.navy, borderRadius: radius.lg, padding: spacing.md + 4, marginTop: spacing.lg },
+  heroEyebrow: { fontSize: 12, fontWeight: '700', color: colors.onNavyMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
+  heroTitle: { fontSize: 24, fontWeight: '800', color: colors.primaryText, marginTop: spacing.xs, fontVariant: ['tabular-nums'] },
+  meter: { flexDirection: 'row', gap: 4, marginTop: spacing.sm },
+  // The bar is 10pt, its tap target the full 44pt row.
+  segmentHit: { flex: 1, height: 44, justifyContent: 'center' },
+  segment: { height: 10, borderRadius: 4, backgroundColor: colors.navyLine },
+  segmentOn: { backgroundColor: colors.accent },
+  segmentPicked: { borderWidth: 2, borderColor: colors.primaryText },
+  heroReadout: { fontSize: 14, lineHeight: 20, color: colors.onNavyMuted, fontVariant: ['tabular-nums'] },
   rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   highlight: { backgroundColor: colors.warningSoft, marginHorizontal: -(spacing.sm + 4), paddingHorizontal: spacing.sm + 4 },
   doseRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4, paddingVertical: spacing.sm + 4 },
-  doseTime: { width: 72, fontSize: 15, fontWeight: '700', color: colors.text },
+  doseTime: { width: 72, fontSize: 15, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
   doseName: { fontSize: 15, fontWeight: '600', color: colors.text },
   pill: {
     flexDirection: 'row',
@@ -660,8 +773,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  timeText: { minWidth: 96, textAlign: 'center', fontSize: 17, fontWeight: '700', color: colors.text },
-  removeBtn: { marginLeft: 'auto', padding: spacing.sm },
+  timeText: { minWidth: 96, textAlign: 'center', fontSize: 17, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
+  removeBtn: { marginLeft: 'auto', width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm + 4, paddingVertical: spacing.xs },
   editorActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   retry: { marginTop: spacing.md },
@@ -679,7 +792,7 @@ const styles = StyleSheet.create({
   statusStack: { flexDirection: 'column', alignItems: 'stretch', gap: spacing.md },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4 },
   statusOff: { backgroundColor: colors.slateSoft, borderColor: colors.border },
-  statusWarn: { backgroundColor: colors.warningSoft, borderColor: '#F3DFAE' },
+  statusWarn: { backgroundColor: colors.warningSoft, borderColor: colors.warningLine },
   statusTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   footnote: { fontSize: 13, lineHeight: 19, color: colors.textMuted, marginTop: spacing.md },
 });

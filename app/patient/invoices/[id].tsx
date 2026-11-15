@@ -10,11 +10,10 @@ import { InvoiceDetailEnvelope } from '@/lib/types';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { amountPaid, balanceOf, invoiceLook } from '@/lib/invoices';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Banner, Button, LoadingView, useBottomPadding } from '@/components/ui';
+import { Banner, Button, IconName, LoadingView, useBottomPadding } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { ErrorState } from '@/components/ErrorState';
 import { InvoiceStatusPill } from '@/components/InvoiceStatusPill';
-import { softShadow } from '@/components/AppHeader';
 import { t as translate, useT } from '@/lib/i18n';
 
 /**
@@ -25,7 +24,7 @@ export default function InvoiceDetailScreen() {
   const bottomPad = useBottomPadding();
   const t = useT();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, loading, refreshing, error, refresh, offline, updatedAt } = useApiData<InvoiceDetailEnvelope>(
+  const { data, loading, refreshing, error, refresh, offline, stale, updatedAt } = useApiData<InvoiceDetailEnvelope>(
     id ? `/api/patients/me/invoices/${encodeURIComponent(id)}` : null,
     { envelope: true, refreshOn: ['invoices'], offline: true }
   );
@@ -83,6 +82,25 @@ export default function InvoiceDetailScreen() {
   const settled = invoice.status === 'paid' || invoice.status === 'refunded';
   const balance = settled ? 0 : Math.max(0, data.summary?.balance ?? balanceOf(invoice));
   const look = invoiceLook(invoice);
+  // A saved copy: the pay options weren't asked for, and the balance may be out of date.
+  const needsServer = offline || stale;
+  const canPayOnline = balance > 0 && !needsServer && !!offer?.offered;
+  const payNote =
+    balance <= 0
+      ? null
+      : needsServer
+        ? t('invoices.payNeedsConnection')
+        : offer?.offered
+          ? offer.pendingClaim
+            ? t('invoices.pendingClaim')
+            : offer.recentCheckoutAt || returned
+              ? t('invoices.justPaid')
+              : null
+          : offer?.code === 'BELOW_MINIMUM'
+            ? t('invoices.belowMinimum', { minimum: formatMoney(offer.minimum) })
+            : t('invoices.payAtDesk');
+  const payments = invoice.payments ?? [];
+  const items = invoice.items ?? [];
 
   return (
     <ScrollView
@@ -91,73 +109,61 @@ export default function InvoiceDetailScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
     >
       <OfflineBanner offline={offline} updatedAt={updatedAt} />
-      {/* Header */}
-      <View style={styles.card}>
-        <View style={styles.header}>
-          <View style={[styles.tile, { backgroundColor: look.bg }]}>
-            <Ionicons name={look.icon} size={26} color={look.fg} />
+
+      {/* What's owed on this bill and how to pay it: solid navy. */}
+      <View style={styles.hero}>
+        <View style={styles.heroTop}>
+          <View style={styles.heroTile}>
+            <Ionicons name={look.icon} size={20} color={colors.primaryText} />
           </View>
           <View style={styles.flex}>
-            <Text style={styles.title}>{invoice.invoiceNumber ?? t('invoices.invoice')}</Text>
-            <Text style={styles.meta}>
+            <Text style={styles.heroTitle} selectable>
+              {invoice.invoiceNumber ?? t('invoices.invoice')}
+            </Text>
+            <Text style={styles.heroMeta}>
               {look.label} · {formatDate(invoice.createdAt)}
             </Text>
           </View>
           <InvoiceStatusPill status={invoice.status} />
         </View>
-        <View style={styles.totals}>
-          <Total label={t('invoices.total')} value={formatMoney(invoice.total)} />
-          <Total label={t('invoices.paid')} value={formatMoney(paid)} />
-          <Total label={t('invoices.balance')} value={formatMoney(balance)} tone={balance > 0 ? 'danger' : 'default'} />
-        </View>
+
+        <Text style={styles.heroLabel}>{balance > 0 ? t('invoices.balanceDue') : t('invoices.total')}</Text>
+        <Text style={styles.heroAmount}>{formatMoney(balance > 0 ? balance : invoice.total)}</Text>
+        {balance > 0 && paid > 0 ? (
+          <Text style={styles.heroMeta}>{t('invoices.paidOfTotal', { paid: formatMoney(paid), total: formatMoney(invoice.total) })}</Text>
+        ) : settled && invoice.status === 'paid' ? (
+          <Text style={styles.heroMeta}>{t('invoices.paidInFull')}</Text>
+        ) : null}
+
+        {payNote || canPayOnline ? (
+          <View style={styles.heroFoot}>
+            {payNote ? (
+              <View style={styles.heroNote}>
+                <Ionicons name={offer?.offered && !needsServer ? 'time-outline' : needsServer ? 'cloud-offline-outline' : 'business-outline'} size={16} color={colors.onNavyMuted} />
+                <Text style={styles.heroNoteText}>{payNote}</Text>
+              </View>
+            ) : null}
+            {canPayOnline ? (
+              <>
+                <Button title={t('invoices.payOnline')} icon="card-outline" onPress={payOnline} loading={paying} />
+                <Text style={styles.payHint}>
+                  {offer?.methods?.includes('online') ? t('invoices.payHintOnline') : t('invoices.payHintManual')}
+                </Text>
+              </>
+            ) : null}
+            {payError ? <Banner message={payError} /> : null}
+          </View>
+        ) : null}
       </View>
 
-      {balance > 0 && offer?.offered ? (
-        <View style={styles.payOnline}>
-          {offer.pendingClaim ? (
-            <PayNote
-              icon="time-outline"
-              inline
-              text={t('invoices.pendingClaim')}
-            />
-          ) : offer.recentCheckoutAt || returned ? (
-            <PayNote
-              icon="time-outline"
-              inline
-              text={t('invoices.justPaid')}
-            />
-          ) : null}
-          <Button title={t('invoices.payOnline')} icon="card-outline" onPress={payOnline} loading={paying} />
-          <Text style={styles.payHint}>
-            {offer.methods?.includes('online')
-              ? t('invoices.payHintOnline')
-              : t('invoices.payHintManual')}
-          </Text>
-          {payError ? <Banner message={payError} /> : null}
-        </View>
-      ) : balance > 0 ? (
-        <PayNote
-          icon="business-outline"
-          text={
-            offer?.code === 'BELOW_MINIMUM'
-              ? t('invoices.belowMinimum', { minimum: formatMoney(offer.minimum) })
-              : t('invoices.payAtDesk')
-          }
-        />
-      ) : null}
-
-      {/* Items */}
-      {invoice.items?.length ? (
+      {items.length ? (
         <>
           <Text style={styles.section} accessibilityRole="header">
             {t('invoices.items')}
           </Text>
           <View style={styles.card}>
-            {invoice.items.map((item, index) => (
-              <View
-                key={`${item.code ?? ''}-${index}`}
-                style={[styles.line, index < invoice.items!.length - 1 && styles.divider]}
-              >
+            {items.map((item, index) => (
+              <View key={`${item.code ?? ''}-${index}`} style={[styles.line, index > 0 && styles.rule]}>
                 <View style={styles.flex}>
                   <Text style={styles.lineName}>{item.description || item.code || t('invoices.item')}</Text>
                   <Text style={styles.meta}>
@@ -179,25 +185,24 @@ export default function InvoiceDetailScreen() {
               ))}
               {invoice.tax ? <Row label={t('invoices.tax')} value={formatMoney(invoice.tax)} /> : null}
               <Row label={t('invoices.total')} value={formatMoney(invoice.total)} strong />
+              {paid > 0 ? <Row label={t('invoices.paid')} value={formatMoney(-paid)} /> : null}
+              {balance > 0 ? <Row label={t('invoices.balance')} value={formatMoney(balance)} strong attention /> : null}
             </View>
           </View>
         </>
       ) : null}
 
-      {/* Payments */}
       <Text style={styles.section} accessibilityRole="header">
         {t('invoices.paymentHistory')}
       </Text>
       <View style={styles.card}>
-        {invoice.payments?.length ? (
-          invoice.payments.map((p, index) => (
-            <View key={`payment-${index}`} style={[styles.line, index < invoice.payments!.length - 1 && styles.divider]}>
-              <View style={styles.payIcon}>
-                <Ionicons name="checkmark" size={16} color="#1F7A4A" />
-              </View>
+        {payments.length ? (
+          payments.map((p, index) => (
+            <View key={`payment-${index}`} style={[styles.line, index > 0 && styles.rule]}>
+              <PayIcon icon="checkmark" />
               <View style={styles.flex}>
                 <Text style={styles.lineName}>{humanize(p.method)}</Text>
-                <Text style={styles.meta}>
+                <Text style={styles.meta} selectable>
                   {formatDate(p.date)}
                   {p.receiptNo ? t('invoices.receipt', { number: p.receiptNo }) : ''}
                 </Text>
@@ -213,89 +218,93 @@ export default function InvoiceDetailScreen() {
   );
 }
 
-function PayNote({ icon, text, inline }: { icon: 'time-outline' | 'business-outline'; text: string; inline?: boolean }) {
+function PayIcon({ icon }: { icon: IconName }) {
   return (
-    <View style={[styles.payNote, inline && styles.payNoteInline]}>
-      <Ionicons name={icon} size={18} color={colors.slate} />
-      <Text style={styles.payNoteText}>{text}</Text>
+    <View style={styles.payIcon}>
+      <Ionicons name={icon} size={16} color={colors.primaryOnSoft} />
     </View>
   );
 }
 
-function Total({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'danger' }) {
-  return (
-    <View style={styles.total}>
-      <Text style={styles.totalLabel}>{label}</Text>
-      <Text style={[styles.totalValue, tone === 'danger' && { color: colors.danger }]}>{value}</Text>
-    </View>
-  );
-}
-
-function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function Row({ label, value, strong, attention }: { label: string; value: string; strong?: boolean; attention?: boolean }) {
   return (
     <View style={styles.row}>
-      <Text style={[styles.rowLabel, strong && styles.strong]}>{label}</Text>
-      <Text style={[styles.rowValue, strong && styles.strong]}>{value}</Text>
+      <Text style={[styles.rowLabel, strong && styles.strong, attention && styles.attention]}>{label}</Text>
+      <Text style={[styles.rowValue, strong && styles.strong, attention && styles.attention]}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md + 4, paddingBottom: spacing.xl },
+  content: { padding: spacing.md, paddingBottom: spacing.xl },
   flex: { flex: 1 },
+
+  hero: { backgroundColor: colors.navy, borderRadius: radius.lg, padding: spacing.md + 4 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4 },
+  heroTile: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: { fontSize: 16, fontWeight: '700', color: colors.primaryText, fontVariant: ['tabular-nums'] },
+  heroMeta: { fontSize: 13, color: colors.onNavyMuted, marginTop: 2, fontVariant: ['tabular-nums'] },
+  heroLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.onNavyMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginTop: spacing.lg,
+  },
+  heroAmount: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: colors.primaryText,
+    letterSpacing: -0.5,
+    marginTop: spacing.xs,
+    fontVariant: ['tabular-nums'],
+  },
+  heroFoot: {
+    marginTop: spacing.md,
+    paddingTop: spacing.sm + 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.navyLine,
+    gap: spacing.sm + 2,
+  },
+  heroNote: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  heroNoteText: { flex: 1, fontSize: 13, lineHeight: 19, color: colors.onNavyMuted },
+  payHint: { fontSize: 12, lineHeight: 17, color: colors.onNavyMuted, textAlign: 'center' },
+
+  section: { fontSize: 17, fontWeight: '700', color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
-    padding: spacing.md,
-    ...softShadow,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
   },
-  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  tile: { width: 52, height: 52, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 18, fontWeight: '800', color: colors.text },
-  meta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  totals: {
-    flexDirection: 'row',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    padding: spacing.sm + 4,
-    marginTop: spacing.md,
-  },
-  total: { flex: 1, alignItems: 'center' },
-  totalLabel: { fontSize: 12, color: colors.textMuted },
-  totalValue: { fontSize: 15, fontWeight: '800', color: colors.text, marginTop: 2 },
-  payNote: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.slateSoft,
-    borderRadius: radius.md,
-    padding: spacing.sm + 4,
-    marginTop: spacing.sm + 2,
-  },
-  payNoteText: { flex: 1, fontSize: 13, color: colors.slate },
-  payNoteInline: { marginTop: 0 },
-  payOnline: { gap: spacing.sm, marginTop: spacing.sm + 2 },
-  payHint: { fontSize: 12, color: colors.textMuted, textAlign: 'center' },
-  section: { fontSize: 17, fontWeight: '700', color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
-  line: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4, paddingVertical: spacing.sm + 2 },
-  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  line: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4, paddingVertical: spacing.sm + 4 },
+  rule: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   lineName: { fontSize: 15, color: colors.text, fontWeight: '500' },
-  lineTotal: { fontSize: 15, fontWeight: '700', color: colors.text },
-  breakdown: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: spacing.xs, paddingTop: spacing.sm },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  rowLabel: { fontSize: 14, color: colors.textMuted },
-  rowValue: { fontSize: 14, color: colors.text },
+  meta: { fontSize: 13, color: colors.textMuted, marginTop: 2, fontVariant: ['tabular-nums'] },
+  lineTotal: { fontSize: 15, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
+  breakdown: { borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: spacing.sm },
+  row: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, paddingVertical: 4 },
+  rowLabel: { flexShrink: 1, fontSize: 14, color: colors.textMuted },
+  rowValue: { fontSize: 14, color: colors.text, fontVariant: ['tabular-nums'] },
   strong: { fontWeight: '800', color: colors.text, fontSize: 15 },
+  attention: { color: colors.warning },
   payIcon: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#DCF5E7',
+    backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emptyPayments: { fontSize: 14, color: colors.textMuted },
+  emptyPayments: { fontSize: 14, color: colors.textMuted, paddingVertical: spacing.md },
 });

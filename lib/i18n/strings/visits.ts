@@ -17,6 +17,11 @@ export default defineStrings({
     // visits/[id].tsx
     notFound: 'Visit not found.',
     ref: 'Ref: {code}',
+    lastSeen: 'Last seen {date}. Tap a visit to see what the doctor found.',
+    offlineSubject: 'your visits',
+    offlineSubjectOne: 'this visit',
+    followUpOn: 'Follow-up on {date}',
+    bookFollowUp: 'Book the follow-up',
     wasCancelled: 'This visit was cancelled.',
     reason: 'Reason for Visit',
     diagnosis: 'Diagnosis',
@@ -79,6 +84,11 @@ export default defineStrings({
 
     notFound: 'Hindi makita ang pagbisita.',
     ref: 'Ref: {code}',
+    lastSeen: 'Huling nagpatingin noong {date}. I-tap ang isang pagbisita para makita ang nakita ng doktor.',
+    offlineSubject: 'mga pagbisita mo',
+    offlineSubjectOne: 'pagbisitang ito',
+    followUpOn: 'Follow-up sa {date}',
+    bookFollowUp: 'I-book ang follow-up',
     wasCancelled: 'Kinansela ang pagbisitang ito.',
     reason: 'Dahilan ng Pagbisita',
     diagnosis: 'Diagnosis',

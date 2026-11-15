@@ -216,7 +216,6 @@ export default function SetPasswordScreen() {
         title={reset ? t('auth.createPw.reset.title') : t('auth.createPw.create.title')}
         subtitle={reset ? t('auth.setPw.resetSubtitle') : t('auth.setPw.createSubtitle')}
       />
-      {error ? <Banner message={error} /> : null}
 
       {reset ? null : (
         <IconField
@@ -263,6 +262,7 @@ export default function SetPasswordScreen() {
         <ChecklistItem label={t('auth.pw.match')} met={matches} />
       </View>
 
+      {error ? <Banner message={error} /> : null}
       <Button title={reset ? t('auth.setPw.saveNew') : t('auth.pw.saveAndContinue')} onPress={save} loading={saving} />
       <TextLink title={t('auth.setPw.skip')} onPress={skip} disabled={saving} style={styles.skip} />
     </AuthScreen>

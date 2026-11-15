@@ -6,11 +6,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { usePaginatedList } from '@/lib/usePaginatedList';
 import { Prescription } from '@/lib/types';
 import { formatDate, humanize } from '@/lib/format';
+import { statusLabel } from '@/components/StatusBadge';
 import { groupByVisit, isCurrent, PrescriptionGroup } from '@/lib/prescriptions';
 import { colors, radius, spacing } from '@/lib/theme';
 import { Banner, Button, ListFooter, useBottomPadding } from '@/components/ui';
 import { OfflineBanner } from '@/components/OfflineBanner';
-import { AppHeader, softShadow } from '@/components/AppHeader';
+import { AppHeader } from '@/components/AppHeader';
 import { MedicationCard } from '@/components/MedicationCard';
 import { PlainKey, useT } from '@/lib/i18n';
 
@@ -29,7 +30,6 @@ export default function PrescriptionsScreen() {
   const t = useT();
   const bottomPad = useBottomPadding();
   const [tab, setTab] = useState<Tab>('current');
-  const [tipDismissed, setTipDismissed] = useState(false);
   const list = usePaginatedList<Prescription>('/api/patients/me/prescriptions', {
     limit: 20,
     refreshOn: ['prescriptions'],
@@ -80,19 +80,20 @@ export default function PrescriptionsScreen() {
         })}
       </View>
 
-      {tab === 'current' && !tipDismissed && current.length > 0 ? (
-        <View style={styles.tip}>
-          <View style={styles.tipIcon}>
-            <Ionicons name="medical-outline" size={22} color={colors.primary} />
-          </View>
+      {tab === 'current' && current.length > 0 ? (
+        <TouchableOpacity
+          style={styles.reminders}
+          onPress={() => router.push('/patient/medicines')}
+          accessibilityRole="button"
+          accessibilityLabel={`${t('prescriptions.reminders.title')}. ${t('prescriptions.reminders.text')}`}
+        >
+          <Ionicons name="alarm-outline" size={22} color={colors.primaryOnSoft} />
           <View style={styles.flex}>
-            <Text style={styles.tipTitle}>{t('prescriptions.tip.title')}</Text>
-            <Text style={styles.tipText}>{t('prescriptions.tip.text')}</Text>
+            <Text style={styles.remindersTitle}>{t('prescriptions.reminders.title')}</Text>
+            <Text style={styles.remindersText}>{t('prescriptions.reminders.text')}</Text>
           </View>
-          <TouchableOpacity onPress={() => setTipDismissed(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('prescriptions.tip.dismiss')}>
-            <Ionicons name="close" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-        </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.primaryOnSoft} />
+        </TouchableOpacity>
       ) : null}
 
       <OfflineBanner offline={list.offline} updatedAt={list.updatedAt} />
@@ -151,60 +152,56 @@ function VisitGroup({ group }: { group: PrescriptionGroup }) {
         : t('prescriptions.clinicVisit')
     : t('prescriptions.prescription');
   return (
-    <View style={styles.group}>
+    <View style={styles.groupWrap}>
       <View style={styles.groupHeader}>
-        <View style={styles.groupIcon}>
-          <Ionicons name={group.visit ? 'medkit-outline' : 'document-text-outline'} size={20} color={colors.primary} />
-        </View>
-        <View style={styles.flex}>
-          <Text style={styles.groupTitle}>
-            {label} · {formatDate(group.date)}
-          </Text>
-          <Text style={styles.groupMeta}>
-            {[group.prescriber, group.visit?.visitCode].filter(Boolean).join(' · ') || t('prescriptions.fromClinic')}
-          </Text>
-        </View>
+        <Text style={styles.groupTitle}>
+          {label} · {formatDate(group.date)}
+        </Text>
+        <Text style={styles.groupMeta}>
+          {[group.prescriber, group.visit?.visitCode].filter(Boolean).join(' · ') || t('prescriptions.fromClinic')}
+        </Text>
       </View>
-
-      {group.prescriptions.map((p) => (
-        <View key={p._id}>
-          {(p.medications ?? []).map((med, i) => (
-            <MedicationCard key={`${p._id}-${i}`} prescription={p} med={med} />
-          ))}
-          {!p.medications?.length ? <Text style={styles.noMeds}>{t('prescriptions.noMeds')}</Text> : null}
-          <PrescriptionFooter prescription={p} />
-        </View>
-      ))}
+      <View style={styles.group}>
+        {group.prescriptions.map((p, pi) => (
+          <View key={p._id} style={pi > 0 ? styles.dividerTop : null}>
+            {(p.medications ?? []).map((med, i) => (
+              <MedicationCard key={`${p._id}-${i}`} prescription={p} med={med} compact first={i === 0} />
+            ))}
+            {!p.medications?.length ? <Text style={styles.noMeds}>{t('prescriptions.noMeds')}</Text> : null}
+            <PrescriptionFooter prescription={p} />
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
 
+/** The prescription itself: its Rx code, where it was dispensed, and the way into its details. */
 function PrescriptionFooter({ prescription: p }: { prescription: Prescription }) {
   const t = useT();
   const pharmacy = p.pharmacyDispenses?.find((d) => d.pharmacyName)?.pharmacyName;
+  const closed = p.status === 'cancelled' || p.status === 'completed';
+  const line = [
+    p.prescriptionCode ? t('prescriptions.rx', { code: p.prescriptionCode }) : t('prescriptions.prescription'),
+    closed && p.status ? statusLabel(t, p.status) : null,
+    pharmacy ? t('prescriptions.dispensedAt', { pharmacy }) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   return (
-    <View style={styles.footer}>
-      <View style={styles.flex}>
-        {p.prescriptionCode ? <Text style={styles.footerCode}>{t('prescriptions.rx', { code: p.prescriptionCode })}</Text> : null}
-        {pharmacy ? (
-          <View style={styles.pharmacy}>
-            <Ionicons name="storefront-outline" size={14} color={colors.textMuted} />
-            <Text style={styles.footerMeta} numberOfLines={1}>
-              {t('prescriptions.dispensedAt', { pharmacy })}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-      <TouchableOpacity
-        style={styles.details}
-        onPress={() => router.push(`/patient/prescriptions/${p._id}`)}
-        accessibilityRole="button"
-        accessibilityLabel={t('prescriptions.viewA11y', { code: p.prescriptionCode ?? '' })}
-      >
-        <Ionicons name="document-text-outline" size={16} color={colors.primaryText} />
-        <Text style={styles.detailsText}>{t('prescriptions.viewDetails')}</Text>
-      </TouchableOpacity>
-    </View>
+    <TouchableOpacity
+      style={[styles.footer, styles.dividerTop]}
+      onPress={() => router.push(`/patient/prescriptions/${p._id}`)}
+      accessibilityRole="button"
+      accessibilityLabel={t('prescriptions.viewA11y', { code: p.prescriptionCode ?? '' })}
+    >
+      <Ionicons name="document-text-outline" size={18} color={colors.primary} />
+      <Text style={styles.footerText} numberOfLines={2}>
+        {line}
+      </Text>
+      <Text style={styles.footerAction}>{t('prescriptions.viewDetails')}</Text>
+      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+    </TouchableOpacity>
   );
 }
 
@@ -217,74 +214,40 @@ const styles = StyleSheet.create({
   loading: { marginVertical: spacing.xl },
   title: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
-  tabs: { flexDirection: 'row', backgroundColor: '#E4EEF0', borderRadius: radius.md, padding: 4, marginTop: spacing.lg },
+  tabs: { flexDirection: 'row', backgroundColor: colors.slateSoft, borderRadius: radius.md, padding: 4, marginTop: spacing.lg },
   tab: { flex: 1, minHeight: 44, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
   tabSelected: { backgroundColor: colors.primary },
-  tabText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
+  tabText: { fontSize: 14, fontWeight: '600', color: colors.textMuted, fontVariant: ['tabular-nums'] },
   tabTextSelected: { color: colors.primaryText },
-  tip: {
+  reminders: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm + 4,
-    backgroundColor: '#EAF5FA',
+    minHeight: 56,
+    backgroundColor: colors.primarySoft,
     borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: '#D4E9F2',
-    padding: spacing.sm + 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
     marginTop: spacing.md,
   },
-  tipIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tipTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
-  tipText: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  remindersTitle: { fontSize: 15, fontWeight: '700', color: colors.primaryOnSoft },
+  remindersText: { fontSize: 13, color: colors.primaryOnSoft, marginTop: 2 },
+  groupWrap: { marginBottom: spacing.lg },
+  groupHeader: { marginBottom: spacing.sm },
+  groupTitle: { fontSize: 16, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
+  groupMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   group: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#EAF0F2',
-    padding: spacing.sm + 4,
-    marginBottom: spacing.md,
-    ...softShadow,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
   },
-  groupHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 2, marginBottom: spacing.sm + 4 },
-  groupIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  groupTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
-  groupMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  noMeds: { fontSize: 14, color: colors.textMuted, marginBottom: spacing.sm },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.xs,
-    marginBottom: spacing.xs,
-  },
-  footerCode: { fontSize: 13, fontWeight: '600', color: colors.text },
-  pharmacy: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  footerMeta: { fontSize: 12, color: colors.textMuted, flexShrink: 1 },
-  details: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md - 2,
-    minHeight: 44,
-  },
-  detailsText: { fontSize: 14, fontWeight: '700', color: colors.primaryText },
+  dividerTop: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  noMeds: { fontSize: 14, color: colors.textMuted, paddingVertical: spacing.sm + 4 },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 48, paddingVertical: spacing.sm },
+  footerText: { flex: 1, fontSize: 13, color: colors.textMuted, fontVariant: ['tabular-nums'] },
+  footerAction: { fontSize: 14, fontWeight: '700', color: colors.primary },
   empty: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md },
   emptyIcon: {
     width: 72,

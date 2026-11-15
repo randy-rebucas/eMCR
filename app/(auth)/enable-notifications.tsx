@@ -6,11 +6,19 @@ import { useAuth } from '@/lib/auth';
 import { getCredentialStep } from '@/lib/emcr';
 import { registerForPushNotifications, shouldAskForNotifications } from '@/lib/push';
 import { colors, radius, spacing } from '@/lib/theme';
-import { Button, LoadingView } from '@/components/ui';
-import { AuthHeader, AuthScreen, TextLink, useBlockHardwareBack } from '@/components/auth';
+import { Button, IconName, LoadingView } from '@/components/ui';
+import { photos } from '@/components/Photo';
+import { AuthBand, AuthScreen, TextLink, useBlockHardwareBack } from '@/components/auth';
 import { useT } from '@/lib/i18n';
 
-const BENEFITS = ['auth.notify.reminders', 'auth.notify.results', 'auth.notify.queue'] as const;
+/** What a push carries, in the order patients care about (lib/push.ts routeForNotification). */
+const BENEFITS: { label: 'auth.notify.reminders' | 'auth.notify.results' | 'auth.notify.queue' | 'auth.notify.bills' | 'auth.notify.messages'; icon: IconName }[] = [
+  { label: 'auth.notify.reminders', icon: 'calendar-outline' },
+  { label: 'auth.notify.results', icon: 'flask-outline' },
+  { label: 'auth.notify.queue', icon: 'people-outline' },
+  { label: 'auth.notify.bills', icon: 'receipt-outline' },
+  { label: 'auth.notify.messages', icon: 'chatbubble-ellipses-outline' },
+];
 
 /**
  * Explains notifications before the OS permission dialog. Every fresh sign-in
@@ -53,23 +61,16 @@ export default function EnableNotificationsScreen() {
 
   return (
     <AuthScreen>
-      <AuthHeader
-        title={t('auth.notify.title')}
-        subtitle={t('auth.notify.subtitle')}
-      />
+      <AuthBand source={photos.consultation} title={t('auth.notify.title')} lead={t('auth.notify.subtitle')} />
 
-      <View style={styles.art} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-        <View style={styles.phone}>
-          <Ionicons name="notifications" size={48} color={colors.primary} />
-          <View style={styles.dot} />
-        </View>
-      </View>
-
+      <Text style={styles.listTitle} accessibilityRole="header">
+        {t('auth.notify.listTitle')}
+      </Text>
       <View style={styles.list}>
-        {BENEFITS.map((label) => (
-          <View key={label} style={styles.item}>
-            <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
-            <Text style={styles.itemText}>{t(label)}</Text>
+        {BENEFITS.map((b, i) => (
+          <View key={b.label} style={[styles.item, i > 0 && styles.divider]}>
+            <Ionicons name={b.icon} size={20} color={colors.primary} />
+            <Text style={styles.itemText}>{t(b.label)}</Text>
           </View>
         ))}
       </View>
@@ -81,36 +82,17 @@ export default function EnableNotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  art: { alignItems: 'center', marginVertical: spacing.lg },
-  phone: {
-    width: 104,
-    height: 132,
-    borderRadius: 22,
-    borderWidth: 4,
-    borderColor: colors.text,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dot: {
-    position: 'absolute',
-    top: -10,
-    right: -10,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#E5484D',
-    borderWidth: 3,
-    borderColor: colors.surface,
-  },
+  listTitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
+  // One ruled card: the drawn phone and its hard-coded red dot are gone.
   list: {
-    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: radius.lg,
-    padding: spacing.md,
-    gap: spacing.sm + 4,
+    paddingHorizontal: spacing.md,
     marginBottom: spacing.lg,
   },
-  item: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4 },
-  itemText: { fontSize: 15, color: colors.text },
-  later: { alignSelf: 'center', marginTop: spacing.lg },
+  item: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4, paddingVertical: spacing.sm + 4 },
+  divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  itemText: { flex: 1, fontSize: 15, lineHeight: 21, color: colors.text },
+  later: { alignSelf: 'center', marginTop: spacing.sm },
 });

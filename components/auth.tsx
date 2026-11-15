@@ -21,6 +21,9 @@ import { colors, radius, spacing } from '@/lib/theme';
 import { t as translate, useT } from '@/lib/i18n';
 import { rich } from '@/lib/i18n/rich';
 import { Button, IconName, KeyboardAvoider, useAnnounce } from './ui';
+import { ScrimPhoto } from './Photo';
+import { BrandLogo } from './BrandLogo';
+import type { ImageSourcePropType } from 'react-native';
 
 // Building blocks for the signed-out and onboarding screens, so they share
 // one layout, field and full-screen-state look.
@@ -84,6 +87,42 @@ export function AuthHeader({
       </Text>
       {subtitle ? <Text style={[styles.subtitle, { textAlign }]}>{subtitle}</Text> : null}
     </View>
+  );
+}
+
+/**
+ * Photo band for the top of the first sign-in steps: the photo under a navy scrim, the logo on top,
+ * and a title and/or lead line on the near-solid foot. Bleeds to the screen edges inside
+ * AuthScreen. Decorative photo; the text carries the meaning. Not for code fields or waits.
+ */
+export function AuthBand({
+  source,
+  title,
+  lead,
+  compact = false,
+  scrimTop = 0.3,
+}: {
+  source: ImageSourcePropType;
+  title?: string;
+  lead?: string;
+  compact?: boolean;
+  /** Raise for photos with a light top (the logo sits there). */
+  scrimTop?: number;
+}) {
+  return (
+    <ScrimPhoto source={source} top={scrimTop} bottom={0.95} style={[styles.band, compact && styles.bandCompact]}>
+      <View style={styles.bandInner}>
+        <BrandLogo size="sm" align="left" tone="onNavy" />
+        <View style={styles.bandFoot}>
+          {title ? (
+            <Text style={styles.bandTitle} accessibilityRole="header">
+              {title}
+            </Text>
+          ) : null}
+          {lead ? <Text style={styles.bandLead}>{lead}</Text> : null}
+        </View>
+      </View>
+    </ScrimPhoto>
   );
 }
 
@@ -441,7 +480,7 @@ export function IconBadge({
       <Ionicons name={icon} size={size * 0.5} color={t.fg} />
       {badge ? (
         <View style={[styles.cornerBadge, { backgroundColor: TONES[badge.tone].fg }]}>
-          <Ionicons name={badge.icon} size={18} color="#FFFFFF" />
+          <Ionicons name={badge.icon} size={18} color={colors.primaryText} />
         </View>
       ) : null}
     </View>
@@ -542,6 +581,20 @@ const TONES: Record<Tone, { bg: string; fg: string }> = {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   screen: { flex: 1, backgroundColor: colors.surface },
+  // Full width inside AuthScreen's padded content, flush with its top.
+  band: {
+    minHeight: 248,
+    marginHorizontal: -spacing.lg,
+    marginTop: -spacing.lg,
+    marginBottom: spacing.lg,
+    borderBottomLeftRadius: radius.lg,
+    borderBottomRightRadius: radius.lg,
+  },
+  bandCompact: { minHeight: 188 },
+  bandInner: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.lg },
+  bandFoot: { marginTop: 'auto', gap: spacing.xs },
+  bandTitle: { fontSize: 26, lineHeight: 32, fontWeight: '800', color: colors.primaryText, letterSpacing: -0.3 },
+  bandLead: { fontSize: 15, lineHeight: 21, color: colors.onNavyMuted },
   back: { paddingHorizontal: spacing.md, paddingTop: spacing.sm, alignSelf: 'flex-start' },
   content: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
   contentCenter: { justifyContent: 'center' },
@@ -592,7 +645,8 @@ const styles = StyleSheet.create({
   dividerText: { fontSize: 13, color: colors.textMuted },
   // 44pt tall so the link meets the minimum touch target on its own.
   linkTarget: { minHeight: 44, justifyContent: 'center' },
-  link: { fontSize: 14, fontWeight: '600', color: colors.primary },
+  // Tabular figures: resend countdowns ("Resend in 0:29") don't jitter as they tick.
+  link: { fontSize: 14, fontWeight: '600', color: colors.primary, fontVariant: ['tabular-nums'] },
   linkDisabled: { color: colors.textMuted },
   badgeCircle: { alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
   cornerBadge: {

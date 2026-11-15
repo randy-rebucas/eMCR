@@ -1,4 +1,4 @@
-import { formatDate } from './format';
+import { clinicYmd, formatDate } from './format';
 import { Medication, Prescription, PrescriptionVisit } from './types';
 import { PlainKey, t } from './i18n';
 
@@ -115,4 +115,19 @@ export function groupByVisit(items: Prescription[]): PrescriptionGroup[] {
     });
   }
   return [...groups.values()].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
+/**
+ * Where a medicine's course stands today, counted in clinic days from the day it was issued:
+ * `{ day: 3, total: 7 }`. Null without a duration, before it starts, or once it has ended.
+ */
+export function courseDay(p: Prescription, med: Medication, todayYmd: string): { day: number; total: number } | null {
+  if (!med.durationDays || CLOSED.has(p.status ?? '')) return null;
+  const start = issued(p);
+  if (isNaN(start.getTime())) return null;
+  const startDay = Date.parse(`${clinicYmd(start)}T00:00:00Z`);
+  const today = Date.parse(`${todayYmd}T00:00:00Z`);
+  const day = Math.round((today - startDay) / DAY) + 1;
+  if (day < 1 || day > med.durationDays) return null;
+  return { day, total: med.durationDays };
 }
