@@ -2,8 +2,21 @@
 
 ## 1.1.7
 
-A rebuild of 1.1.6 under a new version number: **no app changes**. Use it when 1.1.6 is already
-taken in a store (submitted or released), so a new build can go up.
+A rebuild of 1.1.6 under a new version number: **no app changes since 1.1.6**. Use it when 1.1.6
+is already taken in a store (submitted or released), so a new build can go up.
+
+What this build includes (from 1.1.5 and 1.1.6):
+
+- Profile picture for you and your family members: take a photo or choose one from your photos
+- Account deletion inside the app
+- Contact support inside the app
+- A crash screen
+- A not-found screen
+- An update check
+- Android push notifications setup
+- Consent at sign-up
+- Clearer "record not available" and offline states
+- Accessibility fixes
 
 **Deploy steps:** the same as 1.1.6. If they were done for 1.1.6, there is nothing new to deploy.
 Otherwise, deploy the backend (clinic-management `main`), run `pnpm prod db:indexes --apply`, and
